@@ -211,44 +211,48 @@ export default function App() {
           title="Ssshh..."
         ></div>
 
-        <div key={activeTab} className="flex-1 flex flex-col animate-view-enter">
-          {activeTab === 'ventas' && (
-            <ErrorBoundary>
-              <PremiumGuard featureName="Punto de Venta" isShop={true}>
-                <SalesView rates={rates} triggerHaptic={triggerHaptic} />
-              </PremiumGuard>
-            </ErrorBoundary>
-          )}
+        {/* Eager views — always mounted, visibility toggled via CSS */}
+        <div className={`flex-1 flex flex-col ${activeTab === 'ventas' ? 'animate-view-enter' : 'hidden'}`}>
+          <ErrorBoundary>
+            <PremiumGuard featureName="Punto de Venta" isShop={true}>
+              <SalesView rates={rates} triggerHaptic={triggerHaptic} />
+            </PremiumGuard>
+          </ErrorBoundary>
+        </div>
 
-          {activeTab === 'catalogo' && (
-            <ErrorBoundary>
-              <ProductsView rates={rates} triggerHaptic={triggerHaptic} />
-            </ErrorBoundary>
-          )}
+        <div className={`flex-1 flex flex-col ${activeTab === 'catalogo' ? 'animate-view-enter' : 'hidden'}`}>
+          <ErrorBoundary>
+            <ProductsView rates={rates} triggerHaptic={triggerHaptic} />
+          </ErrorBoundary>
+        </div>
 
-          {activeTab === 'inicio' && (
-            <ErrorBoundary>
-              <DashboardView rates={rates} triggerHaptic={triggerHaptic} onNavigate={setActiveTab} theme={theme} toggleTheme={toggleTheme} />
-            </ErrorBoundary>
-          )}
+        <div className={`flex-1 flex flex-col ${activeTab === 'inicio' ? 'animate-view-enter' : 'hidden'}`}>
+          <ErrorBoundary>
+            <DashboardView rates={rates} triggerHaptic={triggerHaptic} onNavigate={setActiveTab} theme={theme} toggleTheme={toggleTheme} />
+          </ErrorBoundary>
+        </div>
 
-          <Suspense fallback={<div className="flex-1 p-4 space-y-4"><div className="skeleton h-10 w-40" /><div className="skeleton h-32" /><div className="skeleton h-48" /></div>}>
-            {activeTab === 'clientes' && (
+        {/* Lazy views — mount on first access, then stay persistent */}
+        <Suspense fallback={<div className="flex-1 p-4 space-y-4"><div className="skeleton h-10 w-40" /><div className="skeleton h-32" /><div className="skeleton h-48" /></div>}>
+          {(activeTab === 'clientes' || document.querySelector('[data-view="clientes"]')) && (
+            <div data-view="clientes" className={`flex-1 flex flex-col ${activeTab === 'clientes' ? 'animate-view-enter' : 'hidden'}`}>
               <ErrorBoundary>
                 <PremiumGuard featureName="Gestión de Clientes">
                   <CustomersView triggerHaptic={triggerHaptic} />
                 </PremiumGuard>
               </ErrorBoundary>
-            )}
-            {activeTab === 'reportes' && (
+            </div>
+          )}
+          {(activeTab === 'reportes' || document.querySelector('[data-view="reportes"]')) && (
+            <div data-view="reportes" className={`flex-1 flex flex-col ${activeTab === 'reportes' ? 'animate-view-enter' : 'hidden'}`}>
               <ErrorBoundary>
                 <PremiumGuard featureName="Reportes Históricos">
                   <ReportsView rates={rates} triggerHaptic={triggerHaptic} />
                 </PremiumGuard>
               </ErrorBoundary>
-            )}
-          </Suspense>
-        </div>
+            </div>
+          )}
+        </Suspense>
       </main>
 
       {/* Bottom Nav */}
