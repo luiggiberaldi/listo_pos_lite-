@@ -131,7 +131,7 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
                                 <Share2 size={20} className="text-indigo-500 dark:text-indigo-400" />
                             </div>
                             <div className="text-left flex-1">
-                                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Compartir Catálogo</p>
+                                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Compartir Inventario</p>
                                 <p className="text-[10px] text-slate-400">Código de 6 dígitos • 24h</p>
                             </div>
                         </button>

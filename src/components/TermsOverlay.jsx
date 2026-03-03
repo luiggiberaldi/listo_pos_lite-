@@ -71,7 +71,7 @@ export default function TermsOverlay() {
                         <li><strong>Punto de venta (POS)</strong> con carrito, checkout y recibos</li>
                         <li><strong>Dashboard de ventas</strong> con reportes y estadísticas</li>
                         <li><strong>Gestión de clientes</strong> con sistema de fiados y pagos parciales</li>
-                        <li><strong>Catálogo compartible</strong> mediante código temporal de 6 dígitos</li>
+                        <li><strong>Inventario compartible</strong> mediante código temporal de 6 dígitos</li>
                     </ul>
 
                     <h2 className="text-lg font-bold text-slate-900 mt-6 mb-3">3. Descargo de Responsabilidad</h2>
@@ -104,7 +104,7 @@ export default function TermsOverlay() {
                     <p className="text-sm text-slate-700 leading-relaxed mb-2">PreciosAlDía ofrece funciones gratuitas y funciones exclusivas para usuarios con <strong>Licencia Premium</strong>:</p>
                     <ul className="text-sm text-slate-700 space-y-1 mb-2">
                         <li><strong>Gratuito:</strong> Dashboard básico, hasta 10 productos en inventario.</li>
-                        <li><strong>Premium:</strong> Inventario ilimitado, sistema de ventas POS, gestión de clientes, compartir catálogo, reportes completos.</li>
+                        <li><strong>Premium:</strong> Inventario ilimitado, sistema de ventas POS, gestión de clientes, compartir inventario, reportes completos.</li>
                     </ul>
                     <p className="text-sm text-slate-700 leading-relaxed mb-4">
                         El acceso Premium se otorga mediante código de activación único vinculado al dispositivo. La licencia es personal, intransferible y no reembolsable. Se ofrece un periodo de demostración de 7 días por dispositivo.

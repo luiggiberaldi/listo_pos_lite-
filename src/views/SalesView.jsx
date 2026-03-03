@@ -3,8 +3,8 @@ import { storageService } from '../utils/storageService';
 import { useSounds } from '../hooks/useSounds';
 import { useVoiceSearch } from '../hooks/useVoiceSearch';
 import { useNotifications } from '../hooks/useNotifications';
-import { getActivePaymentMethods } from '../utils/paymentMethods';
-import { showToast } from '../utils/toast';
+import { getActivePaymentMethods } from '../config/paymentMethods';
+import { showToast } from '../components/Toast';
 
 // Components
 import SalesHeader from '../components/Sales/SalesHeader';

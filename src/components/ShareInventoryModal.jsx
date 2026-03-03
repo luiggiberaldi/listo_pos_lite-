@@ -130,7 +130,7 @@ export default function ShareInventoryModal({ isOpen, onClose, products, onImpor
 
                 {/* Header */}
                 <div className="flex items-center justify-between mb-5">
-                    <h2 className="text-lg font-black text-slate-800 dark:text-white">Compartir Catálogo</h2>
+                    <h2 className="text-lg font-black text-slate-800 dark:text-white">Compartir Inventario</h2>
                     <button onClick={handleClose} className="p-2 text-slate-400 hover:text-slate-600 rounded-xl transition-colors">
                         <X size={20} />
                     </button>
@@ -190,7 +190,7 @@ export default function ShareInventoryModal({ isOpen, onClose, products, onImpor
                                 <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-6 mb-4">
                                     <p className="text-4xl font-black text-brand-dark tracking-[0.3em] font-mono">{shareCode}</p>
                                 </div>
-                                <p className="text-[10px] text-slate-400 mb-4">El receptor debe ir a Catálogo → Compartir → Importar y escribir este código.</p>
+                                <p className="text-[10px] text-slate-400 mb-4">El receptor debe ir a Inventario → Compartir → Importar y escribir este código.</p>
                                 <button
                                     onClick={handleCopy}
                                     className="w-full py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-xl flex items-center justify-center gap-2 transition-all"
@@ -210,7 +210,7 @@ export default function ShareInventoryModal({ isOpen, onClose, products, onImpor
                             <>
                                 <div className="text-center py-2">
                                     <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-                                        Escribe el código de 6 dígitos para importar el catálogo.
+                                        Escribe el código de 6 dígitos para importar el inventario.
                                     </p>
                                     <input
                                         type="text"
@@ -228,7 +228,7 @@ export default function ShareInventoryModal({ isOpen, onClose, products, onImpor
                                     className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50"
                                 >
                                     {loading ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
-                                    {loading ? 'Buscando...' : 'Importar Catálogo'}
+                                    {loading ? 'Buscando...' : 'Importar Inventario'}
                                 </button>
                             </>
                         ) : (
@@ -237,13 +237,13 @@ export default function ShareInventoryModal({ isOpen, onClose, products, onImpor
                                     <Check size={32} className="text-emerald-500" />
                                 </div>
                                 <p className="text-sm font-bold text-slate-700 dark:text-white mb-1">
-                                    ¡Catálogo encontrado!
+                                    ¡Inventario encontrado!
                                 </p>
                                 <p className="text-xs text-slate-400 mb-1">
                                     <strong className="text-slate-600 dark:text-slate-200">{importResult.count} productos</strong> listos para importar.
                                 </p>
                                 <p className="text-[10px] text-amber-500 font-medium mb-4">
-                                    ⚠️ Esto reemplazará tu catálogo actual.
+                                    ⚠️ Esto reemplazará tu inventario actual.
                                 </p>
                                 <div className="flex gap-3">
                                     <button
