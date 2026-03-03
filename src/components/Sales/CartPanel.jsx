@@ -15,10 +15,10 @@ export default function CartPanel({
     triggerHaptic,
 }) {
     return (
-        <div className="flex-1 min-h-0 overflow-hidden flex flex-col bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
+        <div className="flex-1 min-h-0 flex flex-col bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
 
-            {/* Header Lista */}
-            <div className="px-4 pb-2 pt-3 sm:py-3 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950/50 rounded-t-2xl sm:rounded-t-3xl shrink-0">
+            {/* Header */}
+            <div className="shrink-0 px-4 pb-2 pt-3 sm:py-3 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950/50 rounded-t-2xl sm:rounded-t-3xl">
                 <span className="text-[10px] sm:text-xs font-black text-slate-400 uppercase tracking-wider">Cesta de Compra</span>
                 <div className="flex items-center gap-3">
                     {cart.length > 0 && (
@@ -30,8 +30,11 @@ export default function CartPanel({
                 </div>
             </div>
 
-            {/* Cart Items — scrollable, pb-40 on mobile to clear fixed footer + mini-nav */}
-            <div className="flex-1 overflow-y-auto scrollbar-hide p-2 sm:p-3 pb-40 sm:pb-3">
+            {/* Cart Items — scrollable area with touch support */}
+            <div
+                className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2 sm:p-3"
+                style={{ WebkitOverflowScrolling: 'touch' }}
+            >
                 {cart.length === 0 ? (
                     <div className="flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 p-6 text-center h-full">
                         <ShoppingCart size={48} className="mb-4 opacity-50 sm:w-[72px] sm:h-[72px]" strokeWidth={1} />
@@ -74,8 +77,8 @@ export default function CartPanel({
                 )}
             </div>
 
-            {/* Footer — FIXED on mobile (above mini-nav), regular on desktop */}
-            <div className="fixed bottom-14 left-0 right-0 z-20 p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-[0_-4px_10px_rgba(0,0,0,0.05)] sm:relative sm:bottom-auto sm:z-auto sm:p-4 sm:bg-slate-50 sm:dark:bg-slate-950 sm:backdrop-blur-none sm:rounded-b-3xl sm:shadow-none shrink-0 space-y-2 sm:space-y-3">
+            {/* Footer — shrink-0, always visible at bottom of flex container */}
+            <div className="shrink-0 p-3 sm:p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-b-2xl sm:rounded-b-3xl space-y-2 sm:space-y-3">
                 <div className="flex justify-between items-end px-1 sm:px-0">
                     <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-widest hidden sm:inline">Total Venta</span>
                     <div className="text-right flex items-center gap-3 sm:block w-full sm:w-auto justify-between">
@@ -106,4 +109,3 @@ export default function CartPanel({
         </div>
     );
 }
-

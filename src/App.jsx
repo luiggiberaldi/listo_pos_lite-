@@ -202,7 +202,7 @@ export default function App() {
         </div>
       )}
 
-      <main className={`flex-1 w-full max-w-md md:max-w-3xl lg:max-w-7xl mx-auto relative ${isKeyboardOpen ? 'pb-4' : 'pb-24'} flex flex-col ${activeTab === 'ventas' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+      <main className={`flex-1 min-h-0 w-full max-w-md md:max-w-3xl lg:max-w-7xl mx-auto relative ${activeTab === 'ventas' ? 'pb-0' : isKeyboardOpen ? 'pb-4' : 'pb-24'} flex flex-col ${activeTab === 'ventas' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
 
         {/* Hidden Admin Trigger Area */}
         <div
@@ -212,7 +212,7 @@ export default function App() {
         ></div>
 
         {/* Eager views — always mounted, visibility toggled via CSS */}
-        <div className={`flex-1 flex flex-col ${activeTab === 'ventas' ? 'animate-view-enter' : 'hidden'}`}>
+        <div className={`flex-1 min-h-0 flex flex-col ${activeTab === 'ventas' ? 'animate-view-enter' : 'hidden'}`}>
           <ErrorBoundary>
             <PremiumGuard featureName="Punto de Venta" isShop={true}>
               <SalesView rates={rates} triggerHaptic={triggerHaptic} onNavigate={setActiveTab} />
