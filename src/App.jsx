@@ -202,7 +202,7 @@ export default function App() {
         </div>
       )}
 
-      <main className={`flex-1 min-h-0 w-full max-w-md md:max-w-3xl lg:max-w-7xl mx-auto relative ${activeTab === 'ventas' ? 'pb-0' : isKeyboardOpen ? 'pb-4' : 'pb-24'} flex flex-col ${activeTab === 'ventas' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+      <main className={`flex-1 min-h-0 w-full max-w-md md:max-w-3xl lg:max-w-7xl mx-auto relative ${isKeyboardOpen ? 'pb-4' : 'pb-24'} flex flex-col ${activeTab === 'ventas' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
 
         {/* Hidden Admin Trigger Area */}
         <div
@@ -228,7 +228,7 @@ export default function App() {
 
         <div className={`flex-1 flex flex-col ${activeTab === 'inicio' ? 'animate-view-enter' : 'hidden'}`}>
           <ErrorBoundary>
-            <DashboardView rates={rates} triggerHaptic={triggerHaptic} onNavigate={setActiveTab} theme={theme} toggleTheme={toggleTheme} />
+            <DashboardView rates={rates} triggerHaptic={triggerHaptic} onNavigate={setActiveTab} theme={theme} toggleTheme={toggleTheme} isActive={activeTab === 'inicio'} />
           </ErrorBoundary>
         </div>
 
@@ -256,13 +256,13 @@ export default function App() {
       </main>
 
       {/* Bottom Nav — hidden in POS mode for full-screen selling */}
-      {!isKeyboardOpen && activeTab !== 'ventas' && (
-        <div className="fixed bottom-0 left-0 right-0 px-6 pb-[env(safe-area-inset-bottom)] pt-0 mb-6 max-w-md md:max-w-lg mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300">
-          <div className="bg-slate-900/95 dark:bg-slate-950/95 backdrop-blur-xl rounded-3xl p-1.5 flex justify-between items-center shadow-2xl shadow-slate-900/30 border border-white/10 ring-1 ring-black/5 pointer-events-auto">
+      {!isKeyboardOpen && (
+        <div className="fixed bottom-0 left-0 right-0 px-6 pb-[env(safe-area-inset-bottom)] pt-0 mb-4 max-w-md md:max-w-lg mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300">
+          <div className="bg-slate-900/95 dark:bg-slate-950/95 backdrop-blur-xl rounded-2xl p-1 flex justify-between items-center shadow-2xl shadow-slate-900/30 border border-white/10 ring-1 ring-black/5 pointer-events-auto">
             {TABS.map(tab => (
               <TabButton
                 key={tab.id}
-                icon={<tab.icon size={20} strokeWidth={activeTab === tab.id ? 3 : 2} />}
+                icon={<tab.icon size={18} strokeWidth={activeTab === tab.id ? 3 : 2} />}
                 label={tab.label}
                 isActive={activeTab === tab.id}
                 onClick={() => { triggerHaptic(); setActiveTab(tab.id); }}
@@ -270,7 +270,7 @@ export default function App() {
             ))}
 
             {installPrompt && activeTab === 'inicio' && (
-              <button onClick={() => { triggerHaptic(); handleInstall(); }} className="flex-1 flex flex-col items-center justify-center gap-1 py-3 rounded-2xl transition-all duration-300 bg-emerald-500 text-white shadow-md animate-pulse">
+              <button onClick={() => { triggerHaptic(); handleInstall(); }} className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl transition-all duration-300 bg-emerald-500 text-white shadow-md animate-pulse">
                 <Download size={20} strokeWidth={3} />
               </button>
             )}
@@ -328,7 +328,7 @@ export default function App() {
 
 function TabButton({ icon, label, isActive, onClick }) {
   return (
-    <button onClick={onClick} className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 rounded-2xl transition-all duration-300 ${isActive ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+    <button onClick={onClick} className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl transition-all duration-300 ${isActive ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
       {icon}
       {isActive && <span className="text-[9px] font-extrabold animate-in zoom-in duration-200">{label}</span>}
     </button>

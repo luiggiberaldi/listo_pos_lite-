@@ -498,6 +498,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 packagingType={packagingType} setPackagingType={setPackagingType}
                 stockInLotes={stockInLotes} setStockInLotes={setStockInLotes}
                 granelUnit={granelUnit} setGranelUnit={setGranelUnit}
+                effectiveRate={effectiveRate}
                 handleImageUpload={handleImageUpload}
                 handleSave={handleSave}
                 categories={categories}

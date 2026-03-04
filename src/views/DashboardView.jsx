@@ -14,7 +14,7 @@ import AnimatedCounter from '../components/AnimatedCounter';
 
 const SALES_KEY = 'bodega_sales_v1';
 
-export default function DashboardView({ rates, triggerHaptic, onNavigate, theme, toggleTheme }) {
+export default function DashboardView({ rates, triggerHaptic, onNavigate, theme, toggleTheme, isActive }) {
     const { notifyCierrePendiente, requestPermission } = useNotifications();
     const [sales, setSales] = useState([]);
     const [products, setProducts] = useState([]);
@@ -36,12 +36,13 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const bcvRate = rates.bcv?.price || 0;
 
     useEffect(() => {
+        if (!isActive) return;
         let mounted = true;
         const load = async () => {
             const [savedSales, savedProducts, savedCustomers] = await Promise.all([
                 storageService.getItem(SALES_KEY, []),
                 storageService.getItem('my_products_v1', []),
-                storageService.getItem('bodega_customers_v1', []),
+                storageService.getItem('my_customers_v1', []),
             ]);
             if (mounted) {
                 setSales(savedSales);
@@ -54,7 +55,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         // Solicitar permiso de notificaciones al primer uso
         requestPermission();
         return () => { mounted = false; };
-    }, []);
+    }, [isActive]);
 
 
 
@@ -228,11 +229,26 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
 
     const todayProfit = useMemo(() =>
         todaySales.reduce((sum, s) => sum + s.items.reduce((is, item) => {
-            const costBs = item.costBs || 0;
+            let costBs = item.costBs;
+            if (!costBs && item.costUsd) {
+                costBs = item.costUsd * (s.rate || bcvRate);
+            } else if (!costBs) {
+                const p = products.find(p => p.id === item.id || p.id === item._originalId || p.name === item.name);
+                if (p) {
+                    const baseCostBs = p.costBs || (p.costUsd ? p.costUsd * (s.rate || bcvRate) : 0);
+                    if (item.id && item.id.endsWith('_unit')) {
+                        costBs = baseCostBs / (p.unitsPerPackage || 1);
+                    } else {
+                        costBs = baseCostBs;
+                    }
+                } else {
+                    costBs = 0;
+                }
+            }
             const saleBs = item.priceUsd * item.qty * (s.rate || bcvRate);
             return is + (saleBs - (costBs * item.qty));
         }, 0), 0),
-        [todaySales, bcvRate]
+        [todaySales, bcvRate, products]
     );
 
     // Últimas 7 ventas
@@ -368,7 +384,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             const [savedSales, savedProducts, savedCustomers] = await Promise.all([
                 storageService.getItem(SALES_KEY, []),
                 storageService.getItem('my_products_v1', []),
-                storageService.getItem('bodega_customers_v1', []),
+                storageService.getItem('my_customers_v1', []),
             ]);
             setSales(savedSales);
             setProducts(savedProducts);

@@ -3,6 +3,7 @@ import { BarChart3, Calendar, Download, TrendingUp, ShoppingBag, DollarSign, Pac
 import { storageService } from '../utils/storageService';
 import { formatBs } from '../utils/calculatorUtils';
 import { getPaymentLabel, PAYMENT_ICONS } from '../config/paymentMethods';
+import { useProducts } from '../hooks/useProducts';
 
 const SALES_KEY = 'bodega_sales_v1';
 
@@ -42,6 +43,7 @@ function getDateRange(rangeId) {
 }
 
 export default function ReportsView({ rates, triggerHaptic }) {
+    const { products } = useProducts(rates);
     const [allSales, setAllSales] = useState([]);
     const [selectedRange, setSelectedRange] = useState('week');
     const [customFrom, setCustomFrom] = useState('');
@@ -84,7 +86,22 @@ export default function ReportsView({ rates, triggerHaptic }) {
 
     const profit = filteredSales.reduce((sum, s) => {
         return sum + s.items.reduce((is, item) => {
-            const costBs = item.costBs || 0;
+            let costBs = item.costBs;
+            if (!costBs && item.costUsd) {
+                costBs = item.costUsd * (s.rate || bcvRate);
+            } else if (!costBs) {
+                const p = products.find(p => p.id === item.id || p.id === item._originalId || p.name === item.name);
+                if (p) {
+                    const baseCostBs = p.costBs || (p.costUsd ? p.costUsd * (s.rate || bcvRate) : 0);
+                    if (item.id && item.id.endsWith('_unit')) {
+                        costBs = baseCostBs / (p.unitsPerPackage || 1);
+                    } else {
+                        costBs = baseCostBs;
+                    }
+                } else {
+                    costBs = 0;
+                }
+            }
             const saleBs = item.priceUsd * item.qty * (s.rate || bcvRate);
             return is + (saleBs - (costBs * item.qty));
         }, 0);

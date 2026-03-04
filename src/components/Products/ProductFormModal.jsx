@@ -31,6 +31,7 @@ export default function ProductFormModal({
     packagingType, setPackagingType,
     stockInLotes, setStockInLotes,
     granelUnit, setGranelUnit,
+    effectiveRate,
 
     handleImageUpload,
     handleSave,
@@ -224,21 +225,36 @@ export default function ProductFormModal({
                         </div>
                     </div>
 
-                    {/* ─── LOTE: Unit Price ─── */}
+                    {/* ─── LOTE: Unit Price (Bimoneda) ─── */}
                     {isLote && sellByUnit && parsedUnits > 1 && (
                         <div className="bg-white dark:bg-slate-800/80 p-3 rounded-xl border border-indigo-200 dark:border-indigo-800/40 space-y-2 animate-in fade-in slide-in-from-top-1">
                             <div className="flex justify-between items-center">
-                                <label className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">Precio por Unidad Suelta ($)</label>
+                                <label className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">Precio por Unidad Suelta</label>
                                 {parsedPrice > 0 && parsedUnits > 0 && (
                                     <span className="text-[9px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md">
                                         Auto: ${(parsedPrice / parsedUnits).toFixed(2)}
                                     </span>
                                 )}
                             </div>
-                            <input type="number" inputMode="decimal" value={unitPriceUsd}
-                                onChange={e => setUnitPriceUsd(e.target.value)}
-                                placeholder={parsedPrice > 0 && parsedUnits > 0 ? (parsedPrice / parsedUnits).toFixed(2) : '0.00'}
-                                className="w-full bg-indigo-50/50 dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/30 p-3 rounded-xl font-black text-indigo-700 dark:text-indigo-400 outline-none focus:ring-2 focus:ring-indigo-500/50 text-sm" />
+                            <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label className="text-[9px] font-bold text-emerald-500 ml-0.5 mb-0.5 block">USD ($)</label>
+                                    <input type="number" inputMode="decimal" value={unitPriceUsd}
+                                        onChange={e => setUnitPriceUsd(e.target.value)}
+                                        placeholder={parsedPrice > 0 && parsedUnits > 0 ? (parsedPrice / parsedUnits).toFixed(2) : '0.00'}
+                                        className="w-full bg-indigo-50/50 dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/30 p-3 rounded-xl font-black text-indigo-700 dark:text-indigo-400 outline-none focus:ring-2 focus:ring-indigo-500/50 text-sm" />
+                                </div>
+                                <div>
+                                    <label className="text-[9px] font-bold text-blue-500 ml-0.5 mb-0.5 block">Bolívares (Bs)</label>
+                                    <div className="w-full bg-blue-50/50 dark:bg-slate-900 border border-blue-100 dark:border-blue-900/30 p-3 rounded-xl font-black text-blue-700 dark:text-blue-400 text-sm flex items-center justify-between">
+                                        {effectiveRate > 0
+                                            ? (effectiveUnitPrice * effectiveRate).toFixed(2)
+                                            : '—'
+                                        }
+                                        <span className="text-[8px] bg-blue-100 dark:bg-blue-900/30 text-blue-500 px-1.5 py-0.5 rounded font-black">Bs</span>
+                                    </div>
+                                </div>
+                            </div>
                             <p className="text-[9px] text-slate-400 italic">Déjalo vacío para usar el precio auto-calculado (lote ÷ unidades)</p>
                         </div>
                     )}

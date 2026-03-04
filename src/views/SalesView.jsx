@@ -13,7 +13,7 @@ import CategoryBar from '../components/Sales/CategoryBar';
 import CartPanel from '../components/Sales/CartPanel';
 import ReceiptModal from '../components/Sales/ReceiptModal';
 import CheckoutModal from '../components/Sales/CheckoutModal';
-import MiniNav from '../components/Sales/MiniNav';
+
 import ConfirmModal from '../components/ConfirmModal';
 import Confetti from '../components/Confetti';
 import { buildReceiptWhatsAppUrl } from '../components/Sales/ReceiptShareHelper';
@@ -122,7 +122,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate }) {
                         if (Array.isArray(items) && items.length > 0) {
                             setCart(items.map(item => ({
                                 id: item.id, name: item.name, qty: item.qty,
-                                priceUsd: item.priceUsd, costBs: item.costBs || 0, isWeight: item.isWeight || false,
+                                priceUsd: item.priceUsd, costBs: item.costBs || 0, costUsd: item.costUsd || 0, isWeight: item.isWeight || false,
                             })));
                         }
                     } catch (_) { /* ignore */ }
@@ -188,12 +188,15 @@ export default function SalesView({ rates, triggerHaptic, onNavigate }) {
         }
 
         setCart(prev => {
-            const existing = prev.find(i => i.id === cartId);
+            const existing = prev.find(i => i.id === cartId && i.priceUsd === priceToUse);
             if (existing && !qtyOverride) return prev.map(i => i.id === cartId ? { ...i, qty: i.qty + 1 } : i);
             if (existing && qtyOverride) return prev.map(i => i.id === cartId ? { ...i, qty: i.qty + qtyOverride } : i);
+
+            const itemCostBs = product.costBs || (product.costUsd ? product.costUsd * effectiveRate : 0);
             return [...prev, {
                 ...product, id: cartId, name: cartName, priceUsd: priceToUse,
-                costBs: forceMode === 'unit' ? (product.costBs || 0) / (product.unitsPerPackage || 1) : (product.costBs || 0),
+                costBs: forceMode === 'unit' ? itemCostBs / (product.unitsPerPackage || 1) : itemCostBs,
+                costUsd: forceMode === 'unit' ? (product.costUsd || 0) / (product.unitsPerPackage || 1) : (product.costUsd || 0),
                 qty: qtyToAdd, isWeight: !!qtyOverride,
                 _originalId: product.id, _mode: forceMode || 'package', _unitsPerPackage: product.unitsPerPackage || 1,
             }];
@@ -267,7 +270,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate }) {
             id: crypto.randomUUID(),
             tipo: fiadoAmountUsd > 0 ? 'VENTA_FIADA' : 'VENTA',
             status: 'COMPLETADA',
-            items: cart.map(i => ({ id: i.id, name: i.name, qty: i.qty, priceUsd: i.priceUsd, costBs: i.costBs || 0, isWeight: i.isWeight })),
+            items: cart.map(i => ({ id: i.id, name: i.name, qty: i.qty, priceUsd: i.priceUsd, costBs: i.costBs || 0, costUsd: i.costUsd || 0, isWeight: i.isWeight })),
             totalUsd: cartTotalUsd, totalBs: cartTotalBs, payments, rate: effectiveRate,
             rateSource: useAutoRate ? 'BCV Auto' : 'Manual',
             timestamp: new Date().toISOString(),
@@ -336,43 +339,65 @@ export default function SalesView({ rates, triggerHaptic, onNavigate }) {
                 triggerHaptic={triggerHaptic}
             />
 
-            {/* Search + Popups (within header card would require restructure, keep sibling) */}
-            <div className="shrink-0 mb-3 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-sm border border-slate-100 dark:border-slate-800">
-                <SearchBar
-                    ref={searchInputRef}
-                    searchTerm={searchTerm}
-                    onSearchChange={handleSetSearchTerm}
-                    onKeyDown={handleSearchKeyDown}
-                    searchResults={searchResults}
-                    selectedIndex={selectedIndex} setSelectedIndex={setSelectedIndex}
-                    effectiveRate={effectiveRate}
-                    addToCart={addToCart}
-                    isRecording={isRecording} isProcessingAudio={isProcessingAudio} toggleRecording={toggleRecording}
-                    hierarchyPending={hierarchyPending} setHierarchyPending={setHierarchyPending}
-                    weightPending={weightPending} setWeightPending={setWeightPending}
-                />
+            {/* ── Split Layout: Products (left) + Cart Sidebar (right) on desktop ── */}
+            <div className="flex-1 min-h-0 flex flex-col lg:flex-row lg:gap-4">
+
+                {/* ── Left Column: Search + Categories ── */}
+                <div className="flex-1 min-h-0 flex flex-col lg:min-w-0 overflow-y-auto lg:overflow-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
+                    {/* Search + Popups */}
+                    <div className="shrink-0 mb-3 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-sm border border-slate-100 dark:border-slate-800">
+                        <SearchBar
+                            ref={searchInputRef}
+                            searchTerm={searchTerm}
+                            onSearchChange={handleSetSearchTerm}
+                            onKeyDown={handleSearchKeyDown}
+                            searchResults={searchResults}
+                            selectedIndex={selectedIndex} setSelectedIndex={setSelectedIndex}
+                            effectiveRate={effectiveRate}
+                            addToCart={addToCart}
+                            isRecording={isRecording} isProcessingAudio={isProcessingAudio} toggleRecording={toggleRecording}
+                            hierarchyPending={hierarchyPending} setHierarchyPending={setHierarchyPending}
+                            weightPending={weightPending} setWeightPending={setWeightPending}
+                        />
+                    </div>
+
+                    {/* Category Chips + Product Grid */}
+                    {!showCheckout && !showReceipt && (
+                        <CategoryBar
+                            selectedCategory={selectedCategory} setSelectedCategory={setSelectedCategory}
+                            filteredByCategory={filteredByCategory}
+                            addToCart={addToCart}
+                            triggerHaptic={triggerHaptic}
+                            searchTerm={searchTerm}
+                        />
+                    )}
+
+                    {/* Cart — visible on mobile only (below products) */}
+                    <div className="lg:hidden pb-20">
+                        <CartPanel
+                            cart={cart} effectiveRate={effectiveRate}
+                            cartTotalUsd={cartTotalUsd} cartTotalBs={cartTotalBs} cartItemCount={cartItemCount}
+                            updateQty={updateQty} removeFromCart={removeFromCart}
+                            onCheckout={() => { triggerHaptic && triggerHaptic(); setShowCheckout(true); }}
+                            onClearCart={() => { triggerHaptic && triggerHaptic(); setShowClearCartConfirm(true); }}
+                            triggerHaptic={triggerHaptic}
+                        />
+                    </div>
+                </div>
+
+                {/* ── Right Column: Cart Sidebar — desktop only ── */}
+                <div className="hidden lg:flex lg:w-[380px] lg:shrink-0 lg:flex-col">
+                    <CartPanel
+                        cart={cart} effectiveRate={effectiveRate}
+                        cartTotalUsd={cartTotalUsd} cartTotalBs={cartTotalBs} cartItemCount={cartItemCount}
+                        updateQty={updateQty} removeFromCart={removeFromCart}
+                        onCheckout={() => { triggerHaptic && triggerHaptic(); setShowCheckout(true); }}
+                        onClearCart={() => { triggerHaptic && triggerHaptic(); setShowClearCartConfirm(true); }}
+                        triggerHaptic={triggerHaptic}
+                    />
+                </div>
+
             </div>
-
-            {/* Category Chips + Product Grid */}
-            {!showCheckout && !showReceipt && (
-                <CategoryBar
-                    selectedCategory={selectedCategory} setSelectedCategory={setSelectedCategory}
-                    filteredByCategory={filteredByCategory}
-                    addToCart={addToCart}
-                    triggerHaptic={triggerHaptic}
-                    searchTerm={searchTerm}
-                />
-            )}
-
-            {/* Cart */}
-            <CartPanel
-                cart={cart} effectiveRate={effectiveRate}
-                cartTotalUsd={cartTotalUsd} cartTotalBs={cartTotalBs} cartItemCount={cartItemCount}
-                updateQty={updateQty} removeFromCart={removeFromCart}
-                onCheckout={() => { triggerHaptic && triggerHaptic(); setShowCheckout(true); }}
-                onClearCart={() => { triggerHaptic && triggerHaptic(); setShowClearCartConfirm(true); }}
-                triggerHaptic={triggerHaptic}
-            />
 
             {/* Checkout Modal */}
             {showCheckout && (
@@ -408,7 +433,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate }) {
             {showConfetti && <Confetti onDone={() => setShowConfetti(false)} />}
 
             {/* Mini Nav */}
-            <MiniNav onNavigate={onNavigate} triggerHaptic={triggerHaptic} />
+
         </div>
     );
 }
