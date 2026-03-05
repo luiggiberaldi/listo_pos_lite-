@@ -86,23 +86,22 @@ export default function ReportsView({ rates, triggerHaptic }) {
 
     const profit = filteredSales.reduce((sum, s) => {
         return sum + s.items.reduce((is, item) => {
-            let costBs = item.costBs;
-            if (!costBs && item.costUsd) {
-                costBs = item.costUsd * (s.rate || bcvRate);
-            } else if (!costBs) {
+            const saleRate = s.rate || bcvRate;
+            let costBs;
+            if (item.costUsd) {
+                costBs = item.costUsd * saleRate;
+            } else if (item.costBs) {
+                costBs = item.costBs;
+            } else {
                 const p = products.find(p => p.id === item.id || p.id === item._originalId || p.name === item.name);
                 if (p) {
-                    const baseCostBs = p.costBs || (p.costUsd ? p.costUsd * (s.rate || bcvRate) : 0);
-                    if (item.id && item.id.endsWith('_unit')) {
-                        costBs = baseCostBs / (p.unitsPerPackage || 1);
-                    } else {
-                        costBs = baseCostBs;
-                    }
+                    costBs = p.costUsd ? p.costUsd * saleRate : (p.costBs || 0);
+                    if (item.id && item.id.endsWith('_unit')) costBs = costBs / (p.unitsPerPackage || 1);
                 } else {
                     costBs = 0;
                 }
             }
-            const saleBs = item.priceUsd * item.qty * (s.rate || bcvRate);
+            const saleBs = item.priceUsd * item.qty * saleRate;
             return is + (saleBs - (costBs * item.qty));
         }, 0);
     }, 0);
@@ -111,8 +110,8 @@ export default function ReportsView({ rates, triggerHaptic }) {
     const paymentBreakdown = {};
     filteredSales.forEach(s => {
         (s.payments || []).forEach(p => {
-            if (!paymentBreakdown[p.methodId]) paymentBreakdown[p.methodId] = { total: 0, currency: p.currency || 'USD' };
-            paymentBreakdown[p.methodId].total += p.amountUsd || 0;
+            if (!paymentBreakdown[p.methodId]) paymentBreakdown[p.methodId] = { total: 0, currency: p.currency || 'BS' };
+            paymentBreakdown[p.methodId].total += (p.currency === 'USD' ? p.amountUsd : p.amountBs) || 0;
         });
     });
 
@@ -286,7 +285,8 @@ export default function ReportsView({ rates, triggerHaptic }) {
                         {Object.entries(paymentBreakdown).map(([method, data]) => {
                             const label = getPaymentLabel(method);
                             const PayIcon = PAYMENT_ICONS[method];
-                            const pct = totalUsd > 0 ? (data.total / totalUsd * 100) : 0;
+                            const totalBsEquiv = data.currency === 'USD' ? data.total * bcvRate : data.total;
+                            const pct = totalBs > 0 ? (totalBsEquiv / totalBs * 100) : 0;
                             return (
                                 <div key={method}>
                                     <div className="flex justify-between text-sm mb-1">
@@ -295,7 +295,7 @@ export default function ReportsView({ rates, triggerHaptic }) {
                                             {label}
                                         </span>
                                         <span className="font-bold text-slate-700 dark:text-white">
-                                            ${data.total.toFixed(2)}
+                                            {data.currency === 'USD' ? `$ ${data.total.toFixed(2)}` : `${formatBs(data.total)} Bs`}
                                         </span>
                                     </div>
                                     <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">

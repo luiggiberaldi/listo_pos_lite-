@@ -229,23 +229,22 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
 
     const todayProfit = useMemo(() =>
         todaySales.reduce((sum, s) => sum + s.items.reduce((is, item) => {
-            let costBs = item.costBs;
-            if (!costBs && item.costUsd) {
-                costBs = item.costUsd * (s.rate || bcvRate);
-            } else if (!costBs) {
+            const saleRate = s.rate || bcvRate;
+            let costBs;
+            if (item.costUsd) {
+                costBs = item.costUsd * saleRate;
+            } else if (item.costBs) {
+                costBs = item.costBs;
+            } else {
                 const p = products.find(p => p.id === item.id || p.id === item._originalId || p.name === item.name);
                 if (p) {
-                    const baseCostBs = p.costBs || (p.costUsd ? p.costUsd * (s.rate || bcvRate) : 0);
-                    if (item.id && item.id.endsWith('_unit')) {
-                        costBs = baseCostBs / (p.unitsPerPackage || 1);
-                    } else {
-                        costBs = baseCostBs;
-                    }
+                    costBs = p.costUsd ? p.costUsd * saleRate : (p.costBs || 0);
+                    if (item.id && item.id.endsWith('_unit')) costBs = costBs / (p.unitsPerPackage || 1);
                 } else {
                     costBs = 0;
                 }
             }
-            const saleBs = item.priceUsd * item.qty * (s.rate || bcvRate);
+            const saleBs = item.priceUsd * item.qty * saleRate;
             return is + (saleBs - (costBs * item.qty));
         }, 0), 0),
         [todaySales, bcvRate, products]
@@ -478,8 +477,8 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                             <ShoppingBag size={18} className="text-indigo-500" />
                         </div>
                     </div>
-                    <p className="text-xl font-black text-slate-800 dark:text-white leading-none"><AnimatedCounter value={todaySales.length} /> <span className="text-xs font-bold text-slate-400">ventas</span></p>
-                    <p className="text-[11px] text-slate-400 mt-1"><AnimatedCounter value={todayItemsSold} /> artículos vendidos</p>
+                    <p className="text-xl font-black text-slate-800 dark:text-white leading-none"><AnimatedCounter value={todaySales.length} /> <span className="text-xs font-bold text-slate-400">{todaySales.length === 1 ? 'venta' : 'ventas'}</span></p>
+                    <p className="text-[11px] text-slate-400 mt-1"><AnimatedCounter value={todayItemsSold} /> {todayItemsSold === 1 ? 'artículo vendido' : 'artículos vendidos'}</p>
                 </div>
 
                 {/* Ganancia Estimada */}

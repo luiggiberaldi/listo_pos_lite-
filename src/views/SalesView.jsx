@@ -248,15 +248,15 @@ export default function SalesView({ rates, triggerHaptic, onNavigate }) {
 
     const handleUseSaldoFavor = () => { /* Managed internally by CheckoutModal */ };
 
-    const handleCheckout = async (payments) => {
+    const handleCheckout = async (payments, changeBreakdown) => {
         triggerHaptic && triggerHaptic();
         const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
         if (cart.length === 0) return;
 
         const totalPaidUsd = payments.reduce((acc, p) => acc + p.amountUsd, 0);
-        const remainingUsd = Math.max(0, cartTotalUsd - totalPaidUsd);
-        const changeUsd = Math.max(0, totalPaidUsd - cartTotalUsd);
-        const changeBs = changeUsd * effectiveRate;
+        const remainingUsd = Math.max(0, Math.round((cartTotalUsd - totalPaidUsd) * 100) / 100);
+        const changeUsd = Math.max(0, Math.round((totalPaidUsd - cartTotalUsd) * 100) / 100);
+        const changeBs = Math.round(changeUsd * effectiveRate * 100) / 100;
 
         if (!selectedCustomer && remainingUsd > 0.01) return;
         if (isNaN(cartTotalUsd) || cartTotalUsd < 0 || isNaN(totalPaidUsd) || totalPaidUsd < 0) {
