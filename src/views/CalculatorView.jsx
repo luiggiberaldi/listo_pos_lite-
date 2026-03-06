@@ -21,8 +21,8 @@ export default function CalculatorView({ rates, theme, triggerHaptic, isKeyboard
   }
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-950 rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 relative ring-4 ring-slate-100 dark:ring-slate-900/50">
-      <div className="flex-1 overflow-hidden relative bg-slate-50/50 dark:bg-slate-900/50">
+    <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-950 rounded-[2.5rem] shadow-2xl border border-slate-200 dark:border-slate-800 relative ring-4 ring-slate-100 dark:ring-slate-900/50">
+      <div className="flex-1 relative bg-slate-50/50 dark:bg-slate-900/50">
         <ManualMode
           rates={currentRates}
           accounts={accounts}
