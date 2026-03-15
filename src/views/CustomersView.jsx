@@ -51,18 +51,13 @@ export default function CustomersView({ triggerHaptic }) {
     );
 
     const toggleHistory = async (customerId) => {
-        if (expandedHistory === customerId) {
-            setExpandedHistory(null);
-            setHistoryData([]);
-            return;
-        }
         triggerHaptic && triggerHaptic();
         setExpandedHistory(customerId);
         const allSales = await storageService.getItem('bodega_sales_v1', []);
         const customerSales = allSales
             .filter(s => s.customerId === customerId || s.clienteId === customerId)
             .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-            .slice(0, 20); // máximo 20 para mantenerlo ligero
+            .slice(0, 20);
         setHistoryData(customerSales);
     };
 
@@ -298,7 +293,11 @@ export default function CustomersView({ triggerHaptic }) {
             <CustomerDetailSheet
                 customer={selectedCustomer}
                 isOpen={!!selectedCustomer}
-                onClose={() => setSelectedCustomer(null)}
+                onClose={() => {
+                    setSelectedCustomer(null);
+                    setExpandedHistory(null);
+                    setHistoryData([]);
+                }}
                 onDeuda={() => {
                     setTransactionModal({ isOpen: true, type: 'CREDITO', customer: selectedCustomer });
                     setSelectedCustomer(null);
