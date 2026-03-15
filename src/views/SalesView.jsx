@@ -295,13 +295,47 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
 
         setCart(prev => {
             const existing = prev.find(i => i.id === cartId && i.priceUsd === priceToUse);
+
+            // Enforce stock limit when allow_negative_stock is disabled
+            if (!allowNegativeStock && existing) {
+                const newQty = existing.qty + (qtyOverride || 1);
+                // Calculate how much stock this would consume
+                const stockNeeded = forceMode === 'unit' ? newQty / (product.unitsPerPackage || 1) : newQty;
+                // Sum ALL cart items for this original product
+                const otherCartItems = prev.filter(i => (i._originalId || i.id) === product.id && i.id !== cartId);
+                const otherStockUsed = otherCartItems.reduce((sum, item) => {
+                    if (item._mode === 'unit') return sum + (item.qty / (item._unitsPerPackage || 1));
+                    return sum + item.qty;
+                }, 0);
+                if (stockNeeded + otherStockUsed > currentStock) {
+                    playError();
+                    showToast(`Stock insuficiente para: ${product.name} (disponible: ${currentStock})`, 'error');
+                    return prev;
+                }
+            }
+
             if (existing && !qtyOverride) return prev.map(i => i.id === cartId ? { ...i, qty: i.qty + 1 } : i);
             if (existing && qtyOverride) return prev.map(i => i.id === cartId ? { ...i, qty: i.qty + qtyOverride } : i);
+
+            // Stock check for new item
+            if (!allowNegativeStock) {
+                const otherCartItems = prev.filter(i => (i._originalId || i.id) === product.id);
+                const otherStockUsed = otherCartItems.reduce((sum, item) => {
+                    if (item._mode === 'unit') return sum + (item.qty / (item._unitsPerPackage || 1));
+                    return sum + item.qty;
+                }, 0);
+                const stockNeeded = forceMode === 'unit' ? qtyToAdd / (product.unitsPerPackage || 1) : qtyToAdd;
+                if (stockNeeded + otherStockUsed > currentStock) {
+                    playError();
+                    showToast(`Stock insuficiente para: ${product.name} (disponible: ${currentStock})`, 'error');
+                    return prev;
+                }
+            }
 
             const itemCostBs = product.costBs || (product.costUsd ? product.costUsd * effectiveRate : 0);
             return [{
                 ...product, id: cartId, name: cartName, priceUsd: priceToUse,
-                exactBs: product.exactBs || null, // Guardar el valor exacto de Bs si existe (para montos libres)
+                exactBs: product.exactBs || null,
                 costBs: forceMode === 'unit' ? itemCostBs / (product.unitsPerPackage || 1) : itemCostBs,
                 costUsd: forceMode === 'unit' ? (product.costUsd || 0) / (product.unitsPerPackage || 1) : (product.costUsd || 0),
                 qty: qtyToAdd, isWeight: !!qtyOverride,
@@ -316,10 +350,36 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
     const updateQty = (id, delta) => {
         triggerHaptic && triggerHaptic();
         if (delta < 0) playRemove();
+
+        const allowNeg = localStorage.getItem('allow_negative_stock') !== 'false';
+
         setCart(prev => prev.map(i => {
             if (i.id !== id) return i;
             let newQty = Math.round((i.qty + delta) * 1000) / 1000;
             if (newQty < 0) newQty = 0;
+
+            // Enforce stock limit on increment
+            if (!allowNeg && delta > 0) {
+                const originalId = i._originalId || i.id;
+                const productData = products.find(p => p.id === originalId);
+                if (productData) {
+                    const availableStock = parseFloat(productData.stock) || 0;
+                    // Sum all cart items for this product
+                    const totalUsed = prev.reduce((sum, item) => {
+                        if ((item._originalId || item.id) !== originalId) return sum;
+                        if (item.id === id) return sum; // Skip current item, we'll use newQty
+                        if (item._mode === 'unit') return sum + (item.qty / (item._unitsPerPackage || 1));
+                        return sum + item.qty;
+                    }, 0);
+                    const thisItemStock = i._mode === 'unit' ? newQty / (i._unitsPerPackage || 1) : newQty;
+                    if (totalUsed + thisItemStock > availableStock) {
+                        playError();
+                        showToast(`Stock insuficiente para: ${i.name} (disponible: ${availableStock})`, 'error');
+                        return i; // Don't change qty
+                    }
+                }
+            }
+
             return newQty === 0 ? null : { ...i, qty: newQty };
         }).filter(Boolean));
         searchInputRef.current?.focus();
