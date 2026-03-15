@@ -382,7 +382,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
                 {/* Category Filter Pills — horizontal scroll with fade */}
                 <div className="relative">
-                    <div ref={categoryScrollRef} className="flex gap-1.5 overflow-x-auto pb-1.5 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0 scroll-smooth snap-x">
+                    <div ref={categoryScrollRef} className="flex gap-1.5 overflow-x-auto pb-1.5 scrollbar-hide scroll-smooth snap-x">
                         {categories.map(cat => (
                             <button
                                 key={cat.id}
