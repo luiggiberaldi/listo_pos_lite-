@@ -12,6 +12,7 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
     const fileInputRef = useRef(null);
     const { deviceId, forceHeartbeat } = useSecurity();
     const [idCopied, setIdCopied] = useState(false);
+    const [allowNegativeStock, setAllowNegativeStock] = useState(() => localStorage.getItem('allow_negative_stock') !== 'false');
 
     // Configuración del negocio (Ticket WhatsApp)
     const [businessName, setBusinessName] = useState(() => localStorage.getItem('business_name') || '');
@@ -190,18 +191,19 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
                         </div>
                         <button
                             onClick={() => {
-                                const current = localStorage.getItem('allow_negative_stock') !== 'false';
-                                localStorage.setItem('allow_negative_stock', (!current).toString());
+                                const newVal = !allowNegativeStock;
+                                setAllowNegativeStock(newVal);
+                                localStorage.setItem('allow_negative_stock', newVal.toString());
                                 forceHeartbeat();
-                                showToast("Configuración guardada", "success");
+                                showToast(newVal ? 'Se permite vender sin stock' : 'No se permite vender sin stock', 'success');
                                 if (triggerHaptic) triggerHaptic();
                             }}
                             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                                localStorage.getItem('allow_negative_stock') !== 'false' ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'
+                                allowNegativeStock ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'
                             }`}
                         >
                             <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                localStorage.getItem('allow_negative_stock') !== 'false' ? 'translate-x-6' : 'translate-x-1'
+                                allowNegativeStock ? 'translate-x-6' : 'translate-x-1'
                             }`} />
                         </button>
                     </div>
