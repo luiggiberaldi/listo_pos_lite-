@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
-import { Package, Plus, Trash2, X, Store, Tag, Pencil, Banknote, Search, ChevronLeft, ChevronRight, Settings, AlertTriangle, Box, LayoutGrid, List, Minus, ArrowUpDown } from 'lucide-react';
+import { Package, Plus, Trash2, X, Store, Tag, Pencil, Banknote, Search, ChevronLeft, ChevronRight, Settings, AlertTriangle, Box, LayoutGrid, List, Minus, ArrowUpDown, Clock } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { ProductShareModal } from '../components/ProductShareModal';
 import SettingsModal from '../components/SettingsModal';
@@ -120,6 +120,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     const [deleteId, setDeleteId] = useState(null);
     const [isDeleteAllModalOpen, setIsDeleteAllModalOpen] = useState(false);
     const [deleteAllConfirmText, setDeleteAllConfirmText] = useState('');
+    const [productMovements, setProductMovements] = useState([]);
 
     // ─── SALES VELOCITY (Días de Inventario) ────────────────
     const [salesVelocityMap, setSalesVelocityMap] = useState({});
@@ -324,7 +325,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         handleClose();
     };
 
-    const handleEdit = (product) => {
+    const handleEdit = async (product) => {
         triggerHaptic && triggerHaptic();
         setEditingId(product.id);
         setName(product.name);
@@ -374,6 +375,28 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         if (u === 'kg' || u === 'litro') setGranelUnit(u);
 
         setIsModalOpen(true);
+
+        // Load product movements (Kardex Lite)
+        try {
+            const allSales = await storageService.getItem('bodega_sales_v1', []);
+            const movements = allSales
+                .filter(s => (s.items || []).some(i => i.id === product.id || i.name === product.name))
+                .map(s => {
+                    const item = (s.items || []).find(i => i.id === product.id || i.name === product.name);
+                    return {
+                        id: s.id,
+                        timestamp: s.timestamp,
+                        tipo: s.tipo || 'VENTA',
+                        qty: item?.qty,
+                        clienteName: s.clienteName || null,
+                    };
+                })
+                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+                .slice(0, 20);
+            setProductMovements(movements);
+        } catch (e) {
+            setProductMovements([]);
+        }
     };
 
     const handleDelete = (id) => { triggerHaptic && triggerHaptic(); setDeleteId(id); };
@@ -384,6 +407,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     const handleClose = () => {
         setName(''); setBarcode(''); setPriceUsd(''); setPriceBs(''); setCostUsd(''); setCostBs(''); setStock(''); setUnit('unidad'); setUnitsPerPackage(''); setSellByUnit(false); setUnitPriceUsd(''); setCategory('otros'); setLowStockAlert('5'); setImage(null); setEditingId(null); setIsModalOpen(false);
         setPackagingType('suelto'); setStockInLotes(''); setGranelUnit('kg');
+        setProductMovements([]);
     };
 
     // Gestionar Categorias
@@ -741,6 +765,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 handleImageUpload={handleImageUpload}
                 handleSave={handleSave}
                 categories={categories}
+                productMovements={editingId ? productMovements : null}
             />
 
             {/* Share Modal */}
