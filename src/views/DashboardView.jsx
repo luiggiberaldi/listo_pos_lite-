@@ -38,6 +38,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const [pullDistance, setPullDistance] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [selectedChartDate, setSelectedChartDate] = useState(null);
+    const [showTopDeudas, setShowTopDeudas] = useState(false);
     const touchStartY = useRef(0);
     const scrollRef = useRef(null);
 
@@ -295,7 +296,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const totalDeudas = useMemo(() => {
         const deudores = customers.filter(c => (c.deuda || 0) > 0.01);
         const totalUsd = deudores.reduce((sum, c) => sum + (c.deuda || 0), 0);
-        return { count: deudores.length, totalUsd };
+        return { count: deudores.length, totalUsd, top5: [...deudores].sort((a, b) => (b.deuda || 0) - (a.deuda || 0)).slice(0, 5) };
     }, [customers]);
 
 
@@ -573,7 +574,10 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
 
                 {/* Deudas Pendientes */}
                 {totalDeudas.count > 0 && (
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-red-100 dark:border-red-800/30 shadow-sm relative overflow-hidden col-span-2">
+                    <div 
+                        onClick={() => { setShowTopDeudas(!showTopDeudas); triggerHaptic && triggerHaptic(); }}
+                        className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-red-100 dark:border-red-800/30 shadow-sm relative overflow-hidden col-span-2 cursor-pointer active:scale-[0.99] transition-all"
+                    >
                         <div className="absolute -right-4 -top-4 w-16 h-16 bg-red-50 dark:bg-red-900/10 rounded-full blur-2xl"></div>
                         <div className="flex items-center justify-between relative z-10">
                             <div className="flex items-center gap-3">
@@ -585,11 +589,34 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                                     <p className="text-xl font-black text-red-500">${totalDeudas.totalUsd.toFixed(2)}</p>
                                 </div>
                             </div>
-                            <div className="text-right">
-                                <p className="text-sm font-bold text-slate-400">{totalDeudas.count} {totalDeudas.count === 1 ? 'cliente' : 'clientes'}</p>
-                                {bcvRate > 0 && <p className="text-[10px] text-slate-400">{formatBs(totalDeudas.totalUsd * bcvRate)} Bs</p>}
+                            <div className="text-right flex items-center gap-2">
+                                <div>
+                                    <p className="text-sm font-bold text-slate-400">{totalDeudas.count} {totalDeudas.count === 1 ? 'cliente' : 'clientes'}</p>
+                                    {bcvRate > 0 && <p className="text-[10px] text-slate-400">{formatBs(totalDeudas.totalUsd * bcvRate)} Bs</p>}
+                                </div>
+                                {showTopDeudas ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
                             </div>
                         </div>
+
+                        {showTopDeudas && (
+                            <div className="mt-3 pt-3 border-t border-red-100 dark:border-red-800/20 space-y-2 relative z-10" style={{ animation: 'fadeIn 0.2s ease' }}>
+                                {totalDeudas.top5.map((c, i) => (
+                                    <div key={c.id} className="flex items-center justify-between py-1.5">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            <span className="text-[10px] font-black text-red-300 w-4 text-center shrink-0">{i + 1}</span>
+                                            <div className="w-7 h-7 rounded-full bg-red-50 dark:bg-red-900/20 flex items-center justify-center shrink-0">
+                                                <span className="text-xs font-black text-red-400">{c.name.charAt(0).toUpperCase()}</span>
+                                            </div>
+                                            <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{c.name}</p>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                            <p className="text-sm font-black text-red-500">${(c.deuda || 0).toFixed(2)}</p>
+                                            {bcvRate > 0 && <p className="text-[9px] text-red-400/60">{formatBs((c.deuda || 0) * bcvRate)} Bs</p>}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
