@@ -248,45 +248,92 @@ export default function CustomersView({ triggerHaptic }) {
                 )
             }
 
-            {/* Modal para Transacción (Abono / Deuda) */}
+            {/* Modal Unificado: Ajustar Cuenta */}
             {
-                transactionModal.isOpen && (
+                transactionModal.isOpen && (() => {
+                    // Calcular preview del saldo resultante en tiempo real
+                    const rawAmt = parseFloat(transactionAmount) || 0;
+                    const amtUsd = currencyMode === 'BS' && bcvRate > 0 ? rawAmt / bcvRate : rawAmt;
+                    const currentCustomer = transactionModal.customer;
+
+                    let previewCustomer = null;
+                    if (rawAmt > 0) {
+                        const opts = transactionModal.type === 'ABONO'
+                            ? { costoTotal: 0, pagoReal: amtUsd, vueltoParaMonedero: amtUsd }
+                            : { esCredito: true, deudaGenerada: amtUsd };
+                        previewCustomer = procesarImpactoCliente(currentCustomer, opts);
+                    }
+
+                    // Saldo actual legible
+                    const saldoActualUsd = (currentCustomer.favor || 0) - (currentCustomer.deuda || 0);
+                    const saldoPreviewUsd = previewCustomer ? (previewCustomer.favor || 0) - (previewCustomer.deuda || 0) : saldoActualUsd;
+
+                    const formatSaldo = (val) => {
+                        if (val > 0.001) return { text: `+$${formatUsd(val)}`, label: 'a favor', color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800/30' };
+                        if (val < -0.001) return { text: `-$${formatUsd(Math.abs(val))}`, label: 'debe', color: 'text-red-500', bg: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800/30' };
+                        return { text: '$0.00', label: 'al dia', color: 'text-slate-500', bg: 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700' };
+                    };
+
+                    const saldoActual = formatSaldo(saldoActualUsd);
+                    const saldoPreview = formatSaldo(saldoPreviewUsd);
+
+                    return (
                     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
                         <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-t-3xl sm:rounded-3xl shadow-xl overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200">
                             <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
-                                <h3 className={`text-xl font-black ${transactionModal.type === 'ABONO' ? 'text-emerald-500' : 'text-red-500'}`}>
-                                    {transactionModal.type === 'ABONO' ? 'Recibir Abono' : 'Añadir a Deuda'}
-                                </h3>
+                                <h3 className="text-xl font-black text-slate-800 dark:text-white">Ajustar Cuenta</h3>
                                 <button onClick={() => setTransactionModal({ isOpen: false, type: null, customer: null })} className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
                                     <X size={20} />
                                 </button>
                             </div>
 
                             <div className="p-5 space-y-4">
-                                <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                                    Cliente: <strong className="text-slate-900 dark:text-white">{transactionModal.customer.name}</strong>
-                                </p>
+                                {/* Cliente + Saldo Actual */}
+                                <div className="flex items-center justify-between">
+                                    <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                                        <strong className="text-slate-900 dark:text-white">{currentCustomer.name}</strong>
+                                    </p>
+                                    <span className={`text-sm font-black ${saldoActual.color}`}>{saldoActual.text} <span className="text-[10px] font-bold opacity-70">({saldoActual.label})</span></span>
+                                </div>
 
+                                {/* Tipo de operacion */}
+                                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                                    <button
+                                        type="button"
+                                        onClick={() => { setTransactionModal(m => ({ ...m, type: 'CREDITO' })); setTransactionAmount(''); }}
+                                        className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${transactionModal.type === 'CREDITO' ? 'bg-white dark:bg-slate-900 shadow-sm text-red-500' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                    >
+                                        <ArrowDownRight size={16} /> Agregar Deuda
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setTransactionModal(m => ({ ...m, type: 'ABONO' })); setTransactionAmount(''); }}
+                                        className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${transactionModal.type === 'ABONO' ? 'bg-white dark:bg-slate-900 shadow-sm text-emerald-500' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                    >
+                                        <ArrowUpRight size={16} /> Recibir Abono
+                                    </button>
+                                </div>
+
+                                {/* Moneda */}
+                                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                                    <button
+                                        type="button"
+                                        onClick={() => { setCurrencyMode('BS'); setTransactionAmount(''); }}
+                                        className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${currencyMode === 'BS' ? 'bg-white dark:bg-slate-900 shadow-sm text-blue-500' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                    >
+                                        Bolivares (Bs)
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setCurrencyMode('USD'); setTransactionAmount(''); }}
+                                        className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${currencyMode === 'USD' ? 'bg-white dark:bg-slate-900 shadow-sm text-emerald-500' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                    >
+                                        Dolares ($)
+                                    </button>
+                                </div>
+
+                                {/* Input de monto */}
                                 <div>
-                                    <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl mb-4">
-                                        <button 
-                                            type="button"
-                                            onClick={() => { setCurrencyMode('BS'); setTransactionAmount(''); }}
-                                            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${currencyMode === 'BS' ? 'bg-white dark:bg-slate-900 shadow-sm text-blue-500' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                                        >
-                                            En Bolívares (Bs)
-                                        </button>
-                                        <button 
-                                            type="button"
-                                            onClick={() => { setCurrencyMode('USD'); setTransactionAmount(''); }}
-                                            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${currencyMode === 'USD' ? 'bg-white dark:bg-slate-900 shadow-sm text-emerald-500' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                                        >
-                                            En Dólares ($)
-                                        </button>
-                                    </div>
-                                    <div className="mb-2">
-                                        <label className="text-xs font-bold text-slate-400 uppercase">Monto ({transactionModal.type === 'ABONO' ? 'Pago Recibido' : 'Nuevo Fiado'})</label>
-                                    </div>
                                     <div className="relative">
                                         <span className={`absolute left-4 top-1/2 -translate-y-1/2 font-black text-lg ${currencyMode === 'BS' ? 'text-blue-500' : 'text-emerald-500'}`}>
                                             {currencyMode === 'BS' ? 'Bs' : '$'}
@@ -300,30 +347,32 @@ export default function CustomersView({ triggerHaptic }) {
                                             autoFocus
                                         />
                                     </div>
+                                    {/* Conversion info */}
                                     {currencyMode === 'BS' && transactionAmount && bcvRate > 0 && (
                                         <div className="bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-lg p-2 mt-3 flex items-center justify-between">
-                                            <span className="text-xs font-bold text-slate-500">Monto calculado en USD:</span>
+                                            <span className="text-xs font-bold text-slate-500">Equivale a:</span>
                                             <span className="text-sm font-black text-blue-600 dark:text-blue-400">
-                                                ${(parseFloat(transactionAmount) / bcvRate).toFixed(2)}
+                                                ${(parseFloat(transactionAmount) / bcvRate).toFixed(2)} USD
                                             </span>
                                         </div>
                                     )}
                                     {currencyMode === 'USD' && transactionAmount && bcvRate > 0 && (
                                         <div className="bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/30 rounded-lg p-2 mt-3 flex items-center justify-between">
-                                            <span className="text-xs font-bold text-slate-500">Equivalente en Bs:</span>
+                                            <span className="text-xs font-bold text-slate-500">Equivale a:</span>
                                             <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">
                                                 {formatBs(parseFloat(transactionAmount) * bcvRate)} Bs
                                             </span>
                                         </div>
                                     )}
                                     {bcvRate > 0 && (
-                                        <p className="text-[10px] font-medium text-slate-400 mt-2 text-center">Tasa actual: {formatBs(bcvRate)} Bs/$</p>
+                                        <p className="text-[10px] font-medium text-slate-400 mt-2 text-center">Tasa BCV: {formatBs(bcvRate)} Bs/$</p>
                                     )}
                                 </div>
 
+                                {/* Metodo de pago (solo para abonos) */}
                                 {transactionModal.type === 'ABONO' && (
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Método de Pago</label>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Metodo de Pago</label>
                                         <select
                                             value={paymentMethod}
                                             onChange={(e) => setPaymentMethod(e.target.value)}
@@ -335,7 +384,27 @@ export default function CustomersView({ triggerHaptic }) {
                                                 </option>
                                             ))}
                                         </select>
-                                        <p className="text-[10px] text-slate-400 mt-2 px-1">Al registrar un abono, el monto ingresará a las estadísticas y caja del día de hoy.</p>
+                                    </div>
+                                )}
+
+                                {/* PREVIEW del saldo resultante */}
+                                {rawAmt > 0 && previewCustomer && (
+                                    <div className={`border rounded-xl p-3 ${saldoPreview.bg} transition-all`}>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">Cuenta despues de esta operacion</p>
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-slate-400 line-through">{saldoActual.text}</span>
+                                                <span className="text-slate-300 dark:text-slate-600">→</span>
+                                            </div>
+                                            <span className={`text-lg font-black ${saldoPreview.color}`}>
+                                                {saldoPreview.text}
+                                            </span>
+                                        </div>
+                                        {bcvRate > 0 && (
+                                            <p className="text-[10px] font-bold text-slate-400 mt-1 text-right">
+                                                {saldoPreviewUsd >= 0 ? '+' : '-'}{formatBs(Math.abs(saldoPreviewUsd) * bcvRate)} Bs
+                                            </p>
+                                        )}
                                     </div>
                                 )}
 
@@ -350,12 +419,17 @@ export default function CustomersView({ triggerHaptic }) {
                                         : 'bg-red-500 hover:bg-red-600 disabled:bg-red-500/50'
                                         }`}
                                 >
-                                    <Save size={18} /> Procesar {transactionModal.type === 'ABONO' ? 'Abono' : 'Deuda'}
+                                    <Save size={18} />
+                                    {transactionModal.type === 'ABONO'
+                                        ? `Abonar ${currencyMode === 'BS' ? 'Bs' : '$'}${transactionAmount || '0.00'}`
+                                        : `Cargar Deuda ${currencyMode === 'BS' ? 'Bs' : '$'}${transactionAmount || '0.00'}`
+                                    }
                                 </button>
                             </div>
                         </div>
                     </div>
-                )
+                    );
+                })()
             }
 
             {/* Customer Detail Bottom Sheet */}
@@ -367,11 +441,7 @@ export default function CustomersView({ triggerHaptic }) {
                     setExpandedHistory(null);
                     setHistoryData([]);
                 }}
-                onDeuda={() => {
-                    setTransactionModal({ isOpen: true, type: 'CREDITO', customer: selectedCustomer });
-                    setSelectedCustomer(null);
-                }}
-                onAbono={() => {
+                onAjustar={() => {
                     setTransactionModal({ isOpen: true, type: 'ABONO', customer: selectedCustomer });
                     setSelectedCustomer(null);
                 }}
@@ -497,7 +567,7 @@ function CustomerCard({ customer, bcvRate, onClick, onDelete }) {
 }
 
 // ─── Sub-componente: Bottom Sheet de Detalle ────────────────
-function CustomerDetailSheet({ customer, isOpen, onClose, onDeuda, onAbono, onReset, onEdit, onDelete, bcvRate, sales }) {
+function CustomerDetailSheet({ customer, isOpen, onClose, onAjustar, onReset, onEdit, onDelete, bcvRate, sales }) {
     if (!isOpen || !customer) return null;
 
     const createdDate = customer.createdAt
@@ -571,20 +641,13 @@ function CustomerDetailSheet({ customer, isOpen, onClose, onDeuda, onAbono, onRe
                     </div>
 
                     {/* Acciones */}
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 gap-2">
                         <button
-                            onClick={onDeuda}
-                            className="flex flex-col items-center gap-1.5 py-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-xl text-xs font-bold hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors active:scale-95"
+                            onClick={onAjustar}
+                            className="flex flex-col items-center gap-1.5 py-3 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl text-xs font-bold hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors active:scale-95 col-span-1"
                         >
-                            <ArrowDownRight size={18} />
-                            <span>+ Deuda</span>
-                        </button>
-                        <button
-                            onClick={onAbono}
-                            className="flex flex-col items-center gap-1.5 py-3 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-xl text-xs font-bold hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors active:scale-95"
-                        >
-                            <ArrowUpRight size={18} />
-                            <span>+ Abono</span>
+                            <CreditCard size={18} />
+                            <span>Ajustar Cuenta</span>
                         </button>
                         {(customer.deuda !== 0 || customer.favor !== 0) && (
                             <button
