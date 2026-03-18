@@ -244,8 +244,8 @@ export default function ReportsView({ rates, triggerHaptic }) {
             {/* Summary Cards — Responsive grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <StatCard icon={ShoppingBag} label="Ventas" value={filteredSales.length} color="emerald" />
-                <StatCard icon={DollarSign} label="Ingresos $" value={`$${totalUsd.toFixed(2)}`} color="blue" />
-                <StatCard icon={TrendingUp} label="Ganancia Bs" value={`${formatBs(profit)} Bs`} color="indigo" />
+                <StatCard icon={DollarSign} label="Ingresos" value={`$${totalUsd.toFixed(2)}`} sub={`${formatBs(totalBs)} Bs`} color="blue" />
+                <StatCard icon={TrendingUp} label="Ganancia" value={`${formatBs(profit)} Bs`} sub={bcvRate > 0 ? `$${(profit / bcvRate).toFixed(2)}` : ''} color="indigo" />
                 <StatCard icon={Package} label="Artículos" value={totalItems} color="amber" />
             </div>
 
@@ -345,7 +345,7 @@ export default function ReportsView({ rates, triggerHaptic }) {
     );
 }
 
-function StatCard({ icon: Icon, label, value, color }) {
+function StatCard({ icon: Icon, label, value, sub, color }) {
     const colors = {
         emerald: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400',
         blue: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
@@ -359,6 +359,7 @@ function StatCard({ icon: Icon, label, value, color }) {
             </div>
             <p className="text-[10px] font-bold text-slate-400 uppercase">{label}</p>
             <p className="text-lg md:text-xl font-black text-slate-800 dark:text-white mt-0.5">{value}</p>
+            {sub && <p className="text-xs font-bold text-slate-400 mt-0.5">{sub}</p>}
         </div>
     );
 }
