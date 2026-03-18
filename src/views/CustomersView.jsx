@@ -17,7 +17,7 @@ export default function CustomersView({ triggerHaptic }) {
 
     // Modal de Abono / Crédito
     const [transactionModal, setTransactionModal] = useState({ isOpen: false, type: null, customer: null }); // type: 'ABONO' | 'CREDITO'
-    const [amountBs, setAmountBs] = useState('');
+    const [transactionAmount, setTransactionAmount] = useState('');
     const [currencyMode, setCurrencyMode] = useState('BS'); // 'BS' | 'USD'
     const [paymentMethod, setPaymentMethod] = useState('efectivo_bs');
     const [resetBalanceCustomer, setResetBalanceCustomer] = useState(null);
@@ -30,7 +30,7 @@ export default function CustomersView({ triggerHaptic }) {
 
     useEffect(() => {
         // Leer tasa BCV del storage para conversión
-        storageService.getItem('bcv_rate_v1', 0).then(r => setBcvRate(r || 0));
+        storageService.getItem('bcv_rate_v1', 0).then(r => setBcvRate(Number(r) || 0));
     }, []);
 
     const loadCustomers = async () => {
@@ -84,12 +84,12 @@ export default function CustomersView({ triggerHaptic }) {
     };
 
     const handleTransaction = async () => {
-        if (!amountBs || isNaN(amountBs) || parseFloat(amountBs) <= 0) return;
+        if (!transactionAmount || isNaN(transactionAmount) || parseFloat(transactionAmount) <= 0) return;
 
         triggerHaptic();
 
         // El sistema almacena todo en USD. Si el usuario ingresa Bs, lo convertimos a USD.
-        const rawAmount = parseFloat(amountBs);
+        const rawAmount = parseFloat(transactionAmount);
         const amountUsd = currencyMode === 'BS' && bcvRate > 0 ? rawAmount / bcvRate : rawAmount;
         const { type, customer } = transactionModal;
 
@@ -132,7 +132,7 @@ export default function CustomersView({ triggerHaptic }) {
 
         // Cerrar modal
         setTransactionModal({ isOpen: false, type: null, customer: null });
-        setAmountBs('');
+        setTransactionAmount('');
         setCurrencyMode('BS');
         setPaymentMethod('efectivo_bs');
     };
@@ -268,34 +268,56 @@ export default function CustomersView({ triggerHaptic }) {
                                 </p>
 
                                 <div>
-                                    <div className="flex items-center justify-between mb-2">
-                                        <label className="text-xs font-bold text-slate-400 uppercase">Monto ({transactionModal.type === 'ABONO' ? 'Pago Recibido' : 'Nuevo Fiado'}) en {currencyMode === 'BS' ? 'Bs' : '$'}</label>
-                                        <button
+                                    <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl mb-4">
+                                        <button 
                                             type="button"
-                                            onClick={() => { setCurrencyMode(m => m === 'BS' ? 'USD' : 'BS'); setAmountBs(''); }}
-                                            className="flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-95"
+                                            onClick={() => { setCurrencyMode('BS'); setTransactionAmount(''); }}
+                                            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${currencyMode === 'BS' ? 'bg-white dark:bg-slate-900 shadow-sm text-blue-500' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
                                         >
-                                            <span className={currencyMode === 'BS' ? 'text-blue-500' : 'text-slate-400'}>Bs</span>
-                                            <span className="text-slate-300">/</span>
-                                            <span className={currencyMode === 'USD' ? 'text-emerald-500' : 'text-slate-400'}>$</span>
+                                            En Bolívares (Bs)
+                                        </button>
+                                        <button 
+                                            type="button"
+                                            onClick={() => { setCurrencyMode('USD'); setTransactionAmount(''); }}
+                                            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${currencyMode === 'USD' ? 'bg-white dark:bg-slate-900 shadow-sm text-emerald-500' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                        >
+                                            En Dólares ($)
                                         </button>
                                     </div>
+                                    <div className="mb-2">
+                                        <label className="text-xs font-bold text-slate-400 uppercase">Monto ({transactionModal.type === 'ABONO' ? 'Pago Recibido' : 'Nuevo Fiado'})</label>
+                                    </div>
                                     <div className="relative">
-                                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">{currencyMode === 'BS' ? 'Bs' : '$'}</span>
+                                        <span className={`absolute left-4 top-1/2 -translate-y-1/2 font-black text-lg ${currencyMode === 'BS' ? 'text-blue-500' : 'text-emerald-500'}`}>
+                                            {currencyMode === 'BS' ? 'Bs' : '$'}
+                                        </span>
                                         <input
                                             type="number"
-                                            value={amountBs}
-                                            onChange={(e) => setAmountBs(e.target.value)}
+                                            value={transactionAmount}
+                                            onChange={(e) => setTransactionAmount(e.target.value)}
                                             placeholder="0.00"
-                                            className="w-full form-input bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3 pl-12 text-lg font-black text-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500/50 transition-all"
+                                            className={`w-full form-input bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-4 ${currencyMode === 'BS' ? 'pl-12' : 'pl-10'} text-2xl font-black text-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500/50 transition-all`}
                                             autoFocus
                                         />
                                     </div>
-                                    {currencyMode === 'BS' && amountBs && bcvRate > 0 && (
-                                        <p className="text-[10px] text-slate-400 mt-1.5 px-1">= ${(parseFloat(amountBs) / bcvRate).toFixed(2)} @ {formatBs(bcvRate)} Bs/$</p>
+                                    {currencyMode === 'BS' && transactionAmount && bcvRate > 0 && (
+                                        <div className="bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-lg p-2 mt-3 flex items-center justify-between">
+                                            <span className="text-xs font-bold text-slate-500">Monto calculado en USD:</span>
+                                            <span className="text-sm font-black text-blue-600 dark:text-blue-400">
+                                                ${(parseFloat(transactionAmount) / bcvRate).toFixed(2)}
+                                            </span>
+                                        </div>
                                     )}
-                                    {currencyMode === 'USD' && amountBs && bcvRate > 0 && (
-                                        <p className="text-[10px] text-slate-400 mt-1.5 px-1">= {formatBs(parseFloat(amountBs) * bcvRate)} Bs @ {formatBs(bcvRate)} Bs/$</p>
+                                    {currencyMode === 'USD' && transactionAmount && bcvRate > 0 && (
+                                        <div className="bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/30 rounded-lg p-2 mt-3 flex items-center justify-between">
+                                            <span className="text-xs font-bold text-slate-500">Equivalente en Bs:</span>
+                                            <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">
+                                                {formatBs(parseFloat(transactionAmount) * bcvRate)} Bs
+                                            </span>
+                                        </div>
+                                    )}
+                                    {bcvRate > 0 && (
+                                        <p className="text-[10px] font-medium text-slate-400 mt-2 text-center">Tasa actual: {formatBs(bcvRate)} Bs/$</p>
                                     )}
                                 </div>
 
@@ -322,7 +344,7 @@ export default function CustomersView({ triggerHaptic }) {
                             <div className="p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
                                 <button
                                     onClick={handleTransaction}
-                                    disabled={!amountBs || parseFloat(amountBs) <= 0}
+                                    disabled={!transactionAmount || parseFloat(transactionAmount) <= 0}
                                     className={`w-full py-3.5 text-white font-bold rounded-xl active:scale-95 transition-all text-sm flex justify-center items-center gap-2 ${transactionModal.type === 'ABONO'
                                         ? 'bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-500/50'
                                         : 'bg-red-500 hover:bg-red-600 disabled:bg-red-500/50'
