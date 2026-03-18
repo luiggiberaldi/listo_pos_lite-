@@ -513,49 +513,69 @@ export default function CheckoutModal({
             {/* ═══ MODAL CONFIRMACIÓN FIAR ═══ */}
             {confirmFiar && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setConfirmFiar(false)}>
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-slate-200 dark:border-slate-800" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="w-10 h-10 bg-amber-100 dark:bg-amber-900/30 rounded-xl flex items-center justify-center">
-                                <AlertTriangle size={20} className="text-amber-600" />
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 max-w-sm sm:max-w-md w-full shadow-2xl border border-slate-200 dark:border-slate-800" onClick={e => e.stopPropagation()}>
+                        
+                        {/* Header */}
+                        <div className="flex items-center gap-4 mb-5">
+                            <div className="w-12 h-12 sm:w-14 sm:h-14 bg-amber-100 dark:bg-amber-900/30 rounded-2xl flex items-center justify-center shrink-0">
+                                <AlertTriangle size={24} className="text-amber-600 sm:w-7 sm:h-7" />
                             </div>
                             <div>
-                                <h3 className="text-base font-black text-slate-800 dark:text-white">Confirmar Fiado</h3>
-                                <p className="text-[11px] text-slate-400">Revisa antes de continuar</p>
+                                <h3 className="text-lg sm:text-xl font-black text-slate-800 dark:text-white">Confirmar Fiado</h3>
+                                <p className="text-xs sm:text-sm text-slate-400 mt-0.5">Revisa los detalles antes de continuar</p>
                             </div>
                         </div>
-                        <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/30 rounded-xl p-3 mb-4 space-y-2">
-                            <p className="text-xs text-slate-600 dark:text-slate-300">
-                                <span className="font-bold">Se le fiara</span> <span className="font-black text-amber-600">${remainingUsd.toFixed(2)}</span> ({formatBs(remainingBs)} Bs) a <span className="font-black text-slate-800 dark:text-white">{selectedCustomer?.name}</span>.
-                            </p>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                                {totalPaidUsd > 0.01
-                                    ? `El cliente paga $${totalPaidUsd.toFixed(2)} ahora y el resto queda como deuda.`
-                                    : 'El monto total quedara como deuda del cliente.'
-                                }
-                            </p>
-                            {selectedCustomer && (selectedCustomer.deuda || 0) > 0.01 && (
-                                <p className="text-[10px] font-bold text-red-500">
-                                    Este cliente ya debe ${(selectedCustomer.deuda || 0).toFixed(2)}. Deuda total sera: ${((selectedCustomer.deuda || 0) + remainingUsd).toFixed(2)}
+
+                        {/* Monto destacado */}
+                        <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30 rounded-2xl p-4 sm:p-5 mb-5">
+                            <div className="text-center mb-3">
+                                <p className="text-[11px] sm:text-xs font-bold text-amber-500 uppercase tracking-widest mb-1">Monto a fiar</p>
+                                <p className="text-3xl sm:text-4xl font-black text-amber-600">${remainingUsd.toFixed(2)}</p>
+                                <p className="text-sm sm:text-base font-bold text-amber-500/70 mt-0.5">{formatBs(remainingBs)} Bs</p>
+                            </div>
+                            <div className="border-t border-amber-200/50 dark:border-amber-800/20 pt-3 space-y-2">
+                                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+                                    Se registrara como deuda a nombre de <span className="font-black text-slate-800 dark:text-white">{selectedCustomer?.name}</span>.
                                 </p>
-                            )}
+                                {totalPaidUsd > 0.01 && (
+                                    <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
+                                        El cliente abona <span className="font-bold text-emerald-600">${totalPaidUsd.toFixed(2)}</span> ahora y el restante queda pendiente.
+                                    </p>
+                                )}
+                                {totalPaidUsd <= 0.01 && (
+                                    <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
+                                        El monto total de la venta quedara como deuda del cliente.
+                                    </p>
+                                )}
+                                {selectedCustomer && (selectedCustomer.deuda || 0) > 0.01 && (
+                                    <div className="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/30 rounded-lg p-2.5 mt-2">
+                                        <p className="text-[11px] sm:text-xs font-bold text-red-600 dark:text-red-400">
+                                            Este cliente ya tiene una deuda de ${(selectedCustomer.deuda || 0).toFixed(2)}. La deuda total pasara a ser ${((selectedCustomer.deuda || 0) + remainingUsd).toFixed(2)}.
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                        <div className="flex gap-2">
+
+                        {/* Botones */}
+                        <div className="flex gap-3">
                             <button
                                 onClick={() => setConfirmFiar(false)}
-                                className="flex-1 py-3 font-bold text-sm text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 active:scale-95 transition-all"
+                                className="flex-1 py-3.5 sm:py-4 font-bold text-sm sm:text-base text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all"
                             >
                                 Cancelar
                             </button>
                             <button
                                 onClick={() => { setConfirmFiar(false); handleConfirm(); }}
-                                className="flex-1 py-3 font-black text-sm text-white bg-amber-500 hover:bg-amber-600 rounded-xl shadow-lg shadow-amber-500/25 active:scale-95 transition-all"
+                                className="flex-1 py-3.5 sm:py-4 font-black text-sm sm:text-base text-white bg-amber-500 hover:bg-amber-600 rounded-xl shadow-lg shadow-amber-500/25 active:scale-95 transition-all"
                             >
-                                Si, fiar
+                                Confirmar fiado
                             </button>
                         </div>
                     </div>
                 </div>
             )}
+
         </div>
     );
 }
