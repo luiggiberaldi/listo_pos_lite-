@@ -233,7 +233,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const today = new Date().toISOString().split('T')[0];
 
     const todaySales = useMemo(() =>
-        sales.filter(s => s.timestamp?.startsWith(today) && s.tipo !== 'COBRO_DEUDA' && s.status !== 'ANULADA'),
+        sales.filter(s => s.timestamp?.startsWith(today) && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'AJUSTE_ENTRADA' && s.tipo !== 'AJUSTE_SALIDA' && s.tipo !== 'VENTA_FIADA' && s.status !== 'ANULADA'),
         [sales, today]
     );
     const todayTotalBs = useMemo(() => todaySales.reduce((sum, s) => sum + (s.totalBs || 0), 0), [todaySales]);
@@ -281,7 +281,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         const d = new Date();
         d.setDate(d.getDate() - (6 - i));
         const dateStr = d.toISOString().split('T')[0];
-        const daySales = sales.filter(s => s.timestamp?.startsWith(dateStr) && s.tipo !== 'COBRO_DEUDA' && s.status !== 'ANULADA');
+        const daySales = sales.filter(s => s.timestamp?.startsWith(dateStr) && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'AJUSTE_ENTRADA' && s.tipo !== 'AJUSTE_SALIDA' && s.tipo !== 'VENTA_FIADA' && s.status !== 'ANULADA');
         return { date: dateStr, total: daySales.reduce((sum, s) => sum + (s.totalUsd || 0), 0), count: daySales.length };
     }), [sales]);
 
@@ -303,7 +303,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     // Top productos vendidos (todas las ventas netas)
     const topProducts = useMemo(() => {
         const productSalesMap = {};
-        sales.filter(s => s.tipo !== 'COBRO_DEUDA' && s.status !== 'ANULADA').forEach(s => {
+        sales.filter(s => s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'AJUSTE_ENTRADA' && s.tipo !== 'AJUSTE_SALIDA' && s.tipo !== 'VENTA_FIADA' && s.status !== 'ANULADA').forEach(s => {
             s.items.forEach(item => {
                 if (!productSalesMap[item.name]) productSalesMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
                 productSalesMap[item.name].qty += item.qty;
@@ -553,7 +553,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                     <div className="relative z-10">
                         <div className="flex items-baseline gap-1">
                             <span className={`text-2xl font-black tracking-tight ${todayProfit >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500'}`}>
-                                {todayProfit >= 0 ? '+' : ''}${(todayProfit / bcvRate).toFixed(2)}
+                                {todayProfit >= 0 ? '+' : ''}${bcvRate > 0 ? (todayProfit / bcvRate).toFixed(2) : '0.00'}
                             </span>
                         </div>
                         <p className="text-sm font-bold text-slate-400 dark:text-slate-500 mt-0.5">{formatBs(todayProfit)} Bs</p>
