@@ -291,6 +291,14 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         [products]
     );
 
+    // Deudas pendientes totales
+    const totalDeudas = useMemo(() => {
+        const deudores = customers.filter(c => (c.deuda || 0) > 0.01);
+        const totalUsd = deudores.reduce((sum, c) => sum + (c.deuda || 0), 0);
+        return { count: deudores.length, totalUsd };
+    }, [customers]);
+
+
     // Top productos vendidos (todas las ventas netas)
     const topProducts = useMemo(() => {
         const productSalesMap = {};
@@ -447,9 +455,9 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                     </div>
                 </div>
                 {/* NEW GEAR ICON FOR SETTINGS */}
-                <button 
+                <button
                     onClick={() => { triggerHaptic(); setIsSettingsOpen(true); }}
-                    className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-300 rounded-full shadow-sm hover:shadow active:scale-95 transition-all outline-none" 
+                    className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-300 rounded-full shadow-sm hover:shadow active:scale-95 transition-all outline-none"
                     title="Configuración"
                 >
                     <Settings size={22} className="text-slate-700 dark:text-slate-200" />
@@ -562,41 +570,91 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                     <p className="text-xl font-black text-slate-800 dark:text-white leading-none">{formatBs(bcvRate)} <span className="text-xs font-bold text-slate-400">Bs/$</span></p>
                     <p className="text-[11px] text-slate-400 mt-1">Tasa BCV actual</p>
                 </div>
+
+                {/* Deudas Pendientes */}
+                {totalDeudas.count > 0 && (
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-red-100 dark:border-red-800/30 shadow-sm relative overflow-hidden col-span-2">
+                        <div className="absolute -right-4 -top-4 w-16 h-16 bg-red-50 dark:bg-red-900/10 rounded-full blur-2xl"></div>
+                        <div className="flex items-center justify-between relative z-10">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-xl flex items-center justify-center shadow-inner">
+                                    <Users size={20} className="text-red-500" />
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-bold text-red-400 uppercase">Deudas por cobrar</p>
+                                    <p className="text-xl font-black text-red-500">${totalDeudas.totalUsd.toFixed(2)}</p>
+                                </div>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-sm font-bold text-slate-400">{totalDeudas.count} {totalDeudas.count === 1 ? 'cliente' : 'clientes'}</p>
+                                {bcvRate > 0 && <p className="text-[10px] text-slate-400">{formatBs(totalDeudas.totalUsd * bcvRate)} Bs</p>}
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
-            {/* Pago por Método */}
-            {Object.keys(paymentBreakdown).length > 0 && (
-                <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 shadow-sm mb-5">
-                    <h3 className="text-xs font-bold text-slate-400 uppercase mb-3">Pagos del día</h3>
-                    <div className="space-y-2">
-                        {Object.entries(paymentBreakdown).map(([method, data]) => {
-                            const label = toTitleCase(data.label || getPaymentLabel(method));
-                            const PayIcon = getPaymentIcon(method) || PAYMENT_ICONS[method];
-                            const totalBsEquiv = data.currency === 'USD' ? data.total * bcvRate : data.total;
-                            const pct = todayTotalBs > 0 ? (totalBsEquiv / todayTotalBs * 100) : 0;
-                            return (
-                                <div key={method}>
-                                    <div className="flex justify-between text-sm mb-1">
-                                        <span className="text-slate-600 dark:text-slate-300 font-medium flex items-center gap-1.5">
-                                            {PayIcon && <PayIcon size={14} className="text-slate-400" />}
-                                            {label}
-                                        </span>
-                                        <span className="font-bold text-slate-700 dark:text-white">
-                                            {data.currency === 'USD' ? `$ ${data.total.toFixed(2)}` : `${formatBs(data.total)} Bs`}
-                                        </span>
-                                    </div>
-                                    <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                                        <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
+            {/* Pago por Metodo (agrupado Bs / USD) */}
+            {Object.keys(paymentBreakdown).length > 0 && (() => {
+                const entries = Object.entries(paymentBreakdown);
+                const bsMethods = entries.filter(([, d]) => d.currency !== 'USD');
+                const usdMethods = entries.filter(([, d]) => d.currency === 'USD');
+                const subtotalBs = bsMethods.reduce((s, [, d]) => s + d.total, 0);
+                const subtotalUsd = usdMethods.reduce((s, [, d]) => s + d.total, 0);
 
+                const renderMethod = ([method, data]) => {
+                    const label = toTitleCase(data.label || getPaymentLabel(method));
+                    const PayIcon = getPaymentIcon(method) || PAYMENT_ICONS[method];
+                    const totalBsEquiv = data.currency === 'USD' ? data.total * bcvRate : data.total;
+                    const pct = todayTotalBs > 0 ? (totalBsEquiv / todayTotalBs * 100) : 0;
+                    return (
+                        <div key={method}>
+                            <div className="flex justify-between text-sm mb-1">
+                                <span className="text-slate-600 dark:text-slate-300 font-medium flex items-center gap-1.5">
+                                    {PayIcon && <PayIcon size={14} className="text-slate-400" />}
+                                    {label}
+                                </span>
+                                <span className="font-bold text-slate-700 dark:text-white">
+                                    {data.currency === 'USD' ? `$ ${data.total.toFixed(2)}` : `${formatBs(data.total)} Bs`}
+                                </span>
+                            </div>
+                            <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                            </div>
+                        </div>
+                    );
+                };
+
+                return (
+                <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 shadow-sm mb-5">
+                    <h3 className="text-xs font-bold text-slate-400 uppercase mb-3">Pagos del dia</h3>
+                    {bsMethods.length > 0 && (
+                        <div className="mb-3">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">Bolivares</span>
+                                <span className="text-xs font-black text-blue-600 dark:text-blue-400">{formatBs(subtotalBs)} Bs</span>
+                            </div>
+                            <div className="space-y-2 pl-1 border-l-2 border-blue-200 dark:border-blue-800/40">
+                                <div className="pl-3 space-y-2">{bsMethods.map(renderMethod)}</div>
+                            </div>
+                        </div>
+                    )}
+                    {usdMethods.length > 0 && (
+                        <div>
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">Dolares</span>
+                                <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">${subtotalUsd.toFixed(2)}</span>
+                            </div>
+                            <div className="space-y-2 pl-1 border-l-2 border-emerald-200 dark:border-emerald-800/40">
+                                <div className="pl-3 space-y-2">{usdMethods.map(renderMethod)}</div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+                );
+            })()}
             {/* Gráfica semanal */}
-            <SalesChart 
+            <SalesChart
                 weekData={weekData} 
                 selectedDate={selectedChartDate}
                 onDayClick={(date) => {
