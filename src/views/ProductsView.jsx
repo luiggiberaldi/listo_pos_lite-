@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
-import { Package, Plus, Trash2, X, Store, Tag, Pencil, Banknote, Search, ChevronLeft, ChevronRight, Settings, AlertTriangle, Box, LayoutGrid, List, Minus, ArrowUpDown, Clock } from 'lucide-react';
+import { Package, Plus, Trash2, X, Store, Tag, Pencil, Banknote, Search, ChevronLeft, ChevronRight, Settings, AlertTriangle, Box, LayoutGrid, List, Minus, ArrowUpDown, Clock, Percent } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { ProductShareModal } from '../components/ProductShareModal';
 import SettingsModal from '../components/SettingsModal';
@@ -13,6 +13,7 @@ import ProductCard from '../components/Products/ProductCard';
 import ProductFormModal from '../components/Products/ProductFormModal';
 import ConfirmModal from '../components/ConfirmModal';
 import CategoryManagerModal from '../components/Products/CategoryManagerModal';
+import BulkPriceAdjustModal from '../components/Products/BulkPriceAdjustModal';
 import { useProductContext } from '../context/ProductContext';
 import EmptyState from '../components/EmptyState';
 import Skeleton from '../components/Skeleton';
@@ -59,6 +60,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isShareOpen, setIsShareOpen] = useState(false);
+    const [isBulkPriceOpen, setIsBulkPriceOpen] = useState(false);
     const [deleteCategoryConfirmId, setDeleteCategoryConfirmId] = useState(null);
 
     // Share State
@@ -488,10 +490,16 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                         {products.length > 0 && (
-                            <button onClick={() => { triggerHaptic && triggerHaptic(); setIsDeleteAllModalOpen(true); }}
-                                className="p-2 bg-red-100 dark:bg-red-900/30 text-red-500 dark:text-red-400 rounded-xl transition-all active:scale-95" title="Borrar Todo">
-                                <Trash2 size={16} strokeWidth={2.5} />
-                            </button>
+                            <>
+                                <button onClick={() => { triggerHaptic && triggerHaptic(); setIsBulkPriceOpen(true); }}
+                                    className="p-2 bg-blue-100 dark:bg-blue-900/30 text-blue-500 dark:text-blue-400 rounded-xl transition-all active:scale-95" title="Ajuste Masivo de Precios">
+                                    <Percent size={16} strokeWidth={2.5} />
+                                </button>
+                                <button onClick={() => { triggerHaptic && triggerHaptic(); setIsDeleteAllModalOpen(true); }}
+                                    className="p-2 bg-red-100 dark:bg-red-900/30 text-red-500 dark:text-red-400 rounded-xl transition-all active:scale-95" title="Borrar Todo">
+                                    <Trash2 size={16} strokeWidth={2.5} />
+                                </button>
+                            </>
                         )}
                         <button onClick={() => { triggerHaptic && triggerHaptic(); setIsSettingsOpen(true); }}
                             className="p-2 bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-300 rounded-xl transition-all active:scale-95" title="Ajustes">
@@ -865,6 +873,18 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 isOpen={isShareOpen} onClose={() => setIsShareOpen(false)} products={products}
                 onImport={(imported) => { setProducts(imported); storageService.setItem('bodega_products_v1', imported); }}
             />
+            <BulkPriceAdjustModal
+                isOpen={isBulkPriceOpen}
+                onClose={() => setIsBulkPriceOpen(false)}
+                products={products}
+                setProducts={setProducts}
+                categories={categories}
+                activeCategory={activeCategory}
+                effectiveRate={effectiveRate}
+                triggerHaptic={triggerHaptic}
+                showToast={showToast}
+            />
+
             <CategoryManagerModal
                 isOpen={isCategoryManagerOpen}
                 onClose={() => setIsCategoryManagerOpen(false)}
