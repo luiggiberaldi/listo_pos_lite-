@@ -105,14 +105,16 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
 
             // 3. Revertir Deuda/Saldo a Favor del Cliente
             let finalCustomers = savedCustomers;
-            const fiadoAmountUsd = sale.fiadoUsd || 0;
+            const fiadoAmountUsd = sale.fiadoUsd || (sale.tipo === 'VENTA_FIADA' ? sale.totalUsd : 0) || 0;
             const favorUsed = sale.payments?.filter(p => p.methodId === 'saldo_favor').reduce((sum, p) => sum + p.amountUsd, 0) || 0;
-            const debtIncurred = fiadoAmountUsd + favorUsed;
+            const debtToReverse = fiadoAmountUsd + favorUsed;
 
-            if (sale.customerId && debtIncurred > 0) {
+            if (sale.customerId && debtToReverse > 0) {
                 finalCustomers = finalCustomers.map(c => {
                     if (c.id === sale.customerId) {
-                        return { ...c, deuda: Math.max(0, c.deuda - debtIncurred) };
+                        const newDeuda = Math.max(0, (c.deuda || 0) - debtToReverse);
+                        console.log(`[Anular] Cliente ${c.name}: deuda ${c.deuda} -> ${newDeuda} (revertido $${debtToReverse})`);
+                        return { ...c, deuda: newDeuda };
                     }
                     return c;
                 });
