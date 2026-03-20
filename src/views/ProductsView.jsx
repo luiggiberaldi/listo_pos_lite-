@@ -871,16 +871,12 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
             <ShareInventoryModal
                 isOpen={isShareOpen} onClose={() => setIsShareOpen(false)} products={products} categories={categories}
-                onImport={async ({ products: imported, categories: importedCats }) => {
-                    await storageService.setItem('bodega_products_v1', imported);
-                    setProducts(imported);
+                onImport={({ products: imported, categories: importedCats }) => {
                     if (importedCats && importedCats.length > 0) {
-                        // Write directly via localforage to bypass ProductContext auto-save race
-                        const localforage = (await import('localforage')).default;
-                        const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
-                        await lf.setItem('my_categories_v1', importedCats);
-                        window.location.reload();
+                        setCategories(importedCats);
                     }
+                    setProducts(imported);
+                    showToast('Inventario importado correctamente', 'success');
                 }}
             />
             <BulkPriceAdjustModal

@@ -105,11 +105,15 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
                     throw new Error('Formato de archivo inválido.');
                 }
 
+                // Bypass storageService completely to prevent app_storage_update events from firing.
+                // If events fire, ProductContext updates state and triggers its auto-save, which might overwrite our imported data before reload finishes.
+                const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
+
                 if (json.data.bodega_products_v1) {
-                    await storageService.setItem('bodega_products_v1', typeof json.data.bodega_products_v1 === 'string' ? JSON.parse(json.data.bodega_products_v1) : json.data.bodega_products_v1);
+                    await lf.setItem('bodega_products_v1', typeof json.data.bodega_products_v1 === 'string' ? JSON.parse(json.data.bodega_products_v1) : json.data.bodega_products_v1);
                 }
                 if (json.data.bodega_accounts_v2) {
-                    await storageService.setItem('bodega_accounts_v2', typeof json.data.bodega_accounts_v2 === 'string' ? JSON.parse(json.data.bodega_accounts_v2) : json.data.bodega_accounts_v2);
+                    await lf.setItem('bodega_accounts_v2', typeof json.data.bodega_accounts_v2 === 'string' ? JSON.parse(json.data.bodega_accounts_v2) : json.data.bodega_accounts_v2);
                 }
 
                 if (json.data.street_rate_bs) localStorage.setItem('street_rate_bs', json.data.street_rate_bs);
@@ -120,11 +124,8 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
                 if (json.data.business_name) localStorage.setItem('business_name', json.data.business_name);
                 if (json.data.business_rif) localStorage.setItem('business_rif', json.data.business_rif);
 
-                // Write categories DIRECTLY via localforage to bypass ProductContext auto-save race condition
-                // (storageService.setItem fires app_storage_update → ProductContext re-saves OLD categories)
                 if (json.data.my_categories_v1) {
                     const cats = typeof json.data.my_categories_v1 === 'string' ? JSON.parse(json.data.my_categories_v1) : json.data.my_categories_v1;
-                    const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
                     await lf.setItem('my_categories_v1', cats);
                 }
 
