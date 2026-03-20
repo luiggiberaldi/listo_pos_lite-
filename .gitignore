@@ -31,8 +31,9 @@ dist-ssr
 .env.test.local
 .env.production.local
 
-# API serverless (deploy via Vercel, no subir keys)
-api/
+# API serverless (deploy via Vercel, no subir keys en código, usar vars de entorno)
+!api/
+api/*.js
 
 # Archivos innecesarios
 backup_*.json
