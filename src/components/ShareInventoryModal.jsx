@@ -34,8 +34,8 @@ export default function ShareInventoryModal({ isOpen, onClose, products, categor
 
     if (!isOpen) return null;
 
-    // Usamos el backend original que ya tiene configurado Vercel Serverless + Upstash
-    const API_URL = 'https://tasasaldia.vercel.app/api/share';
+    // Usamos el backend relativo del mismo dominio para asegurar que incluye los últimos cambios
+    const API_URL = '/api/share';
 
     const handleShare = async () => {
         setLoading(true);
