@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { FinancialEngine } from '../core/FinancialEngine';
 import { BarChart3, Calendar, Download, TrendingUp, ShoppingBag, DollarSign, Package, ChevronDown, ChevronUp, Clock, Send, Ban, Shuffle, Receipt, Search, X, Filter, Recycle } from 'lucide-react';
 import { storageService } from '../utils/storageService';
 import { formatBs, formatVzlaPhone } from '../utils/calculatorUtils';
@@ -156,52 +157,10 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate }) {
     const totalBs = filteredSales.reduce((s, sale) => s + (sale.totalBs || 0), 0);
     const totalItems = filteredSales.reduce((s, sale) => s + sale.items.reduce((is, i) => is + i.qty, 0), 0);
 
-    const profit = filteredSales.reduce((sum, s) => {
-        const saleRate = s.rate || bcvRate;
-        const itemsProfit = s.items.reduce((is, item) => {
-            let costBs;
-            if (item.costUsd) {
-                costBs = item.costUsd * saleRate;
-            } else if (item.costBs) {
-                costBs = item.costBs;
-            } else {
-                const p = products.find(p => p.id === item.id || p.id === item._originalId || p.name === item.name);
-                if (p) {
-                    costBs = p.costUsd ? p.costUsd * saleRate : (p.costBs || 0);
-                    if (item.id && typeof item.id === 'string' && item.id.endsWith('_unit')) costBs = costBs / (p.unitsPerPackage || 1);
-                } else {
-                    costBs = 0;
-                }
-            }
-            const saleBs = item.priceUsd * item.qty * saleRate;
-            return is + (saleBs - (costBs * item.qty));
-        }, 0);
-        const discountBs = (s.discountAmountUsd || 0) * saleRate;
-        return sum + (itemsProfit - discountBs);
-    }, 0);
+    const profit = FinancialEngine.calculateAggregateProfit(filteredSales, bcvRate, products);
 
     // Desglose por método de pago
-    const paymentBreakdown = {};
-    filteredSales.forEach(s => {
-        (s.payments || []).forEach(p => {
-            if (!paymentBreakdown[p.methodId]) paymentBreakdown[p.methodId] = { total: 0, currency: p.currency || 'BS', label: p.methodLabel };
-            const amount = (p.currency === 'USD' ? p.amountUsd : p.amountBs) || 0;
-            paymentBreakdown[p.methodId].total += amount;
-        });
-        
-        // Restar el cambio devuelto para obtener el Neto Real
-        if (s.changeUsd > 0 && paymentBreakdown['efectivo_usd']) {
-            paymentBreakdown['efectivo_usd'].total -= s.changeUsd;
-        }
-        if (s.changeBs > 0 && paymentBreakdown['efectivo_bs']) {
-            paymentBreakdown['efectivo_bs'].total -= s.changeBs;
-        }
-    });
-    
-    // Aplicar redondeo final al Breakdown
-    Object.keys(paymentBreakdown).forEach(k => {
-        paymentBreakdown[k].total = Math.round(paymentBreakdown[k].total * 100) / 100;
-    });
+    const paymentBreakdown = FinancialEngine.calculatePaymentBreakdown(filteredSales);
 
     // Top productos
     const productMap = {};

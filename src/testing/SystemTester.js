@@ -14,6 +14,7 @@ import { CurrencyService } from '../services/CurrencyService';
 import { RateService } from '../services/RateService';
 import { procesarImpactoCliente } from '../utils/financialLogic';
 import { MessageService } from '../services/MessageService';
+import { FinancialEngine } from '../core/FinancialEngine';
 
 // ── Claves de Storage Aisladas para Test ──
 const TEST_KEYS = {
@@ -974,6 +975,48 @@ async function suiteCierreCaja() {
     log('Cierre de caja: Vueltos descontados, proveedores y anulaciones validados OK.', 'success');
 }
 
+// 16. Golden Master Test (Motor Financiero)
+async function suiteGoldenMaster() {
+    section('🏆 SUITE: Golden Master (FinancialEngine)');
+
+    // ── Test 1: buildCartTotals ──
+    const cart = [
+        { priceUsd: 10, qty: 2 }, // 20
+        { priceUsd: 5.5, qty: 1, exactBs: 250 } // exactly 250 Bs
+    ];
+    // bcvRate: 40, copRate: 4000, discount: 10%
+    const totals = FinancialEngine.buildCartTotals(cart, { type: 'percentage', value: 10 }, 40, 4000);
+    // subtotalUsd = 20 + 5.5 = 25.5
+    // subtotalBs = (20 * 40) + 250 = 800 + 250 = 1050
+    // discountUsd = 2.55
+    // discountBs = 2.55 * 40 = 102
+    // totalUsd = 25.5 - 2.55 = 22.95
+    // totalBs = 1050 - 102 = 948
+    // totalCop = 22.95 * 4000 = 91800
+
+    assertClose(totals.subtotalUsd, 25.5, 'subtotalUsd incorrecto');
+    assertClose(totals.subtotalBs, 1050, 'subtotalBs incorrecto (con exactBs)');
+    assertClose(totals.discountAmountUsd, 2.55, 'Descuento 10% USD incorrecto');
+    assertClose(totals.totalUsd, 22.95, 'Total USD incorrecto');
+    assertClose(totals.totalBs, 948, 'Total Bs incorrecto');
+    assertClose(totals.totalCop, 91800, 'Total COP incorrecto');
+
+    // ── Test 2: calculateNetProfit ──
+    const sale = {
+        items: [
+            { priceUsd: 10, costUsd: 5, qty: 2 }, // revenue: 20, cost: 10, profit base: 10
+            { priceUsd: 5.5, costBs: 160, qty: 1 } // revenue: 5.5, costBs: 160. at rate 40, costUsd: 4. profit base: 1.5
+        ],
+        discountAmountUsd: 2.55 // Global discount affects net profit directly -> 11.5 - 2.55 = 8.95
+    };
+    
+    // products argument not strictly needed if sale items exist
+    const profit = FinancialEngine.calculateNetProfit(sale, 40, []);
+    assertClose(profit, 8.95, 'Ganancia neta afectada por descuento incorrecta');
+
+    log('Golden Master FinancialEngine: Matemáticas críticas aprobadas.', 'success');
+}
+
 // ════════════════════════════════════════════
 // RUNNER CONFIGURATION
 // ════════════════════════════════════════════
@@ -1006,6 +1049,7 @@ const SUITES = [
     { key: 'msg_service', name: '💬 MessageService (3 Tonos)', fn: suiteMessageService, fast: true },
     { key: 'regresion_20260304', name: '🔧 Regresión: Ganancia/Vuelto/Plural/Moneda', fn: suiteRegresion20260304, fast: true },
     { key: 'cierre_caja', name: '📦 Flujo: Vueltos Netos / Proveedores / Cierre', fn: suiteCierreCaja, fast: true },
+    { key: 'golden_master', name: '🏆 Golden Master (Motor Financiero)', fn: suiteGoldenMaster, fast: true },
 
     { key: '7days', name: '🗓️ Week Sim (Storage Pesado)', fn: suite7Days, fast: false },
 ];

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { FinancialEngine } from '../core/FinancialEngine';
 import { storageService } from '../utils/storageService';
 import { useSounds } from '../hooks/useSounds';
 import { useVoiceSearch } from '../hooks/useVoiceSearch';
@@ -174,31 +175,16 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
         ? products
         : products.filter(p => p.category === selectedCategory), [selectedCategory, products]);
 
-    const cartSubtotalUsd = cart.reduce((sum, item) => sum + (item.priceUsd * item.qty), 0);
-    
-    // Calcular descuento global
-    let discountAmountUsd = 0;
-    if (discount?.value > 0) {
-        if (discount.type === 'percentage') {
-            discountAmountUsd = cartSubtotalUsd * (discount.value / 100);
-        } else {
-            discountAmountUsd = discount.value;
-        }
-    }
-    // Asegurar que no quede negativo o mayor al subtotal
-    if (discountAmountUsd > cartSubtotalUsd) discountAmountUsd = cartSubtotalUsd;
-
-    const cartTotalUsd = cartSubtotalUsd - discountAmountUsd;
-
-    const cartSubtotalBs = cart.reduce((sum, item) => {
-        if (item.exactBs != null) {
-            return sum + (item.exactBs * item.qty);
-        }
-        return sum + (item.priceUsd * item.qty * effectiveRate);
-    }, 0);
-
-    const discountAmountBs = discountAmountUsd * effectiveRate;
-    const cartTotalBs = Math.max(0, cartSubtotalBs - discountAmountBs);
+    const { 
+        subtotalUsd: cartSubtotalUsd, 
+        subtotalBs: cartSubtotalBs,
+        discountAmountUsd, 
+        discountAmountBs, 
+        totalUsd: cartTotalUsd, 
+        totalBs: cartTotalBs 
+    } = useMemo(() => 
+        FinancialEngine.buildCartTotals(cart, discount, effectiveRate, copEnabled ? tasaCop : 0)
+    , [cart, discount, effectiveRate, copEnabled, tasaCop]);
     
     // Variables estáticas para pasar a los componentes hijos
     const discountData = {
@@ -514,10 +500,17 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
             customerPhone: selectedCustomer?.phone || null,
             fiadoUsd: fiadoAmountUsd
         };
+        
+        // Fase 3: Immutability Shield - Congelar la transacción para evitar side-effects
+        Object.freeze(sale);
 
         const existingSales = await storageService.getItem(SALES_KEY, []);
-        sale.saleNumber = existingSales.reduce((mx, s) => Math.max(mx, s.saleNumber || 0), 0) + 1;
-        await storageService.setItem(SALES_KEY, [sale, ...existingSales]);
+        // Bypass the rigid object freeze for internal structural attributes that belong to storage rather than financial logic,
+        // Wait, Object.freeze makes the object completely immutable. If we must mutate `saleNumber`, let's do it before freezing.
+        const saleNumber = existingSales.reduce((mx, s) => Math.max(mx, s.saleNumber || 0), 0) + 1;
+        const finalPersistedSale = Object.freeze({ ...sale, saleNumber });
+
+        await storageService.setItem(SALES_KEY, [finalPersistedSale, ...existingSales]);
 
         // Deduct stock
         const updatedProducts = products.map(p => {
