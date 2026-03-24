@@ -13,6 +13,7 @@ import { useProductContext } from '../context/ProductContext';
 // Importaciones de Proveedores
 import SuppliersList from '../components/Suppliers/SuppliersList';
 import { AddSupplierModal, AddInvoiceModal, PayInvoiceModal, SupplierDetailsSheet } from '../components/Suppliers/SupplierModals';
+import { getActivePaymentMethods } from '../config/paymentMethods';
 
 export default function CustomersView({ triggerHaptic, rates }) {
     const [customers, setCustomers] = useState([]);
@@ -25,6 +26,7 @@ export default function CustomersView({ triggerHaptic, rates }) {
     const [transactionAmount, setTransactionAmount] = useState('');
     const [currencyMode, setCurrencyMode] = useState('BS'); // 'BS' | 'USD'
     const [paymentMethod, setPaymentMethod] = useState('efectivo_bs');
+    const [activePaymentMethods, setActivePaymentMethods] = useState([]);
     const [resetBalanceCustomer, setResetBalanceCustomer] = useState(null);
     const { effectiveRate: bcvRate, tasaCop, copEnabled } = useProductContext();
     const [expandedHistory, setExpandedHistory] = useState(null);
@@ -49,14 +51,16 @@ export default function CustomersView({ triggerHaptic, rates }) {
     const [supplierHistoryData, setSupplierHistoryData] = useState([]);
 
     const loadData = async () => {
-        const [savedCustomers, savedSuppliers, savedInvoices] = await Promise.all([
+        const [savedCustomers, savedSuppliers, savedInvoices, savedMethods] = await Promise.all([
             storageService.getItem('bodega_customers_v1', []),
             storageService.getItem('bodega_suppliers_v1', []),
-            storageService.getItem('bodega_supplier_invoices_v1', [])
+            storageService.getItem('bodega_supplier_invoices_v1', []),
+            getActivePaymentMethods()
         ]);
         setCustomers(savedCustomers);
         setSuppliers(savedSuppliers);
         setInvoices(savedInvoices);
+        setActivePaymentMethods(savedMethods);
     };
 
     useEffect(() => {
@@ -337,6 +341,9 @@ export default function CustomersView({ triggerHaptic, rates }) {
                     <PayInvoiceModal 
                         supplier={selectedSupplier}
                         bcvRate={bcvRate}
+                        tasaCop={tasaCop}
+                        copEnabled={copEnabled}
+                        activePaymentMethods={activePaymentMethods}
                         onClose={() => setIsPayInvoiceModalOpen(false)}
                         onSave={handlePayInvoice}
                     />
@@ -683,7 +690,7 @@ export default function CustomersView({ triggerHaptic, rates }) {
 
                                 {/* Metodo de pago (solo para abonos) */}
                                 {transactionModal.type === 'ABONO' && (() => {
-                                    const filteredMethods = DEFAULT_PAYMENT_METHODS.filter(m => m.currency === currencyMode);
+                                    const filteredMethods = activePaymentMethods.filter(m => m.currency === currencyMode);
                                     return (
                                     <div>
                                         <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Metodo de Pago</label>

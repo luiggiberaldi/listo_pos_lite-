@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { X, Truck, Save, Pencil, FileText, CreditCard, Clock, Phone, Trash2, ArrowUpRight, CheckCircle2 } from 'lucide-react';
 import { formatUsd, formatBs } from '../../utils/calculatorUtils';
-import { DEFAULT_PAYMENT_METHODS } from '../../config/paymentMethods';
 
 export function AddSupplierModal({ onClose, onSave, editingSupplier = null }) {
     const [name, setName] = useState(editingSupplier?.name || '');
@@ -125,7 +124,7 @@ export function AddInvoiceModal({ supplier, bcvRate, onClose, onSave }) {
     );
 }
 
-export function PayInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, onClose, onSave }) {
+export function PayInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, activePaymentMethods = [], onClose, onSave }) {
     const [amount, setAmount] = useState('');
     const [currencyMode, setCurrencyMode] = useState('BS');
     const [paymentMethod, setPaymentMethod] = useState('efectivo_bs');
@@ -193,7 +192,7 @@ export function PayInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, onClos
 
                     {/* Método de pago */}
                     {(() => {
-                        const filteredMethods = DEFAULT_PAYMENT_METHODS.filter(m => m.currency === currencyMode);
+                        const filteredMethods = activePaymentMethods.filter(m => m.currency === currencyMode);
                         return (
                             <div>
                                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Método de Pago (Egreso)</label>
