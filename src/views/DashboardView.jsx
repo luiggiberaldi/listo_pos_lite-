@@ -2,13 +2,13 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { FinancialEngine } from '../core/FinancialEngine';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
-import { BarChart3, TrendingUp, Package, AlertTriangle, DollarSign, ShoppingBag, Clock, ArrowUpRight, Trash2, ShoppingCart, Store, Users, Send, Ban, ChevronDown, ChevronUp, Moon, Sun, UserPlus, Phone, FileText, Recycle, Key, Settings } from 'lucide-react';
+import { BarChart3, TrendingUp, Package, AlertTriangle, DollarSign, ShoppingBag, Clock, ArrowUpRight, Trash2, ShoppingCart, Store, Users, Send, Ban, ChevronDown, ChevronUp, Moon, Sun, UserPlus, Phone, FileText, Recycle, Key, Settings, Lock, CheckCircle2 } from 'lucide-react';
 import { formatBs, formatVzlaPhone } from '../utils/calculatorUtils';
 import { getPaymentLabel, getPaymentMethod, PAYMENT_ICONS, getPaymentIcon, toTitleCase } from '../config/paymentMethods';
 import SalesHistory from '../components/Dashboard/SalesHistory';
 import SalesChart from '../components/Dashboard/SalesChart';
 import ConfirmModal from '../components/ConfirmModal';
-import CashReconciliationModal from '../components/Dashboard/CashReconciliationModal';
+import CierreCajaWizard from '../components/Dashboard/CierreCajaWizard';
 import { generateTicketPDF, printThermalTicket } from '../utils/ticketGenerator';
 import { generateDailyClosePDF } from '../utils/dailyCloseGenerator';
 import { useNotifications } from '../hooks/useNotifications';
@@ -559,16 +559,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center shadow-inner">
                             <span className="text-emerald-600 dark:text-emerald-400 font-black text-xl">$</span>
                         </div>
-                        <div className="flex items-center gap-2 relative z-10">
-                            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 rounded-lg tracking-wider">HOY</span>
-                            <button
-                                onClick={handleDailyClose}
-                                className="p-1 rounded-lg text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
-                                title="Cierre de caja"
-                            >
-                                <FileText size={13} />
-                            </button>
-                        </div>
+                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 rounded-lg tracking-wider">HOY</span>
                     </div>
                     <div className="relative z-10">
                         <div className="flex items-baseline gap-1">
@@ -637,6 +628,39 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                     </div>
                     <p className="text-xl font-black text-slate-800 dark:text-white leading-none">{formatBs(bcvRate)} <span className="text-xs font-bold text-slate-400">Bs/$</span></p>
                     <p className="text-[11px] text-slate-400 mt-1">Tasa BCV actual</p>
+                </div>
+
+                {/* ═══ BOTON CERRAR CAJA ═══ */}
+                <div className="col-span-2">
+                    {todaySales.length > 0 ? (
+                        <button
+                            onClick={handleDailyClose}
+                            className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white rounded-2xl p-4 shadow-lg shadow-red-500/20 active:scale-[0.98] transition-all flex items-center justify-between group"
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className="w-11 h-11 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                                    <Lock size={22} />
+                                </div>
+                                <div className="text-left">
+                                    <p className="text-sm font-black">Cerrar Caja</p>
+                                    <p className="text-[11px] font-medium text-white/70">${todayTotalUsd.toFixed(2)} | {todaySales.length} {todaySales.length === 1 ? 'venta' : 'ventas'}</p>
+                                </div>
+                            </div>
+                            <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center group-hover:translate-x-1 transition-transform">
+                                <Lock size={16} />
+                            </div>
+                        </button>
+                    ) : (
+                        <div className="w-full bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 flex items-center gap-3">
+                            <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center">
+                                <CheckCircle2 size={20} className="text-emerald-500" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-bold text-slate-500 dark:text-slate-400">Sin ventas pendientes</p>
+                                <p className="text-[11px] text-slate-400 dark:text-slate-500">La caja esta limpia</p>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Deudas Pendientes */}
@@ -1033,12 +1057,18 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 confirmText="Sí, anular"
                 variant="danger"
             />
-            <CashReconciliationModal
+            <CierreCajaWizard
                 isOpen={isCashReconOpen}
                 onClose={() => setIsCashReconOpen(false)}
                 onConfirm={handleConfirmCashRecon}
-                expectedUsd={paymentBreakdown['efectivo_usd']?.total || 0}
-                expectedBs={paymentBreakdown['efectivo_bs']?.total || 0}
+                todaySales={todaySales}
+                todayTotalUsd={todayTotalUsd}
+                todayTotalBs={todayTotalBs}
+                todayProfit={todayProfit}
+                todayItemsSold={todayItemsSold}
+                todayExpensesUsd={todayExpensesUsd}
+                paymentBreakdown={paymentBreakdown}
+                todayTopProducts={todayTopProducts}
                 bcvRate={bcvRate}
             />
 
