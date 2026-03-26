@@ -264,8 +264,12 @@ export default function CierreCajaWizard({
                                         className="w-full bg-slate-50 dark:bg-slate-950 border-2 border-slate-200 dark:border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-xl text-slate-800 dark:text-white font-black outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all font-mono"
                                     />
                                 </div>
-                                <p className="text-[11px] text-slate-400 mt-1.5 pl-1">
-                                    Sistema espera: <span className="font-bold text-indigo-500">{formatBs(expectedBs)} Bs</span>
+                                <p className="text-[11px] mt-1.5 pl-1">
+                                    {
+                                        expectedBs < 0
+                                            ? <span className="font-bold text-amber-500">⚠ La gaveta usó Bs {formatBs(Math.abs(expectedBs))} extra para dar cambio</span>
+                                            : <span className="text-slate-400">Sistema espera: <span className="font-bold text-indigo-500">{formatBs(expectedBs)} Bs</span></span>
+                                    }
                                 </p>
                             </div>
 

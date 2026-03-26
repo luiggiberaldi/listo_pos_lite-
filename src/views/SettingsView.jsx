@@ -10,6 +10,7 @@ import { showToast } from '../components/Toast';
 import PaymentMethodsManager from '../components/Settings/PaymentMethodsManager';
 import { useSecurity } from '../hooks/useSecurity';
 import { useProductContext } from '../context/ProductContext';
+import ShareInventoryModal from '../components/ShareInventoryModal';
 
 // ───────────────────────────────────────────────────── Toggle
 function Toggle({ enabled, onChange, color = 'emerald' }) {
@@ -47,8 +48,9 @@ function SectionCard({ icon: Icon, title, subtitle, iconColor = 'text-slate-500'
 }
 
 // ═══════════════════════════════════════════════════════ MAIN
-export default function SettingsView({ onClose, theme, toggleTheme, triggerHaptic, onShareInventory }) {
+export default function SettingsView({ onClose, theme, toggleTheme, triggerHaptic }) {
     const {
+        products, categories, setProducts, setCategories,
         copEnabled, setCopEnabled,
         autoCopEnabled, setAutoCopEnabled,
         tasaCopManual, setTasaCopManual,
@@ -58,6 +60,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
     const { deviceId, forceHeartbeat } = useSecurity();
     const fileInputRef = useRef(null);
     const [idCopied, setIdCopied] = useState(false);
+    const [isShareOpen, setIsShareOpen] = useState(false);
     const [importStatus, setImportStatus] = useState(null);
     const [statusMessage, setStatusMessage] = useState('');
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -351,8 +354,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                 <ChevronRight size={16} className="text-slate-300" />
                             </button>
 
-                            {onShareInventory && (
-                                <button onClick={() => { onClose(); setTimeout(() => onShareInventory(), 100); }} className="w-full flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors group active:scale-[0.98]">
+                                <button onClick={() => setIsShareOpen(true)} className="w-full flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors group active:scale-[0.98]">
                                     <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg"><Share2 size={18} className="text-indigo-500" /></div>
                                     <div className="text-left flex-1">
                                         <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Compartir Inventario</p>
@@ -360,7 +362,6 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                     </div>
                                     <ChevronRight size={16} className="text-slate-300" />
                                 </button>
-                            )}
                         </div>
 
                         <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
@@ -432,6 +433,8 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                         </button>
                     </SectionCard>
 
+
+
                     {/* Version footer */}
                     <div className="text-center py-4">
                         <p className="text-[10px] text-slate-300 dark:text-slate-600 font-bold">PreciosAlDia Bodegas v1.0</p>
@@ -489,6 +492,19 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                     </div>
                 </div>
             )}
+
+            <ShareInventoryModal
+                isOpen={isShareOpen} 
+                onClose={() => setIsShareOpen(false)} 
+                products={products} 
+                categories={categories}
+                onImport={({ products: imported, categories: importedCats }) => {
+                    if (importedCats && importedCats.length > 0) setCategories(importedCats);
+                    if (imported && imported.length > 0) setProducts(imported);
+                    showToast('Inventario importado correctamente', 'success');
+                    setIsShareOpen(false);
+                }}
+            />
         </div>
     );
 }

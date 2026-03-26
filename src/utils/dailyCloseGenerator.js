@@ -17,6 +17,7 @@ export async function generateDailyClosePDF({
     todayProfit,
     todayItemsSold,
     reconData, // Datos del cuadre físico
+    apertura,  // Registro de apertura de caja: { openingUsd, openingBs, sellerName }
 }) {
     const WIDTH = 80;
     const M = 5;
@@ -27,10 +28,11 @@ export async function generateDailyClosePDF({
     const paymentRows = Object.keys(paymentBreakdown).length;
     const topProdRows = topProducts.length;
     const saleRows = allSales.length;
+    // Calculate dynamic base height. Increase to 45mm per sale to fit detailed change rows
     const H = 200
         + (paymentRows * 7)
         + (topProdRows * 10)
-        + (saleRows * 22);
+        + (saleRows * 45);
 
     const doc = new jsPDF({ unit: 'mm', format: [WIDTH, H] });
 
@@ -176,14 +178,42 @@ export async function generateDailyClosePDF({
             
             doc.setFont('helvetica', 'bold');
             if (i >= 2) {
-                // Color code differences
-                const numVal = parseFloat(value.replace(/[^0-9.-]+/g,""));
-                if (numVal > 0) doc.setTextColor(...GREEN);
-                else if (numVal < 0) doc.setTextColor(...RED);
-                else doc.setTextColor(...MUTED);
+                // Use raw diff values for coloring (avoid parsing formatted strings)
+                // i=2 → diffUsd, i=3 → diffBs
+                const rawDiff = i === 2 ? reconData.diffUsd : reconData.diffBs;
+                const threshold = i === 2 ? 0.05 : 1; // USD: 5c tolerance, Bs: 1 Bs tolerance
+                if (Math.abs(rawDiff) <= threshold) doc.setTextColor(...MUTED); // cuadra
+                else if (rawDiff < 0) doc.setTextColor(...RED);   // faltante
+                else doc.setTextColor(...GREEN);                    // sobrante
             } else {
                 doc.setTextColor(...INK);
             }
+            doc.text(value, RIGHT, y, { align: 'right' });
+            y += 5;
+        });
+
+        y += 2;
+        dash(y); y += 6;
+    }
+
+    // ════════════════════════════════════
+    //  APERTURA DE CAJA
+    // ════════════════════════════════════
+    if (apertura && (apertura.openingUsd > 0 || apertura.openingBs > 0)) {
+        y = sectionTitle('FONDO INICIAL (APERTURA)', y);
+
+        const aperturaRows = [];
+        if (apertura.openingUsd > 0) aperturaRows.push(['Efectivo USD inicial', `$${apertura.openingUsd.toFixed(2)}`]);
+        if (apertura.openingBs > 0) aperturaRows.push(['Efectivo Bs inicial', `Bs ${formatBs(apertura.openingBs)}`]);
+        if (apertura.sellerName) aperturaRows.push(['Cajero apertura', apertura.sellerName]);
+
+        aperturaRows.forEach(([label, value]) => {
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7);
+            doc.setTextColor(...BODY);
+            doc.text(label, M, y);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...INK);
             doc.text(value, RIGHT, y, { align: 'right' });
             y += 5;
         });
@@ -261,22 +291,45 @@ export async function generateDailyClosePDF({
             });
         }
 
-        // Método de pago
-        let methodStr = '';
-        if (s.payments && s.payments.length > 1) {
-            methodStr = 'Pago Mixto';
-        } else if (s.payments && s.payments.length === 1) {
-            methodStr = toTitleCase(s.payments[0].methodLabel);
-        } else if (s.paymentMethod) {
-            methodStr = getPaymentLabel(s.paymentMethod);
-        }
-        if (methodStr && !isCanceled) {
+        // Método de pago detallado
+        if (!isCanceled && s.payments && s.payments.length > 0) {
+            s.payments.forEach(p => {
+                const label = toTitleCase(p.methodLabel || getPaymentLabel(p.methodId) || 'Pago');
+                const val = p.currency === 'USD' 
+                    ? `$${(p.amountUsd !== undefined ? p.amountUsd : p.amount).toFixed(2)}` 
+                    : `Bs ${formatBs(p.amountBs !== undefined ? p.amountBs : p.amount)}`;
+                doc.setFontSize(6);
+                doc.setTextColor(...MUTED);
+                doc.text(`  Recibido: ${label} (${val})`, M, y);
+                y += 3.5;
+            });
+        } else if (!isCanceled && s.paymentMethod) {
+            // Legacy fallback
             doc.setFontSize(6);
             doc.setTextColor(...MUTED);
-            doc.text(`  Pago: ${methodStr}`, M, y);
+            doc.text(`  Pago: ${getPaymentLabel(s.paymentMethod)}`, M, y);
+            y += 3.5;
+        }
 
-            // Ref en Bs
-            doc.text(`Ref: Bs ${formatBs(s.totalBs || 0)}`, RIGHT, y, { align: 'right' });
+        // Vuelto detallado (si aplica)
+        if (!isCanceled && ((s.changeUsd && s.changeUsd > 0) || (s.changeBs && s.changeBs > 0))) {
+            doc.setFontSize(6);
+            doc.setTextColor(...MUTED); 
+            
+            let changeText = '  Vuelto Entregado: ';
+            if (s.changeUsd > 0) changeText += `$${s.changeUsd.toFixed(2)}`;
+            if (s.changeBs > 0 && s.changeUsd > 0) changeText += ` + `;
+            if (s.changeBs > 0) changeText += `Bs ${formatBs(s.changeBs)}`;
+            
+            doc.text(changeText, M, y);
+            y += 3.5;
+        }
+
+        // Referencia final Bs
+        if (!isCanceled) {
+            doc.setFontSize(6);
+            doc.setTextColor(...MUTED);
+            doc.text(`Ref Venta: Bs ${formatBs(s.totalBs || 0)}`, RIGHT, y, { align: 'right' });
             y += 3.5;
         }
 

@@ -24,7 +24,9 @@ export default function CheckoutModal({
     triggerHaptic,
     onCreateCustomer,
     copEnabled,
-    tasaCop
+    tasaCop,
+    currentFloatUsd = 0,
+    currentFloatBs = 0
 }) {
     // -- State: un valor por barra --
     const [barValues, setBarValues] = useState({});
@@ -411,7 +413,6 @@ export default function CheckoutModal({
                                     </div>
                                 </div>
 
-                                {/* Botones rápidos */}
                                 <div className="flex gap-2">
                                     <button
                                         onClick={() => { setChangeUsdGiven(changeUsd.toFixed(2)); setChangeBsGiven('0'); }}
@@ -426,6 +427,23 @@ export default function CheckoutModal({
                                         Todo Bs
                                     </button>
                                 </div>
+
+                                {/* FLOAT WARNINGS */}
+                                {(parseFloat(changeUsdGiven) > currentFloatUsd + 0.05 || parseFloat(changeBsGiven) > currentFloatBs + 1) && (
+                                    <div className="mt-2 p-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 flex items-start gap-1.5">
+                                        <AlertTriangle size={12} className="text-orange-500 shrink-0 mt-0.5" />
+                                        <div className="flex-1">
+                                            <p className="text-[10px] font-bold text-orange-600 dark:text-orange-400 leading-tight">
+                                                Precaución: El vuelto excede el fondo de caja registrado.
+                                            </p>
+                                            <p className="text-[9px] font-medium text-orange-500 leading-tight mt-0.5">
+                                                Fondo actual: 
+                                                <span className="font-bold ml-1">${currentFloatUsd.toFixed(2)}</span> y 
+                                                <span className="font-bold ml-1">Bs {formatBs(currentFloatBs)}</span>
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

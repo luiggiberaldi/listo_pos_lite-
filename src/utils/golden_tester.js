@@ -6,7 +6,7 @@ export const standardTests = [
     {
         id: 1,
         name: 'Parity: Logic (USDT -> USD)',
-        query: '100 USDT a Dólares', // [PDA v3.0] Removed 'BCV' ambiguity
+        query: '100 USDT a Dólares', // [PDA v4.0] Removed 'BCV' ambiguity
         premium: true,
         validator: (aiResult, rates) => {
             const result = aiResult.convertedAmount;
@@ -37,7 +37,7 @@ export const standardTests = [
         premium: true,
         validator: (aiResult) => {
             const text = aiResult.textResponse?.toLowerCase() || "";
-            // [PDA v3.0] Ajuste: A veces la IA responde "analizar tu ticket" repitiendo la palabra del usuario.
+            // [PDA v4.0] Ajuste: A veces la IA responde "analizar tu ticket" repitiendo la palabra del usuario.
             // Aceptamos "ticket" como señal de contexto correcto, además de los triggers de acción.
             if (text.includes('imagen') || text.includes('comprobante') || text.includes('cámara') || text.includes('foto') || text.includes('botón') || text.includes('subir') || text.includes('ticket')) {
                 return { ok: true, msg: 'Trigger de visión detectado correctamente.' };
@@ -79,7 +79,7 @@ export const standardTests = [
         premium: true,
         validator: (aiResult, rates) => {
             const result = aiResult.convertedAmount;
-            // [PDA v3.0] Realidad: Cash usa Tasa USDT como Proxy seguro (Fallback) o Tasa Calibrada.
+            // [PDA v4.0] Realidad: Cash usa Tasa USDT como Proxy seguro (Fallback) o Tasa Calibrada.
             // Asumimos Fallback (USDT) para el test estándar.
             const expected = Math.ceil(100 * rates.bcv.price);
 
@@ -133,7 +133,7 @@ export const standardTests = [
 ];
 
 export const runAudit = async (rates, logCallback) => {
-    logCallback('🚀 Iniciando Auditoría Golden Tester (PDA v3.0)...');
+    logCallback('🚀 Iniciando Auditoría Golden Tester (PDA v4.0)...');
     logCallback('--- MODO DE PRUEBA: RIGOR MÁXIMO ---');
 
     let passed = 0;

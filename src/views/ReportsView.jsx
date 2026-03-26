@@ -9,6 +9,9 @@ import { useProductContext } from '../context/ProductContext';
 import { useCart } from '../context/CartContext';
 import EmptyState from '../components/EmptyState';
 import ConfirmModal from '../components/ConfirmModal';
+import { getLocalISODate, getDateRange } from '../utils/dateHelpers';
+import { calculateReportsData } from '../utils/reportsProcessor';
+import { processVoidSale } from '../utils/voidSaleProcessor';
 
 const SALES_KEY = 'bodega_sales_v1';
 
@@ -20,39 +23,6 @@ const RANGE_OPTIONS = [
     { id: 'custom', label: 'Personalizado' },
 ];
 
-function getLocalISODate(d = new Date()) {
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
-
-function getDateRange(rangeId) {
-    const now = new Date();
-    const todayStr = getLocalISODate(now);
-
-    switch (rangeId) {
-        case 'today': {
-            return { from: todayStr, to: todayStr };
-        }
-        case 'week': {
-            const d = new Date(now);
-            d.setDate(d.getDate() - d.getDay()); // domingo
-            return { from: getLocalISODate(d), to: todayStr };
-        }
-        case 'month': {
-            const d = new Date(now.getFullYear(), now.getMonth(), 1);
-            return { from: getLocalISODate(d), to: todayStr };
-        }
-        case 'lastMonth': {
-            const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-            const end = new Date(now.getFullYear(), now.getMonth(), 0);
-            return { from: getLocalISODate(d), to: getLocalISODate(end) };
-        }
-        default:
-            return { from: todayStr, to: todayStr };
-    }
-}
 
 export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive }) {
     const { products, setProducts, effectiveRate: bcvRate, copEnabled, tasaCop } = useProductContext();
@@ -76,33 +46,8 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
         if (!sale) return;
         setVoidSaleTarget(null);
         try {
-            const updatedSales = allSales.map(s => s.id === sale.id ? { ...s, status: 'ANULADA' } : s);
-            // Restore stock
-            if (sale.items && sale.items.length > 0) {
-                const updatedProducts = products.map(p => {
-                    const itemsInSale = sale.items.filter(i => (i._originalId || i.id) === p.id);
-                    if (itemsInSale.length > 0) {
-                        const totalToRestore = itemsInSale.reduce((sum, item) => {
-                            if (item.isWeight) return sum + item.qty;
-                            if (item._mode === 'unit') return sum + (item.qty / (item._unitsPerPackage || 1));
-                            return sum + item.qty;
-                        }, 0);
-                        return { ...p, stock: (p.stock || 0) + totalToRestore };
-                    }
-                    return p;
-                });
-                setProducts(updatedProducts);
-            }
-            // Revert debt
-            const savedCustomers = await storageService.getItem('bodega_customers_v1', []);
-            const fiadoAmountUsd = sale.fiadoUsd || (sale.tipo === 'VENTA_FIADA' ? sale.totalUsd : 0) || 0;
-            const favorUsed = sale.payments?.filter(p => p.methodId === 'saldo_favor').reduce((sum, p) => sum + p.amountUsd, 0) || 0;
-            const debtToReverse = fiadoAmountUsd + favorUsed;
-            if (sale.customerId && debtToReverse > 0) {
-                const finalCustomers = savedCustomers.map(c => c.id === sale.customerId ? { ...c, deuda: Math.max(0, (c.deuda || 0) - debtToReverse) } : c);
-                await storageService.setItem('bodega_customers_v1', finalCustomers);
-            }
-            await storageService.setItem(SALES_KEY, updatedSales);
+            const { updatedSales, updatedProducts } = await processVoidSale(sale, allSales, products);
+            setProducts(updatedProducts);
             setAllSales(updatedSales);
             setRecycleOffer(sale);
         } catch (error) {
@@ -134,74 +79,18 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
         return getDateRange(selectedRange);
     }, [selectedRange, customFrom, customTo]);
 
-    // Ventas de Mercancía (para Totales, Profit, Top Productos)
-    const salesForStats = useMemo(() => {
-        return allSales.filter(s => {
-            if (s.status === 'ANULADA' || (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA')) return false;
-            
-            const saleDate = new Date(s.timestamp);
-            const dateStr = getLocalISODate(saleDate);
-
-            return dateStr >= from && dateStr <= to;
-        });
-    }, [allSales, from, to]);
-
-    // Flujo de Dinero (para Desglose de Pagos, incluye pagos de deudas)
-    const salesForCashFlow = useMemo(() => {
-        return allSales.filter(s => {
-            if (s.status === 'ANULADA') return false;
-            // Solo transacciones que mueven dinero real del cliente a la tienda hoy o pagos a proveedores
-            if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'PAGO_PROVEEDOR') return false;
-            
-            const saleDate = new Date(s.timestamp);
-            const dateStr = getLocalISODate(saleDate);
-
-            return dateStr >= from && dateStr <= to;
-        });
-    }, [allSales, from, to]);
-
-    const historySales = useMemo(() => {
-        return allSales.filter(s => {
-            if (s.tipo === 'AJUSTE_ENTRADA' || s.tipo === 'AJUSTE_SALIDA') return false;
-            
-            const saleDate = new Date(s.timestamp);
-            const dateStr = getLocalISODate(saleDate);
-
-            return dateStr >= from && dateStr <= to;
-        });
-    }, [allSales, from, to]);
-
-    // ── Métricas (Basadas en Mercancía Vendida) ──
-    const totalUsd = salesForStats.reduce((s, sale) => s + (sale.totalUsd || 0), 0);
-    const totalBs = salesForStats.reduce((s, sale) => s + (sale.totalBs || 0), 0);
-    const totalItems = salesForStats.reduce((s, sale) => s + (sale.items ? sale.items.reduce((is, i) => is + i.qty, 0) : 0), 0);
-    const profit = FinancialEngine.calculateAggregateProfit(salesForStats, bcvRate, products);
-
-    // ── Desglose por método de pago (Basado en Dinero Real Ingresado) ──
-    const paymentBreakdown = FinancialEngine.calculatePaymentBreakdown(salesForCashFlow);
-
-    // Top productos
-    const productMap = {};
-    salesForStats.forEach(s => {
-        s.items?.forEach(item => {
-            if (!productMap[item.name]) productMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
-            productMap[item.name].qty += item.qty;
-            productMap[item.name].revenue += item.priceUsd * item.qty;
-        });
-    });
-    const topProducts = Object.values(productMap).sort((a, b) => b.revenue - a.revenue).slice(0, 8);
-
-    // Ventas por da para mini grfica
-    const salesByDay = useMemo(() => {
-        const map = {};
-        salesForStats.forEach(s => {
-            const day = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : getLocalISODate(new Date());
-            if (!map[day]) map[day] = { date: day, total: 0, count: 0 };
-            map[day].total += s.totalUsd || 0;
-            map[day].count++;
-        });
-        return Object.values(map).sort((a, b) => a.date.localeCompare(b.date));
-    }, [salesForStats]);
+    const { 
+        salesForStats, 
+        salesForCashFlow, 
+        historySales, 
+        totalUsd, 
+        totalBs, 
+        totalItems, 
+        profit, 
+        paymentBreakdown, 
+        topProducts, 
+        salesByDay 
+    } = useMemo(() => calculateReportsData(allSales, from, to, bcvRate, products), [allSales, from, to, bcvRate, products]);
 
     const maxDayTotal = Math.max(...salesByDay.map(d => d.total), 1);
 

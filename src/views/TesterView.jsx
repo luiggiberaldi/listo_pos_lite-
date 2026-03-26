@@ -8,8 +8,9 @@ import { SystemTester } from '../testing/SystemTester';
 import {
     FlaskConical, Play, Square, Copy, CheckCircle2, XCircle,
     Zap, ChevronLeft, ChevronDown, ChevronUp, TerminalSquare, Trash2, Brain,
-    Download, Filter
+    Download, Filter, Database
 } from 'lucide-react';
+import { storageService } from '../services/storageService';
 
 const SUITE_ICONS = {
     dash_validations: '📊', chaos_data: '🌪️', extreme_stress: '🌋', quota_mock: '🔌',
@@ -160,7 +161,7 @@ export const TesterView = ({ onBack }) => {
                         <FlaskConical size={18} />
                     </div>
                     <div>
-                        <h1 className="text-sm sm:text-lg font-black tracking-tight">System Tester <span className="text-indigo-400">v3.0</span></h1>
+                        <h1 className="text-sm sm:text-lg font-black tracking-tight">System Tester <span className="text-indigo-400">v4.0</span></h1>
                         <p className="text-[8px] sm:text-[10px] text-slate-500 uppercase tracking-widest font-bold">Refactorizado • Seguro • Fast Mode</p>
                     </div>
                 </div>
@@ -266,7 +267,7 @@ export const TesterView = ({ onBack }) => {
                             {failedSuites === 0 ? 'ALL SUITES PASSED' : `${failedSuites} SUITE${failedSuites > 1 ? 'S' : ''} FAILED`}
                         </p>
                         <p className="text-[9px] sm:text-[10px] text-slate-500 font-bold">
-                            {passRate}% pass rate • {elapsedSec}s • v3.0
+                            {passRate}% pass rate • {elapsedSec}s • v4.0
                         </p>
                     </div>
                 </div>
@@ -423,9 +424,124 @@ export const TesterView = ({ onBack }) => {
                 </div>
             )}
 
+            {/* ── Simulador Tester 2.0 ── */}
+            <div className="bg-slate-900 rounded-xl border border-slate-700 overflow-hidden mt-4">
+                <div className="px-3 sm:px-4 py-3 bg-slate-800/50 border-b border-slate-700 flex items-center gap-3">
+                    <Database size={18} className="text-orange-500" />
+                    <div>
+                        <h3 className="text-xs sm:text-sm font-black text-slate-200 uppercase tracking-wide">Simulador Tester 2.0</h3>
+                        <p className="text-[9px] sm:text-[10px] text-slate-500 font-bold">Solo Desarrollo: Stress Test</p>
+                    </div>
+                </div>
+                <div className="p-3 sm:p-4">
+                    <button
+                        onClick={async () => {
+                            if (!window.confirm('¿Inyectar 102 ventas de prueba simulando un día real completo? Ocurrirá sobre el día de hoy.')) return;
+                            const now = new Date();
+                            const todayStr = now.toISOString().split('T')[0];
+                            const testSales = [];
+                                
+                            const productsPool = [
+                                { id: 'qa-1', name: 'Harina PAN', priceUsd: 1.10 },
+                                { id: 'qa-2', name: 'Huevos Medio Cartón', priceUsd: 2.50 },
+                                { id: 'qa-3', name: 'Queso Llanero 1Kg', priceUsd: 4.00 },
+                                { id: 'qa-4', name: 'Arroz Mary', priceUsd: 1.20 },
+                                { id: 'qa-5', name: 'Refresco Cola 2L', priceUsd: 1.80 }
+                            ];
+                                
+                            const paymentCombos = [
+                                (usd) => ({ payments: [{ methodId: 'pago_movil', amount: usd * 36, amountUsd: usd, currency: 'BS', methodLabel: 'Pago Móvil' }], changeUsd: 0, changeBs: 0 }),
+                                (usd) => ({ payments: [{ methodId: 'efectivo_usd', amount: usd, amountUsd: usd, currency: 'USD', methodLabel: 'Efectivo $' }], changeUsd: 0, changeBs: 0 }),
+                                (usd) => ({ payments: [{ methodId: 'punto_venta', amount: usd * 36, amountUsd: usd, currency: 'BS', methodLabel: 'Punto de Venta' }], changeUsd: 0, changeBs: 0 }),
+                                (usd) => ({ payments: [{ methodId: 'biopago', amount: usd * 36, amountUsd: usd, currency: 'BS', methodLabel: 'Biopago' }], changeUsd: 0, changeBs: 0 }),
+                                (usd) => {
+                                    const bill = usd < 15 ? 20 : 100;
+                                    return { payments: [{ methodId: 'efectivo_usd', amount: bill, amountUsd: bill, currency: 'USD', methodLabel: 'Efectivo $' }], changeUsd: bill - usd, changeBs: 0 };
+                                },
+                                (usd) => {
+                                    const half = Math.round((usd / 2) * 100) / 100;
+                                    const rem = usd - half;
+                                    return { payments: [
+                                        { methodId: 'efectivo_usd', amount: half, amountUsd: half, currency: 'USD', methodLabel: 'Efectivo $' },
+                                        { methodId: 'pago_movil', amount: rem * 36, amountUsd: rem, currency: 'BS', methodLabel: 'Pago Móvil' }
+                                    ], changeUsd: 0, changeBs: 0 };
+                                }
+                            ];
+
+                            let hr = 8;
+                            let min = 0;
+                                
+                            testSales.push({
+                                id: `apertura_mock_${Date.now()}`,
+                                tipo: 'APERTURA_CAJA',
+                                openingUsd: 100,
+                                openingBs: 2000,
+                                timestamp: `${todayStr}T08:00:00.000Z`,
+                                cajaCerrada: false
+                            });
+                                
+                            for (let i = 0; i < 102; i++) {
+                                min += Math.floor(Math.random() * 7) + 2; 
+                                if (min >= 60) { min -= 60; hr++; }
+                                if (hr >= 22) hr = 21;
+                                    
+                                const hStr = String(hr).padStart(2, '0');
+                                const mStr = String(min).padStart(2, '0');
+                                const fTime = `${todayStr}T${hStr}:${mStr}:00.000Z`;
+
+                                const itemC = Math.floor(Math.random() * 3) + 1;
+                                const items = [];
+                                let tUsd = 0;
+                                for (let j = 0; j < itemC; j++) {
+                                    const p = productsPool[Math.floor(Math.random() * productsPool.length)];
+                                    const q = Math.floor(Math.random() * 3) + 1;
+                                    items.push({ id: p.id, name: p.name, qty: q, priceUsd: p.priceUsd });
+                                    tUsd += (p.priceUsd * q);
+                                }
+                                tUsd = Math.round(tUsd * 100) / 100;
+                                    
+                                const comboPicker = paymentCombos[Math.floor(Math.random() * paymentCombos.length)];
+                                const financialData = comboPicker(tUsd);
+
+                                testSales.push({
+                                    id: crypto.randomUUID(),
+                                    timestamp: fTime,
+                                    items: items,
+                                    discountAmountUsd: 0,
+                                    subtotalUsd: tUsd,
+                                    totalUsd: tUsd,
+                                    totalBs: tUsd * 36,
+                                    rate: 36,
+                                    type: 'sale',
+                                    tipo: 'VENTA',
+                                    isSynced: false,
+                                    client: null,
+                                    comment: `TEST Venta N${i+1}`,
+                                    sellerName: 'QA Bot',
+                                    ...financialData
+                                });
+                            }
+
+                            try {
+                                const existingSales = await storageService.getItem('bodega_sales_v1', []);
+                                await storageService.setItem('bodega_sales_v1', [...existingSales, ...testSales]);
+                                alert('Las 102 Ventas simuladas fueron inyectadas con éxito');
+                                setTimeout(() => window.location.reload(), 100);
+                            } catch (e) {
+                                console.error(e);
+                                alert('Error inyectando Tester 2.0');
+                            }
+                        }}
+                        className="w-full py-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-white font-black uppercase tracking-wider rounded-xl text-xs sm:text-sm transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
+                    >
+                        Inyectar Tester 2.0 (102 Ventas)
+                    </button>
+                </div>
+            </div>
+
             {/* ── Footer ── */}
-            <p className="text-center text-[7px] sm:text-[9px] text-slate-700 font-mono uppercase pb-20">
-                Precios al Día • System Tester v3.0 • {new Date().getFullYear()}
+            <p className="text-center text-[7px] sm:text-[9px] text-slate-700 font-mono uppercase pb-20 mt-4">
+                Precios al Día • System Tester v4.0 • {new Date().getFullYear()}
             </p>
         </div>
     );

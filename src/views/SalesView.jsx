@@ -7,7 +7,7 @@ import { useNotifications } from '../hooks/useNotifications';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { getActivePaymentMethods } from '../config/paymentMethods';
 import { showToast } from '../components/Toast';
-import { ShoppingCart, X } from 'lucide-react';
+import { ShoppingCart, X, DollarSign, CheckCircle2 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 
 // Components
@@ -20,12 +20,14 @@ import CheckoutModal from '../components/Sales/CheckoutModal';
 import CustomAmountModal from '../components/Sales/CustomAmountModal';
 import KeyboardHelpModal from '../components/Sales/KeyboardHelpModal';
 import DiscountModal from '../components/Sales/DiscountModal';
+import CajaCerradaOverlay from '../components/Sales/CajaCerradaOverlay';
 import { useProductContext } from '../context/ProductContext';
+import AperturaCajaModal from '../components/Dashboard/AperturaCajaModal';
 
 import ConfirmModal from '../components/ConfirmModal';
 import Confetti from '../components/Confetti';
-import { buildReceiptWhatsAppUrl } from '../components/Sales/ReceiptShareHelper';
-import { procesarImpactoCliente } from '../utils/financialLogic';
+import { processSaleTransaction } from '../utils/checkoutProcessor';
+import { useSalesKeyboard } from '../hooks/useSalesKeyboard';
 
 const SALES_KEY = 'bodega_sales_v1';
 
@@ -45,6 +47,10 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
     const [showClearCartConfirm, setShowClearCartConfirm] = useState(false);
     const [showCustomAmountModal, setShowCustomAmountModal] = useState(false);
     const [showKeyboardHelp, setShowKeyboardHelp] = useState(false); // Keyboard shortcuts modal state
+
+    // Apertura Caja
+    const [isAperturaOpen, setIsAperturaOpen] = useState(false);
+    const [todayAperturaData, setTodayAperturaData] = useState(null);
 
     // Cart (from global context)
     const { cart, setCart, cartRef, pendingNavigate, setPendingNavigate, discount, setDiscount } = useCart();
@@ -128,7 +134,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                 showToast(`Producto no encontrado (${barcode})`, 'warning');
             }
         },
-        enabled: !isLoading && isActive
+        enabled: !isLoading && isActive && !!todayAperturaData
     });
 
     // Paste Barcode Handler (Para cuando el usuario hace Ctrl+V en la barra de búsqueda)
@@ -197,6 +203,19 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
         value: discount?.value
     };
 
+    // ── Current cash float (for soft change warning in CheckoutModal) ──
+    const [salesData, setSalesData] = useState([]);
+    const currentFloat = useMemo(() => {
+        const d = new Date();
+        const todayStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        const todayOpen = salesData.filter(s => !s.cajaCerrada && s.timestamp?.startsWith(todayStr));
+        const bd = FinancialEngine.calculatePaymentBreakdown(todayOpen);
+        return {
+            usd: bd['efectivo_usd']?.total ?? 0,
+            bs:  bd['efectivo_bs']?.total  ?? 0,
+        };
+    }, [salesData]);
+
     const cartItemCount = cart.reduce((sum, item) => sum + item.qty, 0);
 
     const formatBs = (n) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
@@ -218,11 +237,13 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
     useEffect(() => {
         let mounted = true;
         const load = async () => {
-            const [savedCustomers, methods, savedCart] = await Promise.all([
+            const [savedCustomers, methods, savedCart, savedSales] = await Promise.all([
                 storageService.getItem('bodega_customers_v1', []),
                 getActivePaymentMethods(),
-                storageService.getItem('bodega_pending_cart_v1', [])
+                storageService.getItem('bodega_pending_cart_v1', []),
+                storageService.getItem(SALES_KEY, [])
             ]);
+            if (mounted) { setSalesData(savedSales); }
             if (mounted) {
                 setCustomers(savedCustomers);
                 setPaymentMethods(methods);
@@ -231,6 +252,16 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                 if (savedCart && savedCart.length > 0 && cartRef.current.length === 0) {
                     setCart(savedCart);
                 }
+
+                // Check Apertura
+                const d = new Date();
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                const todayStr = `${year}-${month}-${day}`;
+                
+                const apertura = savedSales.find(s => s.tipo === 'APERTURA_CAJA' && !s.cajaCerrada && s.timestamp?.startsWith(todayStr));
+                setTodayAperturaData(apertura || null);
                 
                 setIsLoadingLocal(false);
 
@@ -461,112 +492,40 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
 
     const handleCheckout = async (payments, changeBreakdown) => {
         triggerHaptic && triggerHaptic();
-        const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
-        if (cart.length === 0) return;
 
-        const totalPaidUsd = payments.reduce((acc, p) => acc + p.amountUsd, 0);
-        const remainingUsd = Math.max(0, Math.round((cartTotalUsd - totalPaidUsd) * 100) / 100);
-        const changeUsd = Math.max(0, Math.round((totalPaidUsd - cartTotalUsd) * 100) / 100);
-        const changeBs = Math.round(changeUsd * effectiveRate * 100) / 100;
-
-        if (!selectedCustomer && remainingUsd > 0.01) return;
-        if (isNaN(cartTotalUsd) || cartTotalUsd < 0 || isNaN(totalPaidUsd) || totalPaidUsd < 0) {
-            console.error('Abortando venta. Integridad matemática comprometida.');
-            showToast('Error de integridad de datos. Revisa los montos.', 'error');
-            playError(); return;
-        }
-
-        // Bloquear checkouts en $0 total
-        if (cartTotalUsd <= 0.01) {
-            showToast('No se pueden generar ventas de $0.00', 'warning');
-            playError(); return;
-        }
-
-        const fiadoAmountUsd = remainingUsd > 0.01 ? remainingUsd : 0;
-        const sale = {
-            id: crypto.randomUUID(),
-            tipo: fiadoAmountUsd > 0 ? 'VENTA_FIADA' : 'VENTA',
-            status: 'COMPLETADA',
-            items: cart.map(i => ({ id: i.id, name: i.name, qty: i.qty, priceUsd: i.priceUsd, costBs: i.costBs || 0, costUsd: i.costUsd || 0, isWeight: i.isWeight })),
-            cartSubtotalUsd: cartSubtotalUsd,
-            discountType: discountData?.type || null,
-            discountValue: discountData?.value || 0,
-            discountAmountUsd: discountData?.amountUsd || 0,
-            totalUsd: cartTotalUsd, 
-            totalBs: cartTotalBs, 
-            totalCop: copEnabled && tasaCop > 0 ? cartTotalUsd * tasaCop : 0,
-            payments, 
-            rate: effectiveRate,
-            tasaCop: copEnabled ? tasaCop : 0,
-            copEnabled: copEnabled,
-            rateSource: useAutoRate ? 'BCV Auto' : 'Manual',
-            timestamp: new Date().toISOString(),
-            changeUsd: fiadoAmountUsd > 0 ? 0 : (changeBreakdown?.changeUsdGiven || 0),
-            changeBs: fiadoAmountUsd > 0 ? 0 : (changeBreakdown?.changeBsGiven || 0),
-            customerId: selectedCustomerId || null,
-            customerName: selectedCustomer ? selectedCustomer.name : 'Consumidor Final',
-            customerDocument: selectedCustomer?.documentId || null,
-            customerPhone: selectedCustomer?.phone || null,
-            fiadoUsd: fiadoAmountUsd
+        const opts = {
+            cart, cartTotalUsd, cartTotalBs, cartSubtotalUsd, payments, changeBreakdown,
+            selectedCustomerId, customers, products, effectiveRate, tasaCop, copEnabled,
+            discountData, useAutoRate
         };
+
+        const result = await processSaleTransaction(opts);
         
-        // Fase 3: Immutability Shield - Congelar la transacción para evitar side-effects
-        Object.freeze(sale);
-
-        const existingSales = await storageService.getItem(SALES_KEY, []);
-        // Bypass the rigid object freeze for internal structural attributes that belong to storage rather than financial logic,
-        // Wait, Object.freeze makes the object completely immutable. If we must mutate `saleNumber`, let's do it before freezing.
-        const saleNumber = existingSales.reduce((mx, s) => Math.max(mx, s.saleNumber || 0), 0) + 1;
-        const finalPersistedSale = Object.freeze({ ...sale, saleNumber });
-
-        await storageService.setItem(SALES_KEY, [finalPersistedSale, ...existingSales]);
-
-        // Deduct stock
-        const updatedProducts = products.map(p => {
-            // Un producto puede estar varias veces en el carrito (ej: por paquete y por unidad)
-            // Necesitamos sumar todas las deducciones para este producto original
-            const cartItemsForThisProduct = cart.filter(i => (i._originalId || i.id) === p.id);
-            if (cartItemsForThisProduct.length > 0) {
-                // Sumamos cuánto se deduce en total.
-                // Si se vendió por unidad, se resta la fracción correspondiente del paquete.
-                const totalDeducted = cartItemsForThisProduct.reduce((sum, item) => {
-                    if (item.isWeight) return sum + item.qty; // Peso en kg
-                    if (item._mode === 'unit') return sum + (item.qty / (item._unitsPerPackage || 1)); // Fracción de paquete
-                    return sum + item.qty; // Paquetes enteros
-                }, 0);
-                
-                const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
-                const newStock = (p.stock ?? 0) - totalDeducted;
-                return { ...p, stock: allowNeg ? newStock : Math.max(0, newStock) };
-            }
-            return p;
-        });
-        // ProductContext's setProducts automatically handles persisting to storage
-        setProducts(updatedProducts);
-
-        // Update customer debt / favor using centralized logic
-        if (selectedCustomer) {
-            const amount_favor_used = payments.filter(p => p.methodId === 'saldo_favor').reduce((sum, p) => sum + p.amountUsd, 0);
-            
-            // Si hay fiado, es deudaGenerada. Si usa saldo favor, se descuenta.
-            const transaccionOpts = {
-                usaSaldoFavor: amount_favor_used,
-                esCredito: fiadoAmountUsd > 0.009,
-                deudaGenerada: fiadoAmountUsd,
-                vueltoParaMonedero: 0 // Podríamos extender CheckoutModal para permitir guardar vuelto
-            };
-
-            const updatedCustomer = procesarImpactoCliente(selectedCustomer, transaccionOpts);
-            const updatedCustomers = customers.map(c => c.id === selectedCustomer.id ? updatedCustomer : c);
-            
-            setCustomers(updatedCustomers);
-            await storageService.setItem('bodega_customers_v1', updatedCustomers);
+        if (!result.success) {
+            console.error('Abortando venta:', result.error);
+            showToast(result.error, result.error.includes('No se pueden') ? 'warning' : 'error');
+            playError();
+            return;
         }
 
-        setShowReceipt(sale); playCheckout(); setShowConfetti(true);
-        // Removed notifySaleComplete to only show low stock notifications
-        notifyLowStock(updatedProducts);
-        setCart([]); setShowCheckout(false); setSelectedCustomerId(''); setCartSelectedIndex(-1);
+        // Apply state updates using the returned optimized datasets
+        setProducts(result.updatedProducts);
+        
+        if (result.updatedCustomers) {
+            setCustomers(result.updatedCustomers);
+        }
+
+        setSalesData(prev => [result.sale, ...prev]);
+
+        setShowReceipt(result.sale); 
+        playCheckout(); 
+        setShowConfetti(true);
+        notifyLowStock(result.updatedProducts);
+        
+        setCart([]); 
+        setShowCheckout(false); 
+        setSelectedCustomerId(''); 
+        setCartSelectedIndex(-1);
     };
 
     const handleCreateCustomer = async (name, documentId, phone) => {
@@ -615,95 +574,12 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
     // ==========================================
     // KEYBOARD SHORTCUTS (LISTO POS Port)
     // ==========================================
-    useEffect(() => {
-        const handleGlobalKeys = (e) => {
-            // Block shortcuts if any modal is open
-            if (showCheckout || showReceipt || hierarchyPending || weightPending || showClearCartConfirm || showCustomAmountModal || showRateConfig || showKeyboardHelp || showDiscountModal) return;
-
-            const isTyping = document.activeElement === searchInputRef.current || document.activeElement?.tagName === 'INPUT';
-
-            // F2 or Enter (when not typing): Focus Search
-            if (e.key === 'F2' || (e.key === 'Enter' && !isTyping)) {
-                e.preventDefault();
-                searchInputRef.current?.focus();
-                searchInputRef.current?.select();
-                setCartSelectedIndex(-1); // Resets cart focus
-                return;
-            }
-
-            // F4: Clear Cart
-            if (e.key === 'F4') {
-                e.preventDefault();
-                if (cartRef.current.length > 0) setShowClearCartConfirm(true);
-                return;
-            }
-
-            // F9: Process Checkout
-            if (e.key === 'F9') {
-                e.preventDefault();
-                if (cartRef.current.length > 0) setShowCheckout(true);
-                return;
-            }
-
-            // --- Cart Navigation and Modification ---
-            if (!isTyping && cartRef.current.length > 0) {
-                let currentCartIndices = cartRef.current.length - 1;
-                let activeIdx = cartSelectedIndex === -1 ? currentCartIndices : cartSelectedIndex; // Default to last item if none selected
-
-                const item = cartRef.current[activeIdx];
-                if (!item) return;
-
-                if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    setCartSelectedIndex(Math.max(0, activeIdx - 1));
-                    return;
-                }
-                
-                if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    setCartSelectedIndex(Math.min(currentCartIndices, activeIdx + 1));
-                    return;
-                }
-
-                if (e.key === '+' || e.key === 'Add') {
-                    e.preventDefault();
-                    updateQty(item.id, item.isWeight ? 0.1 : 1);
-                    setCartSelectedIndex(activeIdx); // Ensure selection is active
-                    return;
-                }
-                
-                if (e.key === '-' || e.key === 'Subtract') {
-                    e.preventDefault();
-                    updateQty(item.id, item.isWeight ? -0.1 : -1);
-                    setCartSelectedIndex(activeIdx);
-                    return;
-                }
-
-                if (e.key === 'Delete' || e.key === 'Backspace') {
-                    e.preventDefault();
-                    removeFromCart(item.id);
-                    if (cartRef.current.length <= 1) { // Will be 0 after update
-                        setCartSelectedIndex(-1);
-                        searchInputRef.current?.focus();
-                    } else {
-                        setCartSelectedIndex(Math.max(0, activeIdx - 1));
-                    }
-                    return;
-                }
-                
-                if (e.key === 'Enter' || e.key === 'ArrowLeft') {
-                    e.preventDefault();
-                    setCartSelectedIndex(-1);
-                    searchInputRef.current?.focus();
-                    searchInputRef.current?.select();
-                    return;
-                }
-            }
-        };
-
-        window.addEventListener('keydown', handleGlobalKeys);
-        return () => window.removeEventListener('keydown', handleGlobalKeys);
-    }, [showCheckout, showReceipt, hierarchyPending, weightPending, showClearCartConfirm, showCustomAmountModal, showRateConfig, showKeyboardHelp, showDiscountModal, cartSelectedIndex, updateQty, removeFromCart, cart.length]);
+    useSalesKeyboard({
+        todayAperturaData, showCheckout, showReceipt, hierarchyPending, weightPending, 
+        showClearCartConfirm, showCustomAmountModal, showRateConfig, showKeyboardHelp, 
+        showDiscountModal, searchInputRef, setCartSelectedIndex, setShowClearCartConfirm, 
+        cartRef, setShowCheckout, cartSelectedIndex, updateQty, removeFromCart
+    });
 
     // ── Loading ───────────────────────────────────
     if (isLoading) {
@@ -713,6 +589,33 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
             </div>
         );
     }
+    const handleSaveApertura = async (data) => {
+        try {
+            const today = new Date().toISOString();
+            const aperturaRecord = {
+                id: `apertura_${Date.now()}`,
+                tipo: 'APERTURA_CAJA',
+                openingUsd: data.openingUsd,
+                openingBs: data.openingBs,
+                timestamp: today,
+                cajaCerrada: false
+            };
+
+            const existingSales = await storageService.getItem(SALES_KEY, []);
+            const updatedSales = [...existingSales, aperturaRecord];
+            
+            await storageService.setItem(SALES_KEY, updatedSales);
+            setTodayAperturaData(aperturaRecord);
+            setIsAperturaOpen(false);
+            showToast('Caja abierta exitosamente', 'success');
+            if (triggerHaptic) triggerHaptic();
+
+        } catch (error) {
+            console.error('Error al guardar apertura:', error);
+            showToast('Error al abrir la caja', 'error');
+            if (playError) playError();
+        }
+    };
 
     // ── Render ─────────────────────────────────────
     return (
@@ -728,38 +631,61 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                 triggerHaptic={triggerHaptic}
             />
 
-            {/* ── Split Layout: Products (left) + Cart Sidebar (right) on desktop ── */}
-            <div className="flex-1 min-h-0 flex flex-col lg:flex-row lg:gap-4">
-
-                {/* ── Left Column: Search + Categories ── */}
-                <div className="flex-1 min-h-0 flex flex-col lg:min-w-0 overflow-y-auto lg:overflow-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
-                    {/* Search + Popups */}
-                    <div className="shrink-0 mb-3 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-sm border border-slate-100 dark:border-slate-800">
-                        <SearchBar
-                            ref={searchInputRef}
-                            searchTerm={searchTerm}
-                            onSearchChange={handleSetSearchTerm}
-                            onKeyDown={handleSearchKeyDown}
-                            onPasteBarcode={handlePasteBarcode}
-                            searchResults={searchResults}
-                            selectedIndex={selectedIndex} setSelectedIndex={setSelectedIndex}
-                            effectiveRate={effectiveRate}
-                            addToCart={addToCart}
-                            isRecording={isRecording} isProcessingAudio={isProcessingAudio} startRecording={startRecording} stopRecording={stopRecording}
-                            hierarchyPending={hierarchyPending} setHierarchyPending={setHierarchyPending}
-                            weightPending={weightPending} setWeightPending={setWeightPending}
-                        />
+            {!todayAperturaData ? (
+                <CajaCerradaOverlay 
+                    cartCount={cartRef.current.length}
+                    onOpenApertura={() => setIsAperturaOpen(true)} 
+                />
+            ) : (
+                <>
+                    {/* ── APERTURA DE CAJA BANNER ── */}
+                    <div className="shrink-0 mb-3">
+                        <div className="w-full bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/30 rounded-2xl sm:rounded-3xl p-3 sm:p-4 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 sm:w-10 sm:h-10 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center">
+                                    <CheckCircle2 size={18} className="text-emerald-500" />
+                                </div>
+                                <div>
+                                    <p className="text-xs sm:text-sm font-bold text-emerald-700 dark:text-emerald-400">Apertura Registrada</p>
+                                    <p className="text-[10px] sm:text-xs text-emerald-500/70">${todayAperturaData.openingUsd?.toFixed(2)} · Bs {formatBs(todayAperturaData.openingBs || 0)}</p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
-                    {/* Category Chips + Product Grid */}
-                    {!showCheckout && !showReceipt && (
-                        <CategoryBar
-                            selectedCategory={selectedCategory} setSelectedCategory={setSelectedCategory}
-                            filteredByCategory={filteredByCategory}
-                            addToCart={addToCart}
-                            triggerHaptic={triggerHaptic}
-                            searchTerm={searchTerm}
-                            onOpenCustomAmount={() => setShowCustomAmountModal(true)}
+                    {/* ── Split Layout: Products (left) + Cart Sidebar (right) on desktop ── */}
+                    <div className="flex-1 min-h-0 flex flex-col lg:flex-row lg:gap-4">
+
+                        {/* ── Left Column: Search + Categories ── */}
+                        <div className="flex-1 min-h-0 flex flex-col lg:min-w-0 overflow-y-auto lg:overflow-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
+                            {/* Search + Popups */}
+                            <div className="shrink-0 mb-3 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-sm border border-slate-100 dark:border-slate-800">
+                                <SearchBar
+                                    ref={searchInputRef}
+                                    searchTerm={searchTerm}
+                                    onSearchChange={handleSetSearchTerm}
+                                    onKeyDown={handleSearchKeyDown}
+                                    onPasteBarcode={handlePasteBarcode}
+                                    searchResults={searchResults}
+                                    selectedIndex={selectedIndex} setSelectedIndex={setSelectedIndex}
+                                    effectiveRate={effectiveRate}
+                                    addToCart={addToCart}
+                                    isRecording={isRecording} isProcessingAudio={isProcessingAudio} startRecording={startRecording} stopRecording={stopRecording}
+                                    hierarchyPending={hierarchyPending} setHierarchyPending={setHierarchyPending}
+                                    weightPending={weightPending} setWeightPending={setWeightPending}
+                                />
+                            </div>
+
+                            {/* Category Chips + Product Grid */}
+                            {!showCheckout && !showReceipt && (
+                                <CategoryBar
+                                    selectedCategory={selectedCategory} setSelectedCategory={setSelectedCategory}
+                                    filteredByCategory={filteredByCategory}
+                                    addToCart={addToCart}
+                                    triggerHaptic={triggerHaptic}
+                                    searchTerm={searchTerm}
+                                    onOpenCustomAmount={() => setShowCustomAmountModal(true)}
+
                             products={products}
                         />
                     )}
@@ -844,6 +770,8 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                     </div>
                 )}
             </div>
+            </>
+            )}
 
             {/* Checkout Modal */}
             {showCheckout && (
@@ -858,6 +786,8 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                     triggerHaptic={triggerHaptic}
                     copEnabled={copEnabled}
                     tasaCop={tasaCop}
+                    currentFloatUsd={currentFloat.usd}
+                    currentFloatBs={currentFloat.bs}
                 />
             )}
 
@@ -913,6 +843,13 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
             <KeyboardHelpModal 
                 isOpen={showKeyboardHelp} 
                 onClose={() => setShowKeyboardHelp(false)} 
+            />
+
+            {/* Apertura Caja Modal */}
+            <AperturaCajaModal
+                isOpen={isAperturaOpen}
+                onClose={() => setIsAperturaOpen(false)}
+                onConfirm={handleSaveApertura}
             />
         </div>
     );

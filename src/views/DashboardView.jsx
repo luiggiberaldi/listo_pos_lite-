@@ -80,56 +80,11 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         setVoidSaleTarget(null);
 
         try {
-            // 1. Marcar venta como ANULADA
-            const updatedSales = sales.map(s => {
-                if (s.id === sale.id) return { ...s, status: 'ANULADA' };
-                return s;
-            });
-
-            // 2. Revertir Stock
-            const savedCustomers = await storageService.getItem('bodega_customers_v1', []);
-
-            let updatedProducts = products;
-            if (sale.items && sale.items.length > 0) {
-                updatedProducts = products.map(p => {
-                    // Un producto puede estar múltiples veces (como unidad y paquete)
-                    const itemsInSale = sale.items.filter(i => (i._originalId || i.id) === p.id);
-                    if (itemsInSale.length > 0) {
-                        const totalToRestore = itemsInSale.reduce((sum, item) => {
-                            if (item.isWeight) return sum + item.qty;
-                            if (item._mode === 'unit') return sum + (item.qty / (item._unitsPerPackage || 1));
-                            return sum + item.qty;
-                        }, 0);
-                        return { ...p, stock: (p.stock || 0) + totalToRestore };
-                    }
-                    return p;
-                });
-            }
-
-            // 3. Revertir Deuda/Saldo a Favor del Cliente
-            let finalCustomers = savedCustomers;
-            const fiadoAmountUsd = sale.fiadoUsd || (sale.tipo === 'VENTA_FIADA' ? sale.totalUsd : 0) || 0;
-            const favorUsed = sale.payments?.filter(p => p.methodId === 'saldo_favor').reduce((sum, p) => sum + p.amountUsd, 0) || 0;
-            const debtToReverse = fiadoAmountUsd + favorUsed;
-
-            if (sale.customerId && debtToReverse > 0) {
-                finalCustomers = finalCustomers.map(c => {
-                    if (c.id === sale.customerId) {
-                        const newDeuda = Math.max(0, (c.deuda || 0) - debtToReverse);
-                        console.log(`[Anular] Cliente ${c.name}: deuda ${c.deuda} -> ${newDeuda} (revertido $${debtToReverse})`);
-                        return { ...c, deuda: newDeuda };
-                    }
-                    return c;
-                });
-            }
-
-            // 4. Guardar todo
-            await storageService.setItem(SALES_KEY, updatedSales);
-            await storageService.setItem('bodega_customers_v1', finalCustomers);
+            const { updatedSales, updatedProducts, updatedCustomers } = await processVoidSale(sale, sales, products);
 
             setSales(updatedSales);
             setProducts(updatedProducts); // actualizar kpi
-            setCustomers(finalCustomers); // FIX: Update local customers state so KPIs refresh
+            setCustomers(updatedCustomers); // FIX: Update local customers state so KPIs refresh
 
             // Opcional: triggerHaptic()
             showToast('Venta anulada con éxito', 'success');
@@ -144,44 +99,8 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
 
 
     const handleShareWhatsApp = (sale) => {
-        let text = `*COMPROBANTE DE VENTA | PRECIOS AL DÍA*\n`;
-        text += `--------------------------------\n`;
-        text += `*Orden:* #${sale.id.substring(0, 6).toUpperCase()}\n`;
-        text += `Cliente: ${sale.customerName || 'Consumidor Final'}\n`;
-        text += `Fecha: ${new Date(sale.timestamp).toLocaleString('es-VE')}\n`;
-        text += `===================================\n\n`;
-        text += `*DETALLE DE PRODUCTOS:*\n`;
-
-        if (sale.items && sale.items.length > 0) {
-            sale.items.forEach(item => {
-                const qty = item.isWeight ? `${item.qty.toFixed(3)}Kg` : `${item.qty} Und`;
-                text += `- ${item.name}\n  ${qty} x $${item.priceUsd.toFixed(2)} = *$${(item.priceUsd * item.qty).toFixed(2)}*\n`;
-            });
-            text += `\n===================================\n`;
-        }
-
-        text += `*TOTAL A PAGAR: $${(sale.totalUsd || 0).toFixed(2)}*\n`;
-        text += ` Ref: ${formatBs(sale.totalBs || 0)} Bs a ${formatBs(sale.rate || bcvRate)} Bs/$\n`;
-
-        if (sale.fiadoUsd > 0) {
-            text += `\n*SALDO PENDIENTE (FIADO): $${sale.fiadoUsd.toFixed(2)}*\n`;
-            if (bcvRate > 0) text += ` Equivalente: ${formatBs(sale.fiadoUsd * bcvRate)} Bs (tasa actual)\n`;
-        }
-        text += `\n===================================\n`;
-        text += `*¡Gracias por su compra!*\n\n`;
-        text += `_Este documento no constituye factura fiscal. Comprobante de control interno._`;
-
-        const encoded = encodeURIComponent(text);
-
-        // Buscar el cliente de la venta para abrir WhatsApp directo a su número
-        const saleCustomer = sale.customerId
-            ? customers.find(c => c.id === sale.customerId)
-            : null;
-        const phone = formatVzlaPhone(saleCustomer?.phone);
-        const waUrl = phone
-            ? `https://wa.me/${phone}?text=${encoded}`
-            : `https://wa.me/?text=${encoded}`;
-        window.open(waUrl, '_blank');
+        const saleCustomer = sale.customerId ? customers.find(c => c.id === sale.customerId) : null;
+        shareSaleWhatsApp(sale, saleCustomer, bcvRate);
     };
 
     const handleDownloadPDF = (sale) => {
@@ -257,11 +176,11 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         [sales, today]
     );
 
-    // Movimientos reales de caja para el cuadre (Ventas + Abonos + Egresos)
+    // Movimientos reales de caja para el cuadre (Ventas + Abonos + Egresos + Apertura)
     const todayCashFlow = useMemo(() =>
         sales.filter(s => {
             if (s.status === 'ANULADA') return false;
-            if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'PAGO_PROVEEDOR') return false;
+            if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'PAGO_PROVEEDOR' && s.tipo !== 'APERTURA_CAJA') return false;
             if (s.cajaCerrada === true) return false;
             
             const saleLocalDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : getLocalISODate(new Date());
@@ -269,9 +188,14 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         }),
         [sales, today]
     );
+
+    // Detect if apertura was already registered today
+    const todayApertura = useMemo(() => {
+        return sales.find(s => s.tipo === 'APERTURA_CAJA' && !s.cajaCerrada && s.timestamp?.startsWith(today));
+    }, [sales, today]);
     const todayTotalBs = useMemo(() => todaySales.reduce((sum, s) => sum + (s.totalBs || 0), 0), [todaySales]);
     const todayTotalUsd = useMemo(() => todaySales.reduce((sum, s) => sum + (s.totalUsd || 0), 0), [todaySales]);
-    const todayItemsSold = useMemo(() => todaySales.reduce((sum, s) => sum + s.items.reduce((is, i) => is + i.qty, 0), 0), [todaySales]);
+    const todayItemsSold = useMemo(() => todaySales.reduce((sum, s) => sum + (s.items ? s.items.reduce((is, i) => is + i.qty, 0) : 0), 0), [todaySales]);
 
     // Notificar cierre de caja pendiente (>7pm con ventas o cobros sin cerrar)
     useEffect(() => {
@@ -334,11 +258,13 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const topProducts = useMemo(() => {
         const productSalesMap = {};
         sales.filter(s => s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'AJUSTE_ENTRADA' && s.tipo !== 'AJUSTE_SALIDA' && s.tipo !== 'VENTA_FIADA' && s.status !== 'ANULADA').forEach(s => {
-            s.items.forEach(item => {
-                if (!productSalesMap[item.name]) productSalesMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
-                productSalesMap[item.name].qty += item.qty;
-                productSalesMap[item.name].revenue += item.priceUsd * item.qty;
-            });
+            if (s.items) {
+                s.items.forEach(item => {
+                    if (!productSalesMap[item.name]) productSalesMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
+                    productSalesMap[item.name].qty += item.qty;
+                    productSalesMap[item.name].revenue += item.priceUsd * item.qty;
+                });
+            }
         });
         return Object.values(productSalesMap).sort((a, b) => b.qty - a.qty).slice(0, 5);
     }, [sales]);
@@ -352,11 +278,13 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const todayTopProducts = useMemo(() => {
         const todayProductMap = {};
         todaySales.forEach(s => {
-            s.items.forEach(item => {
-                if (!todayProductMap[item.name]) todayProductMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
-                todayProductMap[item.name].qty += item.qty;
-                todayProductMap[item.name].revenue += item.priceUsd * item.qty;
-            });
+            if (s.items) {
+                s.items.forEach(item => {
+                    if (!todayProductMap[item.name]) todayProductMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
+                    todayProductMap[item.name].qty += item.qty;
+                    todayProductMap[item.name].revenue += item.priceUsd * item.qty;
+                });
+            }
         });
         return Object.values(todayProductMap).sort((a, b) => b.qty - a.qty).slice(0, 10);
     }, [todaySales]);
@@ -378,11 +306,15 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         if (todayCashFlow.length > 0 || todaySales.length > 0) {
             const allTodayForReport = sales.filter(s => {
                 const saleLocalDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : getLocalISODate(new Date());
-                return saleLocalDay === today && !s.cajaCerrada;
+                // Exclude APERTURA_CAJA from detail listing — shown separately in its own PDF section
+                return saleLocalDay === today && !s.cajaCerrada && s.tipo !== 'APERTURA_CAJA';
             });
 
+            // Sales used for count and detail = all cash flow except APERTURA_CAJA records
+            const salesForPDF = todayCashFlow.filter(s => s.tipo !== 'APERTURA_CAJA');
+
             await generateDailyClosePDF({
-                sales: todayCashFlow,  // El PDF usa el cash flow para el iterador de ventas principal de la caja
+                sales: salesForPDF,
                 allSales: allTodayForReport,
                 bcvRate,
                 paymentBreakdown,
@@ -391,7 +323,8 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 todayTotalBs,
                 todayProfit,
                 todayItemsSold,
-                reconData // Pasamos los datos del cuadre al PDF
+                reconData, // Pasamos los datos del cuadre al PDF
+                apertura: todayApertura, // Fondo inicial de caja
             });
         }
 
@@ -611,6 +544,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                     <p className="text-xl font-black text-slate-800 dark:text-white leading-none">{formatBs(bcvRate)} <span className="text-xs font-bold text-slate-400">Bs/$</span></p>
                     <p className="text-[11px] text-slate-400 mt-1">Tasa BCV actual</p>
                 </div>
+
 
                 {/* ═══ BOTON CERRAR CAJA ═══ */}
                 <div className="col-span-2">

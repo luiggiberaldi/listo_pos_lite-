@@ -18,6 +18,9 @@ import { useProductContext } from '../context/ProductContext';
 import EmptyState from '../components/EmptyState';
 import Skeleton from '../components/Skeleton';
 import SwipeableItem from '../components/SwipeableItem';
+import { useInventoryVelocity } from '../hooks/useInventoryVelocity';
+import { useProductFiltering } from '../hooks/useProductFiltering';
+import { buildProductPayload } from '../utils/productProcessor';
 
 export const ProductsView = ({ rates, triggerHaptic }) => {
     // ─── STATE DEL HOOK ─────────────────────────────────────
@@ -144,78 +147,11 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     const [productMovements, setProductMovements] = useState([]);
 
     // ─── SALES VELOCITY (Días de Inventario) ────────────────
-    const [salesVelocityMap, setSalesVelocityMap] = useState({});
-    useEffect(() => {
-        const computeVelocity = async () => {
-            try {
-                const allSales = await storageService.getItem('bodega_sales_v1', []);
-                if (!allSales.length) return;
-                // Últimos 14 días
-                const now = new Date();
-                const fourteenDaysAgo = new Date(now);
-                fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
-                const recentSales = allSales.filter(s => 
-                    s.timestamp && new Date(s.timestamp) >= fourteenDaysAgo &&
-                    s.tipo !== 'COBRO_DEUDA' && s.status !== 'ANULADA'
-                );
-                // Contar ventas por producto
-                const velocityMap = {};
-                recentSales.forEach(sale => {
-                    (sale.items || []).forEach(item => {
-                        const key = item.id || item.name;
-                        if (!velocityMap[key]) velocityMap[key] = 0;
-                        velocityMap[key] += item.qty;
-                    });
-                });
-                // Dividir entre 14 para obtener promedio diario
-                Object.keys(velocityMap).forEach(k => {
-                    velocityMap[k] = velocityMap[k] / 14;
-                });
-                setSalesVelocityMap(velocityMap);
-            } catch (e) {
-                // Silenciar errores
-            }
-        };
-        computeVelocity();
-    }, [products.length]); // Recalcular cuando cambian los productos
+    const { salesVelocityMap } = useInventoryVelocity(products.length);
 
     // ─── FILTERING & PAGINATION ─────────────────────────────
 
-    // Performance Optimization: Defer search term to avoid blocking the main thread when typing fast
-    const deferredSearchTerm = React.useDeferredValue(searchTerm);
-
-    const filteredProducts = useMemo(() => {
-        let result = products.filter(p => {
-            const term = deferredSearchTerm.toLowerCase();
-            const matchesSearch = p.name.toLowerCase().includes(term) || (p.barcode && p.barcode.toLowerCase().includes(term));
-            if (activeCategory === 'bajo-stock') {
-                return matchesSearch && (p.stock ?? 0) <= (p.lowStockAlert ?? 5);
-            }
-            const matchesCategory = activeCategory === 'todos' || p.category === activeCategory;
-            return matchesSearch && matchesCategory;
-        });
-
-        // Apply sort if active
-        if (sortField) {
-            result = [...result].sort((a, b) => {
-                let valA, valB;
-                switch (sortField) {
-                    case 'name': valA = a.name.toLowerCase(); valB = b.name.toLowerCase(); break;
-                    case 'price': valA = a.priceUsdt || 0; valB = b.priceUsdt || 0; break;
-                    case 'stock': valA = a.stock ?? 0; valB = b.stock ?? 0; break;
-                    case 'margin':
-                        valA = a.costBs > 0 ? ((a.priceUsdt * effectiveRate - a.costBs) / a.costBs * 100) : -999;
-                        valB = b.costBs > 0 ? ((b.priceUsdt * effectiveRate - b.costBs) / b.costBs * 100) : -999;
-                        break;
-                    default: valA = 0; valB = 0;
-                }
-                if (valA < valB) return sortDir === 'asc' ? -1 : 1;
-                if (valA > valB) return sortDir === 'asc' ? 1 : -1;
-                return 0;
-            });
-        }
-        return result;
-    }, [products, deferredSearchTerm, activeCategory, sortField, sortDir, effectiveRate]);
+    const { filteredProducts } = useProductFiltering(products, searchTerm, activeCategory, sortField, sortDir, effectiveRate);
 
     const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
     const paginatedProducts = filteredProducts.slice(
@@ -297,43 +233,11 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
             return showToast('Nombre y precio requeridos', 'warning');
         }
 
-        const formattedName = name.replace(/(^\w{1})|(\s+\w{1})/g, letter => letter.toUpperCase());
-        const finalPriceUsd = priceUsd ? parseFloat(priceUsd) : (priceBs ? parseFloat(priceBs) / effectiveRate : 0);
-        const finalCostUsd = costUsd ? parseFloat(costUsd) : (costBs ? parseFloat(costBs) / effectiveRate : 0);
-        const finalCostBs = costBs ? parseFloat(costBs) : (costUsd ? parseFloat(costUsd) * effectiveRate : 0);
-
-        // Map packagingType → unit legacy
-        let legacyUnit = 'unidad';
-        if (packagingType === 'lote') legacyUnit = 'paquete';
-        else if (packagingType === 'granel') legacyUnit = granelUnit;
-
-        const isLote = packagingType === 'lote';
-        const parsedUnitsPerPkg = isLote && unitsPerPackage ? parseInt(unitsPerPackage) : 1;
-        const autoUnitPrice = parsedUnitsPerPkg > 1 ? finalPriceUsd / parsedUnitsPerPkg : finalPriceUsd;
-        const finalUnitPrice = sellByUnit && unitPriceUsd ? parseFloat(unitPriceUsd) : autoUnitPrice;
-
-        // Stock: for lote, convert lotes → units
-        let finalStock = stock ? parseInt(stock) : 0;
-        if (isLote && stockInLotes && parsedUnitsPerPkg > 0) {
-            finalStock = parseInt(stockInLotes) * parsedUnitsPerPkg;
-        }
-
-        const productData = {
-            name: formattedName,
-            barcode: barcode ? barcode.trim() : null,
-            priceUsdt: finalPriceUsd,
-            costUsd: finalCostUsd,
-            costBs: finalCostBs,
-            stock: finalStock,
-            unit: legacyUnit,
-            packagingType: packagingType,
-            unitsPerPackage: parsedUnitsPerPkg,
-            sellByUnit: isLote ? sellByUnit : false,
-            unitPriceUsd: isLote && sellByUnit ? finalUnitPrice : null,
-            stockInLotes: isLote && stockInLotes ? parseInt(stockInLotes) : null,
-            category: category,
-            lowStockAlert: lowStockAlert ? parseInt(lowStockAlert) : 5,
-        };
+        const productData = buildProductPayload({
+            name, barcode, priceUsd, priceBs, costUsd, costBs, stock, stockInLotes,
+            packagingType, unitsPerPackage, granelUnit, sellByUnit, unitPriceUsd,
+            category, lowStockAlert
+        }, effectiveRate);
 
         if (editingId) {
             setProducts(products.map(p =>

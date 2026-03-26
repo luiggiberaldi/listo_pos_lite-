@@ -72,6 +72,19 @@ export class FinancialEngine {
         const breakdown = {};
 
         salesArray.forEach(sale => {
+            // ── APERTURA DE CAJA: add opening float to cash buckets (not revenue) ──
+            if (sale.tipo === 'APERTURA_CAJA') {
+                if (sale.openingUsd > 0) {
+                    if (!breakdown['efectivo_usd']) breakdown['efectivo_usd'] = { total: 0, currency: 'USD', label: 'Efectivo $' };
+                    breakdown['efectivo_usd'].total += sale.openingUsd;
+                }
+                if (sale.openingBs > 0) {
+                    if (!breakdown['efectivo_bs']) breakdown['efectivo_bs'] = { total: 0, currency: 'BS', label: 'Efectivo Bs' };
+                    breakdown['efectivo_bs'].total += sale.openingBs;
+                }
+                return; // Do NOT count opening as revenue
+            }
+
             // Fiado sales go to their own bucket — tracked in USD directly since debts hold value in $
             if (sale.tipo === 'VENTA_FIADA') {
                 if (!breakdown['fiado']) {
@@ -128,8 +141,16 @@ export class FinancialEngine {
             let safeChangeUsd = sale.changeUsd || 0;
             let safeChangeBs = sale.changeBs || 0;
             
-            if (safeChangeUsd > ((sale.totalUsd || 0) * 5)) safeChangeUsd = 0;
-            if (safeChangeBs > ((sale.totalBs || 0) * 5)) safeChangeBs = 0;
+            // Anomaly Shield: Protect against fat fingers (e.g. $2 paid with $1000 => change $998).
+            // We cap anomalies at > $100 AND > 5x the sale, to still allow $100 bills on $1 sales (change $99).
+            if (safeChangeUsd > 100 && safeChangeUsd > ((sale.totalUsd || 0) * 5)) safeChangeUsd = 0;
+            if (safeChangeBs > (100 * (sale.rate || 36)) && safeChangeBs > ((sale.totalBs || 0) * 5)) safeChangeBs = 0;
+            
+            // If the sale was completely free/zero, any outgoing change is a glitch/anomaly
+            if ((sale.totalUsd || 0) === 0 && (sale.totalBs || 0) === 0) {
+                safeChangeUsd = 0;
+                safeChangeBs = 0;
+            }
 
             if (safeChangeUsd > 0) {
                 if (!breakdown['efectivo_usd']) breakdown['efectivo_usd'] = { total: 0, currency: 'USD', label: 'Efectivo $' };
