@@ -287,11 +287,23 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
             Promise.all([
                 storageService.getItem('bodega_products_v1', []),
                 getActivePaymentMethods(),
-                storageService.getItem('bodega_customers_v1', [])
-            ]).then(([savedProducts, methods, savedCustomers]) => {
+                storageService.getItem('bodega_customers_v1', []),
+                storageService.getItem(SALES_KEY, [])
+            ]).then(([savedProducts, methods, savedCustomers, savedSales]) => {
                 setProducts(savedProducts);
                 setPaymentMethods(methods);
                 setCustomers(savedCustomers);
+                setSalesData(savedSales);
+                
+                // Recalculate Apertura
+                const d = new Date();
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                const todayStr = `${year}-${month}-${day}`;
+                
+                const apertura = savedSales.find(s => s.tipo === 'APERTURA_CAJA' && !s.cajaCerrada && s.timestamp?.startsWith(todayStr));
+                setTodayAperturaData(apertura || null);
             });
         }
     }, [isActive]);
