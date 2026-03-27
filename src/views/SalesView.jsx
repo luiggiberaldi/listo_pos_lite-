@@ -311,18 +311,29 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
         handleReloadContent();
     }, [handleReloadContent]);
 
-    // Recargar cuando la app vuelve desde el background en móviles (PWA)
+    // Recargar cuando la app vuelve desde el background en móviles (PWA) o cuando hay un cambio en el storage
     useEffect(() => {
         const onVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
                 handleReloadContent();
             }
         };
+
+        const onStorageUpdate = (e) => {
+            if (e.detail && e.detail.key === SALES_KEY) {
+                // Pequeño timeout para dar margen a que IndexedDB haya persistido los datos
+                setTimeout(handleReloadContent, 50);
+            }
+        };
+
         document.addEventListener('visibilitychange', onVisibilityChange);
         window.addEventListener('focus', handleReloadContent);
+        window.addEventListener('app_storage_update', onStorageUpdate);
+        
         return () => {
             document.removeEventListener('visibilitychange', onVisibilityChange);
             window.removeEventListener('focus', handleReloadContent);
+            window.removeEventListener('app_storage_update', onStorageUpdate);
         };
     }, [handleReloadContent]);
 

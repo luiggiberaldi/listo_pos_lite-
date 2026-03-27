@@ -329,11 +329,12 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         }
 
         // 2. Marcar cajaCerrada en vez de borrar las ventas localmente
+        const currentCierreId = new Date().getTime();
         const updatedSales = sales.map(s => {
             // Evaluamos si es una de las ventas que estamos cerrando
             const saleLocalDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : getLocalISODate(new Date());
             if (saleLocalDay === today && !s.cajaCerrada) {
-                return { ...s, cajaCerrada: true, cierreId: new Date().getTime() };
+                return { ...s, cajaCerrada: true, cierreId: currentCierreId };
             }
             return s;
         });
