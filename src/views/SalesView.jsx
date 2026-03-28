@@ -9,6 +9,7 @@ import { getActivePaymentMethods } from '../config/paymentMethods';
 import { showToast } from '../components/Toast';
 import { ShoppingCart, X, DollarSign, CheckCircle2 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
+import { useProductContext } from '../context/ProductContext';
 
 // Components
 import SalesHeader from '../components/Sales/SalesHeader';

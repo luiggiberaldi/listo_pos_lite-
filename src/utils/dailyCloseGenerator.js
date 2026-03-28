@@ -289,6 +289,16 @@ export async function generateDailyClosePDF({
                 doc.text(`$${(item.priceUsd * item.qty).toFixed(2)}`, RIGHT, y, { align: 'right' });
                 y += 3.5;
             });
+
+            // Show discount line if applied
+            if (s.discountAmountUsd && s.discountAmountUsd > 0) {
+                doc.setFont('helvetica', 'italic');
+                doc.setFontSize(6);
+                doc.setTextColor(...RED);
+                doc.text(`  Descuento aplicado`, M, y);
+                doc.text(`-$${s.discountAmountUsd.toFixed(2)}`, RIGHT, y, { align: 'right' });
+                y += 3.5;
+            }
         }
 
         // Método de pago detallado

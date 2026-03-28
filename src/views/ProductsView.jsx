@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
-import { Package, Plus, Trash2, X, Store, Tag, Pencil, Banknote, Search, ChevronLeft, ChevronRight, AlertTriangle, Box, LayoutGrid, List, Minus, ArrowUpDown, Clock, Percent } from 'lucide-react';
+import { Package, Plus, Trash2, X, Store, Tag, Pencil, Banknote, Search, ChevronLeft, ChevronRight, AlertTriangle, Box, LayoutGrid, List, Minus, ArrowUpDown, Clock, Percent, Printer, CheckSquare } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { ProductShareModal } from '../components/ProductShareModal';
 
 import ShareInventoryModal from '../components/ShareInventoryModal';
 import { formatBs, formatUsd, smartCashRounding } from '../utils/calculatorUtils';
+import { generarEtiquetas } from '../utils/ticketGenerator';
 import { useWallet } from '../hooks/useWallet';
 import { BODEGA_CATEGORIES, UNITS, CATEGORY_COLORS } from '../config/categories';
 import ProductCard from '../components/Products/ProductCard';
@@ -108,6 +109,35 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
             setSortDir('asc');
         }
         setCurrentPage(1);
+    };
+
+    // Selección múltiple para etiquetas
+    const [selectedIds, setSelectedIds] = useState(new Set());
+    
+    const handleToggleSelect = (id) => {
+        const newSet = new Set(selectedIds);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setSelectedIds(newSet);
+    };
+
+    const handleSelectAll = (e) => {
+        if (e.target.checked) {
+            setSelectedIds(new Set(paginatedProducts.map(p => p.id)));
+        } else {
+            setSelectedIds(new Set());
+        }
+    };
+
+    const handlePrintSelected = () => {
+        const toPrint = products.filter(p => selectedIds.has(p.id));
+        generarEtiquetas(toPrint, effectiveRate, copEnabled, tasaCop);
+        setSelectedIds(new Set());
+        showToast(`Generando ${toPrint.length} etiquetas`, 'success');
+    };
+
+    const handlePrintSingle = (p) => {
+        generarEtiquetas([p], effectiveRate, copEnabled, tasaCop);
     };
 
     // Form State (Product Edit/Create)
@@ -424,6 +454,13 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                     <span className="text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 px-2.5 py-1 rounded-full">
                         {products.length} productos
                     </span>
+                    <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 hidden sm:block" />
+                    <button 
+                        onClick={() => { triggerHaptic && triggerHaptic(); setSelectedIds(new Set(products.map(p => p.id))); showToast('Todo el inventario seleccionado', 'success'); }}
+                        className="text-[10px] font-bold bg-brand/10 text-brand px-2.5 py-1 rounded-full flex items-center gap-1 cursor-pointer hover:bg-brand/20 transition-colors active:scale-95"
+                    >
+                        <CheckSquare size={12} /> <span className="hidden sm:inline">Seleccionar todo</span><span className="sm:hidden">Todos</span>
+                    </button>
                     {lowStockCount > 0 && (
                         <>
                             <div className="w-px h-4 bg-slate-200 dark:bg-slate-700" />
@@ -482,6 +519,23 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                     />
                 </div>
             </div>
+
+            {/* --- ACTION BAR SELECCION --- */}
+            {selectedIds.size > 0 && (
+                <div className="flex items-center justify-between gap-2 p-2 px-3 bg-brand/10 border border-brand/20 rounded-xl mb-3 shrink-0 animate-in slide-in-from-top-2">
+                    <span className="text-sm font-bold text-brand flex items-center gap-1">
+                        <CheckSquare size={16} /> {selectedIds.size} seleccionados
+                    </span>
+                    <div className="flex gap-2">
+                        <button onClick={() => setSelectedIds(new Set())} className="text-xs font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300">
+                            Cancelar
+                        </button>
+                        <button onClick={handlePrintSelected} className="px-3 py-1.5 bg-brand text-white text-xs font-bold rounded-lg shadow-sm hover:bg-brand-dark transition-all flex items-center gap-1">
+                            <Printer size={14} /> <span className="hidden sm:inline">Imprimir Etiquetas</span><span className="sm:hidden">Imprimir</span>
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Product Grid */}
             {isLoadingProducts ? (
@@ -562,6 +616,9 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                                                 ? Math.round((p.stock ?? 0) / salesVelocityMap[p.id])
                                                 : null
                                         }
+                                        isSelected={selectedIds.has(p.id)}
+                                        onToggleSelect={() => handleToggleSelect(p.id)}
+                                        onPrint={() => handlePrintSingle(p)}
                                     />
                                 </SwipeableItem>
                             ))}
@@ -570,7 +627,10 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                         /* ── LIST VIEW ── */
                         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
                             {/* Table Header — desktop */}
-                            <div className="hidden sm:grid sm:grid-cols-[1fr_100px_100px_70px_80px_90px] gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            <div className="hidden sm:grid sm:grid-cols-[40px_1fr_100px_100px_70px_80px_110px] gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                <div className="flex items-center justify-center">
+                                    <input type="checkbox" onChange={handleSelectAll} checked={selectedIds.size > 0 && selectedIds.size === paginatedProducts.length} className="w-4 h-4 rounded border-slate-300 text-brand focus:ring-brand cursor-pointer" />
+                                </div>
                                 <button onClick={() => handleSort('name')} className="flex items-center gap-1 hover:text-slate-600 dark:hover:text-slate-200 transition-colors text-left">
                                     Producto {sortField === 'name' && <ArrowUpDown size={10} />}
                                 </button>
@@ -594,7 +654,12 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                                     const margin = p.costBs > 0 ? ((valBs - p.costBs) / p.costBs * 100) : null;
                                     const catInfo = categories.find(c => c.id === p.category);
                                     return (
-                                        <div key={p.id} className={`grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_100px_100px_70px_80px_90px] gap-2 px-4 py-3 items-center hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors ${isLowStock ? 'bg-amber-50/50 dark:bg-amber-900/5' : ''}`}>
+                                        <div key={p.id} className={`grid grid-cols-[auto_1fr_auto] sm:grid-cols-[40px_1fr_100px_100px_70px_80px_110px] gap-2 px-4 py-3 items-center hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors ${selectedIds.has(p.id) ? 'bg-brand/5 dark:bg-brand/10' : ''} ${isLowStock ? 'bg-amber-50/50 dark:bg-amber-900/5' : ''}`}>
+                                            {/* Checkbox */}
+                                            <div className="flex items-center justify-center px-1">
+                                                <input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => handleToggleSelect(p.id)} className="w-5 h-5 sm:w-4 sm:h-4 rounded border-slate-300 text-brand focus:ring-brand cursor-pointer focus:ring-offset-0" />
+                                            </div>
+                                            
                                             {/* Product Info (always visible) */}
                                             <div className="flex items-center gap-3 min-w-0">
                                                 <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
@@ -615,13 +680,13 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
                                             {/* Mobile: compact actions */}
                                             <div className="flex items-center gap-1.5 sm:hidden">
+                                                <button onClick={() => handlePrintSingle(p)} className="p-1.5 text-slate-300 hover:text-brand transition-colors"><Printer size={14} /></button>
                                                 <div className="flex items-center bg-slate-50 dark:bg-slate-800 rounded-lg">
                                                     <button onClick={() => adjustStock(p.id, -1)} className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"><Minus size={14} /></button>
                                                     <span className={`text-xs font-black min-w-[28px] text-center ${isLowStock ? 'text-amber-500' : 'text-slate-700 dark:text-slate-200'}`}>{p.stock ?? 0}</span>
                                                     <button onClick={() => adjustStock(p.id, 1)} className="p-1.5 text-slate-400 hover:text-emerald-500 transition-colors"><Plus size={14} /></button>
                                                 </div>
                                                 <button onClick={() => handleEdit(p)} className="p-1.5 text-slate-300 hover:text-amber-500 transition-colors"><Pencil size={14} /></button>
-                                                <button onClick={() => handleDelete(p.id)} className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
                                             </div>
 
                                             {/* Desktop columns */}
@@ -648,6 +713,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                                                 <button onClick={() => adjustStock(p.id, 1)} className="w-7 h-7 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-emerald-500 transition-colors active:scale-90"><Plus size={14} /></button>
                                             </div>
                                             <div className="hidden sm:flex items-center justify-end gap-1">
+                                                <button onClick={() => handlePrintSingle(p)} className="p-1.5 rounded-lg text-slate-300 hover:text-brand hover:bg-brand/10 transition-all" title="Imprimir Etiqueta"><Printer size={14} /></button>
                                                 <button onClick={() => handleEdit(p)} className="p-1.5 rounded-lg text-slate-300 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all"><Pencil size={14} /></button>
                                                 <button onClick={() => handleDelete(p.id)} className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"><Trash2 size={14} /></button>
                                             </div>

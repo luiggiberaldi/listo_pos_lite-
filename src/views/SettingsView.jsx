@@ -85,36 +85,60 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
     const handleExport = async () => {
         try {
             setImportStatus('loading');
-            setStatusMessage('Generando backup...');
-            const allProducts = await storageService.getItem('bodega_products_v1', []);
-            const accounts = await storageService.getItem('bodega_accounts_v2', []);
-            const categories = await storageService.getItem('my_categories_v1', []);
+            setStatusMessage('Generando backup completo...');
+            
+            // IndexedDB Keys
+            const idbKeys = [
+                'bodega_products_v1', 'my_categories_v1', 
+                'bodega_sales_v1', 'bodega_customers_v1',
+                'bodega_suppliers_v1', 'bodega_supplier_invoices_v1',
+                'bodega_accounts_v2', 'bodega_pending_cart_v1',
+                'payment_methods_v1', 'payment_methods_v2'
+            ];
+            const idbData = {};
+            for (const key of idbKeys) {
+                const data = await storageService.getItem(key, null);
+                if (data !== null) {
+                    idbData[key] = data; // Keep as actual object/array to save space, we JSON.stringify the whole payload later
+                }
+            }
+
+            // LocalStorage Keys
+            const lsKeys = [
+                'premium_token', 'street_rate_bs', 'catalog_use_auto_usdt', 
+                'catalog_custom_usdt_price', 'catalog_show_cash_price', 
+                'monitor_rates_v12', 'business_name', 'business_rif',
+                'printer_paper_width', 'allow_negative_stock', 'cop_enabled',
+                'auto_cop_enabled', 'tasa_cop', 'bodega_use_auto_rate',
+                'bodega_custom_rate', 'bodega_inventory_view'
+            ];
+            const lsData = {};
+            for (const key of lsKeys) {
+                const val = localStorage.getItem(key);
+                if (val !== null) lsData[key] = val;
+            }
+
             const backupData = {
-                timestamp: new Date().toISOString(), version: '1.0',
+                timestamp: new Date().toISOString(),
+                version: '2.0',
+                appName: 'TasasAlDia_Bodegas',
                 data: {
-                    bodega_products_v1: JSON.stringify(allProducts),
-                    bodega_accounts_v2: JSON.stringify(accounts),
-                    my_categories_v1: JSON.stringify(categories),
-                    premium_token: localStorage.getItem('premium_token'),
-                    street_rate_bs: localStorage.getItem('street_rate_bs'),
-                    catalog_use_auto_usdt: localStorage.getItem('catalog_use_auto_usdt'),
-                    catalog_custom_usdt_price: localStorage.getItem('catalog_custom_usdt_price'),
-                    catalog_show_cash_price: localStorage.getItem('catalog_show_cash_price'),
-                    monitor_rates_v12: localStorage.getItem('monitor_rates_v12'),
-                    business_name: localStorage.getItem('business_name'),
-                    business_rif: localStorage.getItem('business_rif'),
+                    idb: idbData,
+                    ls: lsData
                 }
             };
-            const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+
+            const blob = new Blob([JSON.stringify(backupData)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `backup_tasasaldia_${new Date().toISOString().slice(0, 10)}.json`;
+            a.download = `backup_tasasaldia_completo_${new Date().toISOString().slice(0, 10)}.json`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            setStatusMessage('Backup descargado.');
+            
+            setStatusMessage('Backup completo descargado.');
             setImportStatus('success');
             setTimeout(() => setImportStatus(null), 3000);
         } catch (error) {
@@ -133,36 +157,56 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
         reader.onload = async (e) => {
             try {
                 setImportStatus('loading');
-                setStatusMessage('Restaurando datos...');
+                setStatusMessage('Restaurando cuenta entera...');
                 const json = JSON.parse(e.target.result);
-                if (!json.data || (!json.data.bodega_products_v1 && !json.data.bodega_accounts_v2)) {
-                    throw new Error('Formato invalido.');
-                }
+                
+                // Validate if it's V2 (Full Backup) or V1 (Legacy Backup)
+                if (!json.data) throw new Error('Formato invalido.');
                 const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
-                if (json.data.bodega_products_v1) {
-                    await lf.setItem('bodega_products_v1', typeof json.data.bodega_products_v1 === 'string' ? JSON.parse(json.data.bodega_products_v1) : json.data.bodega_products_v1);
+
+                if (json.version === '2.0' && json.data.idb) {
+                    // --- V2 RESTORE STRATEGY ---
+                    // Restore IndexedDB
+                    for (const [key, value] of Object.entries(json.data.idb)) {
+                        await lf.setItem(key, value);
+                    }
+                    // Restore LocalStorage
+                    if (json.data.ls) {
+                        for (const [key, value] of Object.entries(json.data.ls)) {
+                            localStorage.setItem(key, value);
+                        }
+                    }
+                } else {
+                    // --- V1 LEGACY RESTORE STRATEGY ---
+                    if (json.data.bodega_products_v1) {
+                        await lf.setItem('bodega_products_v1', typeof json.data.bodega_products_v1 === 'string' ? JSON.parse(json.data.bodega_products_v1) : json.data.bodega_products_v1);
+                    }
+                    if (json.data.bodega_accounts_v2) {
+                        await lf.setItem('bodega_accounts_v2', typeof json.data.bodega_accounts_v2 === 'string' ? JSON.parse(json.data.bodega_accounts_v2) : json.data.bodega_accounts_v2);
+                    }
+                    if (json.data.my_categories_v1) {
+                        await lf.setItem('my_categories_v1', typeof json.data.my_categories_v1 === 'string' ? JSON.parse(json.data.my_categories_v1) : json.data.my_categories_v1);
+                    }
+                    
+                    const legacyLsKeys = [
+                        'street_rate_bs', 'catalog_use_auto_usdt', 'catalog_custom_usdt_price',
+                        'catalog_show_cash_price', 'monitor_rates_v12', 'business_name', 'business_rif'
+                    ];
+                    for (const key of legacyLsKeys) {
+                        if (json.data[key]) localStorage.setItem(key, json.data[key]);
+                    }
                 }
-                if (json.data.bodega_accounts_v2) {
-                    await lf.setItem('bodega_accounts_v2', typeof json.data.bodega_accounts_v2 === 'string' ? JSON.parse(json.data.bodega_accounts_v2) : json.data.bodega_accounts_v2);
-                }
-                if (json.data.street_rate_bs) localStorage.setItem('street_rate_bs', json.data.street_rate_bs);
-                if (json.data.catalog_use_auto_usdt) localStorage.setItem('catalog_use_auto_usdt', json.data.catalog_use_auto_usdt);
-                if (json.data.catalog_custom_usdt_price) localStorage.setItem('catalog_custom_usdt_price', json.data.catalog_custom_usdt_price);
-                if (json.data.catalog_show_cash_price) localStorage.setItem('catalog_show_cash_price', json.data.catalog_show_cash_price);
-                if (json.data.monitor_rates_v12) localStorage.setItem('monitor_rates_v12', json.data.monitor_rates_v12);
-                if (json.data.business_name) localStorage.setItem('business_name', json.data.business_name);
-                if (json.data.business_rif) localStorage.setItem('business_rif', json.data.business_rif);
-                if (json.data.my_categories_v1) {
-                    const cats = typeof json.data.my_categories_v1 === 'string' ? JSON.parse(json.data.my_categories_v1) : json.data.my_categories_v1;
-                    await lf.setItem('my_categories_v1', cats);
-                }
+
                 setImportStatus('success');
-                setStatusMessage('Datos restaurados. Recargando...');
-                setTimeout(() => window.location.reload(), 1200);
+                setStatusMessage('Clonación finalizada. Reiniciando...');
+                triggerHaptic?.();
+                
+                // Force reload to re-hydrate memory states across all contexts
+                setTimeout(() => window.location.reload(), 1500);
             } catch (error) {
                 console.error(error);
                 setImportStatus('error');
-                setStatusMessage('Error: El archivo no es valido.');
+                setStatusMessage('Error: El archivo está corrupto o es inválido.');
             }
         };
         reader.readAsText(file);
@@ -329,9 +373,9 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                     {/* 6. Datos y Respaldo */}
                     <SectionCard icon={Database} title="Datos y Respaldo" subtitle="Exportar, importar y compartir" iconColor="text-cyan-500">
                         <div className="p-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/30 rounded-xl flex gap-2.5">
-                            <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
-                            <p className="text-[10px] text-amber-700 dark:text-amber-400 leading-relaxed">
-                                Al importar un backup, los datos actuales seran reemplazados.
+                            <AlertTriangle size={18} className="text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+                            <p className="text-[10px] text-amber-800 dark:text-amber-400 leading-relaxed font-bold">
+                                PRECAUCIÓN: Al restaurar un backup se sobrescribirá por completo todo el historial de ventas, inventario, deudores y configuraciones de este dispositivo.
                             </p>
                         </div>
 
