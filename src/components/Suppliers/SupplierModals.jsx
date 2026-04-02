@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Truck, Save, Pencil, FileText, CreditCard, Clock, Phone, Trash2, ArrowUpRight, CheckCircle2 } from 'lucide-react';
 import { formatUsd, formatBs } from '../../utils/calculatorUtils';
+import { round2, divR, mulR } from '../../utils/dinero';
 
 export function AddSupplierModal({ onClose, onSave, editingSupplier = null }) {
     const [name, setName] = useState(editingSupplier?.name || '');
@@ -78,7 +79,7 @@ export function AddInvoiceModal({ supplier, bcvRate, onClose, onSave }) {
             date: new Date().toISOString(),
             dueDate: dueDate || null,
             amountUsd: parseFloat(amountUsd),
-            amountBs: parseFloat(amountUsd) * bcvRate,
+            amountBs: mulR(parseFloat(amountUsd), bcvRate),
             status: 'PENDIENTE',
             amountPaidUsd: 0,
             type: 'INVOICE'
@@ -134,12 +135,12 @@ export function PayInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, active
         const rawAmt = parseFloat(amount);
         if (!rawAmt || rawAmt <= 0) return;
 
-        let amountUsd = rawAmt;
-        if (currencyMode === 'BS' && bcvRate > 0) amountUsd = rawAmt / bcvRate;
-        if (currencyMode === 'COP' && tasaCop > 0) amountUsd = rawAmt / tasaCop;
+        let amountUsd = round2(rawAmt);
+        if (currencyMode === 'BS' && bcvRate > 0) amountUsd = divR(rawAmt, bcvRate);
+        if (currencyMode === 'COP' && tasaCop > 0) amountUsd = divR(rawAmt, tasaCop);
         
-        const amountBs = currencyMode === 'BS' ? rawAmt : (amountUsd * bcvRate);
-        const amountCop = currencyMode === 'COP' ? rawAmt : (amountUsd * tasaCop);
+        const amountBs = currencyMode === 'BS' ? rawAmt : mulR(amountUsd, bcvRate);
+        const amountCop = currencyMode === 'COP' ? rawAmt : mulR(amountUsd, tasaCop);
 
         onSave(amountUsd, amountBs, amountCop, paymentMethod, currencyMode);
     };

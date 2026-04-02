@@ -828,7 +828,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                             type="text"
                             value={deleteAllConfirmText}
                             onChange={(e) => setDeleteAllConfirmText(e.target.value)}
-                            placeholder="BORRAR"
+                            placeholder="Ej. BORRAR"
                             className="w-full form-input bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-xl px-4 py-3 text-center font-black text-red-500 uppercase tracking-widest focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all outline-none"
                         />
                     </div>
@@ -845,11 +845,15 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                         Cancelar
                     </button>
                     <button
-                        onClick={() => {
+                        onClick={async () => {
                             triggerHaptic && triggerHaptic();
                             if (deleteAllConfirmText.trim().toUpperCase() === 'BORRAR') {
+                                const count = products.length;
+                                // Borrar de storage primero para garantizar persistencia
+                                await storageService.setItem('bodega_products_v1', []);
+                                // Luego actualizar el estado React
                                 setProducts([]);
-                                storageService.removeItem('bodega_products_v1');
+                                auditLog('INVENTARIO', 'BORRADO_TOTAL', `Borrado total: ${count} productos eliminados`);
                                 setIsDeleteAllModalOpen(false);
                                 setDeleteAllConfirmText('');
                             }
@@ -866,11 +870,9 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
             <ShareInventoryModal
                 isOpen={isShareOpen} onClose={() => setIsShareOpen(false)} products={products} categories={categories}
-                onImport={({ products: imported, categories: importedCats }) => {
-                    if (importedCats && importedCats.length > 0) {
-                        setCategories(importedCats);
-                    }
-                    setProducts(imported);
+                onImport={(result) => {
+                    if (result.categories?.length > 0) setCategories(result.categories);
+                    if (result.products?.length > 0) setProducts(result.products);
                     showToast('Inventario importado correctamente', 'success');
                 }}
             />

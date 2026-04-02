@@ -1,3 +1,5 @@
+import { round2, mulR, divR } from './dinero';
+
 export function buildProductPayload(formData, effectiveRate) {
     const {
         name,
@@ -18,9 +20,9 @@ export function buildProductPayload(formData, effectiveRate) {
     } = formData;
 
     const formattedName = name.replace(/(^\w{1})|(\s+\w{1})/g, letter => letter.toUpperCase());
-    const finalPriceUsd = priceUsd ? parseFloat(priceUsd) : (priceBs ? parseFloat(priceBs) / effectiveRate : 0);
-    const finalCostUsd = costUsd ? parseFloat(costUsd) : (costBs ? parseFloat(costBs) / effectiveRate : 0);
-    const finalCostBs = costBs ? parseFloat(costBs) : (costUsd ? parseFloat(costUsd) * effectiveRate : 0);
+    const finalPriceUsd = priceUsd ? parseFloat(priceUsd) : (priceBs ? divR(parseFloat(priceBs), effectiveRate) : 0);
+    const finalCostUsd = costUsd ? parseFloat(costUsd) : (costBs ? divR(parseFloat(costBs), effectiveRate) : 0);
+    const finalCostBs = costBs ? parseFloat(costBs) : (costUsd ? mulR(parseFloat(costUsd), effectiveRate) : 0);
 
     // Map packagingType → unit legacy
     let legacyUnit = 'unidad';
@@ -29,7 +31,7 @@ export function buildProductPayload(formData, effectiveRate) {
 
     const isLote = packagingType === 'lote';
     const parsedUnitsPerPkg = isLote && unitsPerPackage ? parseInt(unitsPerPackage) : 1;
-    const autoUnitPrice = parsedUnitsPerPkg > 1 ? finalPriceUsd / parsedUnitsPerPkg : finalPriceUsd;
+    const autoUnitPrice = parsedUnitsPerPkg > 1 ? divR(finalPriceUsd, parsedUnitsPerPkg) : finalPriceUsd;
     const finalUnitPrice = sellByUnit && unitPriceUsd ? parseFloat(unitPriceUsd) : autoUnitPrice;
 
     // Stock: for lote, convert lotes → units

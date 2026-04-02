@@ -4,6 +4,7 @@ import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
 import { formatBs, formatUsd } from '../utils/calculatorUtils';
 import { procesarImpactoCliente } from '../utils/financialLogic';
+import { round2, mulR, divR, subR } from '../utils/dinero';
 import TransactionModal from '../components/Customers/TransactionModal';
 import { processCustomerTransaction } from '../utils/customerTransactionProcessor';
 import { DEFAULT_PAYMENT_METHODS } from '../config/paymentMethods';
@@ -155,7 +156,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         // Actualizar deuda del proveedor
         const supplier = suppliers.find(s => s.id === invoiceData.supplierId);
         if (supplier) {
-            const updatedSupplier = { ...supplier, deuda: (supplier.deuda || 0) + invoiceData.amountUsd };
+            const updatedSupplier = { ...supplier, deuda: round2((supplier.deuda || 0) + invoiceData.amountUsd) };
             const updatedSuppliers = suppliers.map(s => s.id === supplier.id ? updatedSupplier : s);
             await saveSuppliers(updatedSuppliers);
             setSelectedSupplier(updatedSupplier);
@@ -172,16 +173,16 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         if (!supplier) return;
 
         // 1. Descontar deuda
-        const updatedSupplier = { ...supplier, deuda: Math.max(0, (supplier.deuda || 0) - amountUsd) };
+        const updatedSupplier = { ...supplier, deuda: Math.max(0, round2((supplier.deuda || 0) - amountUsd)) };
         const updatedSuppliers = suppliers.map(s => s.id === supplier.id ? updatedSupplier : s);
         await saveSuppliers(updatedSuppliers);
         setSelectedSupplier(updatedSupplier);
 
         // 2. Registrar en Caja como Egreso
         const sales = await storageService.getItem('bodega_sales_v1', []);
-        const totalEnBs = currency === 'BS' ? amountBs : (amountUsd * bcvRate);
-        const totalEnUsd = currency === 'USD' ? amountUsd : (bcvRate > 0 ? amountBs / bcvRate : 0);
-        const totalEnCop = currency === 'COP' ? amountBs : (amountUsd * tasaCop);
+        const totalEnBs = currency === 'BS' ? amountBs : mulR(amountUsd, bcvRate);
+        const totalEnUsd = currency === 'USD' ? amountUsd : (bcvRate > 0 ? divR(amountBs, bcvRate) : 0);
+        const totalEnCop = currency === 'COP' ? amountBs : mulR(amountUsd, tasaCop);
 
         const pagoRecord = {
             id: crypto.randomUUID(),

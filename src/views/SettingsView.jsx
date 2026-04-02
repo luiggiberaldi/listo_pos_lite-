@@ -66,6 +66,8 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
     const [activeTab, setActiveTab] = useState('negocio');
     const [idCopied, setIdCopied] = useState(false);
     const [isShareOpen, setIsShareOpen] = useState(false);
+    const [shareCustomers, setShareCustomers] = useState([]);
+    const [shareSales, setShareSales] = useState([]);
     const [importStatus, setImportStatus] = useState(null);
     const [statusMessage, setStatusMessage] = useState('');
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -295,7 +297,16 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                             importStatus={importStatus} statusMessage={statusMessage}
                             handleExport={handleExport}
                             handleImportClick={handleImportClick}
-                            setIsShareOpen={setIsShareOpen}
+                            setIsShareOpen={async () => {
+                                const { storageService } = await import('../utils/storageService');
+                                const [c, s] = await Promise.all([
+                                    storageService.getItem('bodega_customers_v1', []),
+                                    storageService.getItem('bodega_sales_v1', []),
+                                ]);
+                                setShareCustomers(c);
+                                setShareSales(s);
+                                setIsShareOpen(true);
+                            }}
                             setShowDeleteConfirm={setShowDeleteConfirm}
                             triggerHaptic={triggerHaptic}
                         />
@@ -317,9 +328,9 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                         <div className="w-16 h-16 mx-auto bg-red-100 dark:bg-red-900/30 text-red-500 rounded-2xl flex items-center justify-center mb-4">
                             <AlertTriangle size={28} />
                         </div>
-                        <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">Borrar historial</h3>
+                        <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">Borrar historial y reportes</h3>
                         <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 leading-relaxed">
-                            Se eliminará <strong>todo el historial de ventas</strong> de forma permanente. Escribe <span className="font-mono font-black text-red-500">ELIMINAR</span> para confirmar:
+                            Se eliminará <strong>todo el historial de ventas y los reportes generados</strong> de forma permanente. Escribe <span className="font-mono font-black text-red-500">ELIMINAR</span> para confirmar:
                         </p>
                         <input
                             type="text"
@@ -338,9 +349,20 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                 onClick={async () => {
                                     if (deleteInput !== 'ELIMINAR') return;
                                     triggerHaptic?.();
+                                    // 1. Borrar local (IndexedDB + localStorage)
                                     await storageService.removeItem('bodega_sales_v1');
-                                    auditLog('SISTEMA', 'HISTORIAL_BORRADO', 'Historial eliminado');
-                                    showToast('Historial eliminado', 'success');
+                                    localStorage.removeItem('cierre_notified_date');
+                                    // 2. Borrar de la nube para que no se restaure al recargar
+                                    try {
+                                        const { data: { session } } = await supabaseCloud.auth.getSession();
+                                        if (session?.user?.id) {
+                                            await supabaseCloud.from('sync_documents').delete()
+                                                .eq('user_id', session.user.id)
+                                                .eq('doc_id', 'bodega_sales_v1');
+                                        }
+                                    } catch (e) { /* sin nube configurada, ignorar */ }
+                                    auditLog('SISTEMA', 'HISTORIAL_BORRADO', 'Historial y reportes eliminados');
+                                    showToast('Historial y reportes eliminados', 'success');
                                     setTimeout(() => window.location.reload(), 1500);
                                 }}
                                 className="flex-1 py-3.5 text-sm font-bold text-white bg-red-500 rounded-xl hover:bg-red-600 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
@@ -357,11 +379,28 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                 onClose={() => setIsShareOpen(false)}
                 products={products}
                 categories={categories}
-                onImport={({ products: imported, categories: importedCats }) => {
-                    if (importedCats?.length > 0) setCategories(importedCats);
-                    if (imported?.length > 0) setProducts(imported);
-                    showToast('Inventario importado', 'success');
+                customers={shareCustomers}
+                sales={shareSales}
+                onImport={async (result) => {
+                    const { storageService } = await import('../utils/storageService');
+                    if (result.categories?.length > 0) setCategories(result.categories);
+                    if (result.products?.length > 0) {
+                        setProducts(result.products);
+                        await storageService.setItem('bodega_products_v1', result.products);
+                    }
+                    if (result.customers?.length > 0) {
+                        await storageService.setItem('bodega_customers_v1', result.customers);
+                    }
+                    if (result.sales?.length > 0) {
+                        await storageService.setItem('bodega_sales_v1', result.sales);
+                    }
+                    const types = [];
+                    if (result.products?.length) types.push('inventario');
+                    if (result.customers?.length) types.push('clientes');
+                    if (result.sales?.length) types.push('ventas');
+                    showToast(`${types.join(', ')} importado(s)`, 'success');
                     setIsShareOpen(false);
+                    setTimeout(() => window.location.reload(), 1200);
                 }}
             />
 

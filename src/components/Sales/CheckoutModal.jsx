@@ -2,6 +2,7 @@ import React, { useState, useCallback, useMemo } from 'react';
 import { X, Users, Receipt, ChevronDown, Wallet, Zap, UserPlus, Check, ArrowLeftRight, AlertTriangle } from 'lucide-react';
 import { formatBs } from '../../utils/calculatorUtils';
 import { PAYMENT_ICONS, ICON_COMPONENTS } from '../../config/paymentMethods';
+import { round2, mulR, divR, subR, sumR } from '../../utils/dinero';
 
 /**
  * CheckoutModal — Zona de Cobro con Barras de Pago (Estilo Listo POS)
@@ -43,32 +44,34 @@ export default function CheckoutModal({
 
     const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
 
-    // -- Cálculos bimoneda --
+    // -- Cálculos bimoneda (con precisión dinero.js) --
     const totalPaidUsd = useMemo(() => {
-        return paymentMethods.reduce((sum, m) => {
+        const amounts = paymentMethods.map(m => {
             const val = parseFloat(barValues[m.id]) || 0;
-            if (m.currency === 'USD') return sum + val;
-            if (m.currency === 'COP') return sum + (val / tasaCop);
-            return sum + (val / effectiveRate);
-        }, 0);
+            if (val === 0) return 0;
+            if (m.currency === 'USD') return round2(val);
+            if (m.currency === 'COP') return divR(val, tasaCop);
+            return divR(val, effectiveRate);
+        });
+        return sumR(amounts);
     }, [barValues, paymentMethods, effectiveRate, tasaCop]);
 
     const totalPaidBs = useMemo(() => {
-        return paymentMethods.reduce((sum, m) => {
+        const amounts = paymentMethods.map(m => {
             const val = parseFloat(barValues[m.id]) || 0;
-            if (m.currency === 'BS') return sum + val;
-            if (m.currency === 'COP') return sum + ((val / tasaCop) * effectiveRate);
-            return sum + (val * effectiveRate);
-        }, 0);
+            if (val === 0) return 0;
+            if (m.currency === 'BS') return round2(val);
+            if (m.currency === 'COP') return mulR(divR(val, tasaCop), effectiveRate);
+            return mulR(val, effectiveRate);
+        });
+        return sumR(amounts);
     }, [barValues, paymentMethods, effectiveRate, tasaCop]);
 
-    const remainingUsd = Math.max(0, cartTotalUsd - totalPaidUsd);
-    // Para remainingBs, tomamos la diferencia exacta de cartTotalBs - totalPaidBs para no perder decimales por tasa de cambio
-    const remainingBs = Math.max(0, cartTotalBs - totalPaidBs);
+    const remainingUsd = round2(Math.max(0, subR(cartTotalUsd, totalPaidUsd)));
+    const remainingBs = round2(Math.max(0, subR(cartTotalBs, totalPaidBs)));
     
-    const changeUsd = Math.max(0, Math.round((totalPaidUsd - cartTotalUsd) * 100) / 100);
-    // Similar a remaining Bs, changeBs debería reflejar el redondeado a 2 decimales natural en Bs.
-    const changeBs = Math.max(0, Math.round((totalPaidBs - cartTotalBs) * 100) / 100);
+    const changeUsd = round2(Math.max(0, subR(totalPaidUsd, cartTotalUsd)));
+    const changeBs = round2(Math.max(0, subR(totalPaidBs, cartTotalBs)));
     const isPaid = remainingUsd < 0.009;
 
     // -- Handlers --
@@ -85,11 +88,11 @@ export default function CheckoutModal({
         triggerHaptic && triggerHaptic();
         let val;
         if (currency === 'USD') {
-            val = remainingUsd > 0 ? Number(remainingUsd.toFixed(2)).toString() : null;
+            val = remainingUsd > 0 ? round2(remainingUsd).toString() : null;
         } else if (currency === 'COP') {
-            val = remainingUsd > 0 ? Number((remainingUsd * tasaCop).toFixed(2)).toString() : null;
+            val = remainingUsd > 0 ? mulR(remainingUsd, tasaCop).toString() : null;
         } else {
-            val = remainingBs > 0 ? Number(remainingBs.toFixed(2)).toString() : null;
+            val = remainingBs > 0 ? round2(remainingBs).toString() : null;
         }
         if (val) {
             setBarValues(prev => ({ ...prev, [methodId]: val }));
@@ -102,7 +105,7 @@ export default function CheckoutModal({
         const payments = paymentMethods
             .filter(m => parseFloat(barValues[m.id]) > 0)
             .map(m => {
-                const amount = parseFloat(barValues[m.id]);
+                const amount = round2(parseFloat(barValues[m.id]));
                 return {
                     id: crypto.randomUUID(),
                     methodId: m.id,
@@ -110,16 +113,16 @@ export default function CheckoutModal({
                     currency: m.currency,
                     amountInput: amount,
                     amountInputCurrency: m.currency,
-                    amountUsd: m.currency === 'USD' ? amount : m.currency === 'COP' ? amount / tasaCop : amount / effectiveRate,
-                    amountBs: m.currency === 'BS' ? amount : m.currency === 'COP' ? (amount / tasaCop) * effectiveRate : amount * effectiveRate,
+                    amountUsd: m.currency === 'USD' ? amount : m.currency === 'COP' ? divR(amount, tasaCop) : divR(amount, effectiveRate),
+                    amountBs: m.currency === 'BS' ? amount : m.currency === 'COP' ? mulR(divR(amount, tasaCop), effectiveRate) : mulR(amount, effectiveRate),
                 };
             });
-        const defaultUsdChange = (!changeUsdGiven && !changeBsGiven) ? changeUsd : (parseFloat(changeUsdGiven) || 0);
-        const defaultBsChange = (!changeUsdGiven && !changeBsGiven) ? 0 : (parseFloat(changeBsGiven) || 0);
+        const defaultUsdChange = (!changeUsdGiven && !changeBsGiven) ? changeUsd : round2(parseFloat(changeUsdGiven) || 0);
+        const defaultBsChange = (!changeUsdGiven && !changeBsGiven) ? 0 : round2(parseFloat(changeBsGiven) || 0);
 
         onConfirmSale(payments, {
-            changeUsdGiven: Math.min(defaultUsdChange, changeUsd),
-            changeBsGiven: Math.min(defaultBsChange, changeUsd * effectiveRate),
+            changeUsdGiven: round2(Math.min(defaultUsdChange, changeUsd)),
+            changeBsGiven: round2(Math.min(defaultBsChange, mulR(changeUsd, effectiveRate))),
         });
     }, [barValues, paymentMethods, effectiveRate, onConfirmSale, triggerHaptic, changeUsdGiven, changeBsGiven, changeUsd]);
 

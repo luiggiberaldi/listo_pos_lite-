@@ -11,6 +11,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import CierreCajaWizard from '../components/Dashboard/CierreCajaWizard';
 import { generateTicketPDF, printThermalTicket } from '../utils/ticketGenerator';
 import { generateDailyClosePDF } from '../utils/dailyCloseGenerator';
+import { processVoidSale } from '../utils/voidSaleProcessor';
 import { useNotifications } from '../hooks/useNotifications';
 import AnimatedCounter from '../components/AnimatedCounter';
 import SyncStatus from '../components/SyncStatus';
@@ -950,7 +951,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                             </div>
                             <h3 className="text-xl font-black text-slate-800 mb-2">¿Estás absolutamente seguro?</h3>
                             <p className="text-sm text-slate-500 mb-4 px-2">
-                                Esta acción borrará permanentemente <strong className="text-red-500">TODO el historial de ventas</strong>. (No afectará tu inventario de productos).
+                                Esta acción borrará permanentemente <strong className="text-red-500">TODO el historial de ventas y reportes estadísticos</strong>. (No afectará tu inventario de productos).
                             </p>
                             <div className="w-full bg-slate-50 p-4 rounded-xl border border-slate-200 mb-2 mt-2">
                                 <p className="text-xs font-bold text-slate-600 mb-2 uppercase tracking-wide">Escribe "BORRAR" para confirmar:</p>
@@ -958,7 +959,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                                     type="text"
                                     value={deleteConfirmText}
                                     onChange={(e) => setDeleteConfirmText(e.target.value)}
-                                    placeholder="BORRAR"
+                                    placeholder="Ej. BORRAR"
                                     className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-center font-black text-red-500 uppercase tracking-widest focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all outline-none"
                                 />
                             </div>
@@ -971,18 +972,31 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                                 Cancelar
                             </button>
                             <button
-                                onClick={() => {
+                                onClick={async () => {
                                     if (deleteConfirmText.trim().toUpperCase() === 'BORRAR') {
                                         setSales([]);
-                                        storageService.removeItem('my_sales_v1');
+                                        // 1. Borrar local
+                                        await storageService.removeItem(SALES_KEY);
+                                        localStorage.removeItem('cierre_notified_date');
+                                        // 2. Borrar de la nube para que no se restaure al recargar
+                                        try {
+                                            const { data: { session } } = await supabaseCloud.auth.getSession();
+                                            if (session?.user?.id) {
+                                                await supabaseCloud.from('sync_documents').delete()
+                                                    .eq('user_id', session.user.id)
+                                                    .eq('doc_id', SALES_KEY);
+                                            }
+                                        } catch (e) { /* sin nube, ignorar */ }
                                         setIsDeleteModalOpen(false);
                                         setDeleteConfirmText('');
+                                        showToast('Historial y reportes eliminados', 'success');
+                                        setTimeout(() => window.location.reload(), 800);
                                     }
                                 }}
                                 disabled={deleteConfirmText.trim().toUpperCase() !== 'BORRAR'}
                                 className="flex-1 py-3.5 bg-red-500 disabled:bg-slate-300 disabled:text-slate-500 text-white font-bold rounded-xl active:scale-[0.98] transition-all flex justify-center items-center gap-2"
                             >
-                                <Trash2 size={18} /> Borrar Historial
+                                <Trash2 size={18} /> Borrar Historial y Reportes
                             </button>
                         </div>
                     </div>

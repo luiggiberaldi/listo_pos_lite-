@@ -1,5 +1,6 @@
 import { storageService } from './storageService';
 import { procesarImpactoCliente } from './financialLogic';
+import { round2, divR, mulR } from './dinero';
 
 /**
  * Procesa la lógica de abonar o endeudar a un cliente desde el TransactionModal.
@@ -15,11 +16,11 @@ export async function processCustomerTransaction({
     tasaCop, 
     copEnabled
 }) {
-    // 1. Convert to float and USD
+    // 1. Convert to float and USD (with precision)
     const rawAmount = parseFloat(transactionAmount);
-    let amountUsd = rawAmount;
-    if (currencyMode === 'BS' && bcvRate > 0) amountUsd = rawAmount / bcvRate;
-    if (currencyMode === 'COP' && tasaCop > 0) amountUsd = rawAmount / tasaCop;
+    let amountUsd = round2(rawAmount);
+    if (currencyMode === 'BS' && bcvRate > 0) amountUsd = divR(rawAmount, bcvRate);
+    if (currencyMode === 'COP' && tasaCop > 0) amountUsd = divR(rawAmount, tasaCop);
 
     // 2. Financial quadrant logic
     let transaccionOpts = {};
@@ -38,9 +39,9 @@ export async function processCustomerTransaction({
 
     // 4. Update sales storage
     const sales = await storageService.getItem('bodega_sales_v1', []);
-    const totalEnBs = currencyMode === 'BS' ? rawAmount : (rawAmount * bcvRate);
+    const totalEnBs = currencyMode === 'BS' ? rawAmount : mulR(rawAmount, bcvRate);
     const totalEnUsd = amountUsd;
-    const totalEnCop = currencyMode === 'COP' ? rawAmount : (amountUsd * tasaCop);
+    const totalEnCop = currencyMode === 'COP' ? rawAmount : mulR(amountUsd, tasaCop);
 
     if (type === 'ABONO') {
         const cobroRecord = {

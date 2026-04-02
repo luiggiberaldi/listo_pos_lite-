@@ -275,7 +275,9 @@ export async function generateTicketPDF(sale, bcvRate) {
     const blob = doc.output('blob');
     const file = new File([blob], filename, { type: 'application/pdf' });
 
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    // En PC (desktop) siempre descarga directo; en móvil usa Share API
+    const isMobile = 'ontouchstart' in window && window.innerWidth < 768;
+    if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
         navigator.share({ title: 'Ticket #' + saleNum, files: [file] })
             .catch(() => doc.save(filename));
     } else {

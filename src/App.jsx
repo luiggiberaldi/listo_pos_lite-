@@ -81,15 +81,16 @@ export default function App() {
         // Si el login NO es explícito (es un auto-login normal),
         // checamos si este dispositivo ya fue expulsado.
         if (!isExplicitLogin) {
-            const { data: existingDevice } = await supabaseCloud
+            const { data: existingDevice, error: selectErr } = await supabaseCloud
                .from('account_devices')
                .select('id')
                .eq('device_id', deviceId)
                .eq('email', email)
                .maybeSingle();
 
-            if (!existingDevice) {
-                // Fue expulsado por el Administrador. Tumbamos sesión.
+            // Tumbamos la sesión SOLO si la conexión funcionó (sin errores) y NO se encontró el dispositivo
+            if (!selectErr && existingDevice === null) {
+                // Fue expulsado o no existe. Tumbamos sesión.
                 await supabaseCloud.auth.signOut();
                 if (mounted) { setCloudSession(null); setCheckingSession(false); }
                 return;

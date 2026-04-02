@@ -78,7 +78,9 @@ export function ProductProvider({ children, rates }) {
                 if (products.length > 0) {
                     savePromises.push(storageService.setItem('bodega_products_v1', products));
                 } else {
-                    savePromises.push(storageService.removeItem('bodega_products_v1'));
+                    // Guardar array vacío explícitamente (en vez de removeItem) 
+                    // para que la nube sincronice el borrado correctamente
+                    savePromises.push(storageService.setItem('bodega_products_v1', []));
                 }
                 savePromises.push(storageService.setItem('my_categories_v1', categories));
                 Promise.all(savePromises).finally(() => {

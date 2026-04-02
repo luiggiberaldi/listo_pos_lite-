@@ -137,7 +137,7 @@ export async function generateDailyClosePDF({
 
         Object.entries(paymentBreakdown).forEach(([methodId, data]) => {
             const label = toTitleCase(getPaymentLabel(methodId, data.label));
-            const val = data.currency === 'USD'
+            const val = (data.currency === 'USD' || data.currency === 'FIADO')
                 ? `$${data.total.toFixed(2)}`
                 : data.currency === 'COP'
                 ? `COP ${data.total.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -374,7 +374,9 @@ export async function generateDailyClosePDF({
     const blob = doc.output('blob');
     const file = new File([blob], filename, { type: 'application/pdf' });
 
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    // En PC (desktop) siempre descarga directo; en móvil usa Share API
+    const isMobile = 'ontouchstart' in window && window.innerWidth < 768;
+    if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
         navigator.share({ title: `Cierre del Día ${dateStr}`, files: [file] })
             .catch(() => doc.save(filename));
     } else {

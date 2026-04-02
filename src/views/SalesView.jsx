@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, useDeferredValue } from 'react';
 import { FinancialEngine } from '../core/FinancialEngine';
 import { storageService } from '../utils/storageService';
+import { round2, divR } from '../utils/dinero';
 import { useSounds } from '../hooks/useSounds';
 import { useVoiceSearch } from '../hooks/useVoiceSearch';
 import { useNotifications } from '../hooks/useNotifications';
@@ -585,16 +586,16 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
         let exactBsToStore = null;
         
         if (currency === 'USD') {
-            amountUsd = parseFloat(amount.toFixed(2));
+            amountUsd = round2(amount);
             // exactBsToStore remains null to float with effectiveRate
         } else if (currency === 'COP') {
             const tasaCopVal = typeof tasaCop !== 'undefined' ? tasaCop : (parseFloat(localStorage.getItem('tasa_cop')) || 4150);
-            amountUsd = parseFloat((amount / tasaCopVal).toFixed(2));
+            amountUsd = divR(amount, tasaCopVal);
             // exactBsToStore remains null to float with effectiveRate
         } else {
             // Default BS
-            amountUsd = parseFloat((amount / effectiveRate).toFixed(2));
-            exactBsToStore = parseFloat(amount);
+            amountUsd = divR(amount, effectiveRate);
+            exactBsToStore = round2(amount);
         }
 
         if (amountUsd <= 0) return;

@@ -168,7 +168,9 @@ async function generateAuditPDF(entries, dateFrom, dateTo) {
     const blob = doc.output('blob');
     const file = new File([blob], filename, { type: 'application/pdf' });
 
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    // En PC (desktop) siempre descarga directo; en móvil usa Share API
+    const isMobile = 'ontouchstart' in window && window.innerWidth < 768;
+    if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
         navigator.share({ title: 'Bitacora de Actividad', files: [file] })
             .catch(() => doc.save(filename));
     } else {

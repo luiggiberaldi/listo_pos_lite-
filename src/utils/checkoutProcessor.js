@@ -2,6 +2,9 @@ import { storageService } from './storageService';
 import { procesarImpactoCliente } from './financialLogic';
 import { logEvent } from '../services/auditService';
 import { useAuthStore } from '../hooks/store/useAuthStore';
+import { round2, subR, sumR } from './dinero';
+import { supabase } from '../core/supabaseClient';
+import { offlineQueueService } from '../services/offlineQueueService';
 
 const SALES_KEY = 'bodega_sales_v1';
 
@@ -24,9 +27,9 @@ export async function processSaleTransaction({
     if (cart.length === 0) return { success: false, error: 'Carrito vacío' };
 
     const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
-    const totalPaidUsd = payments.reduce((acc, p) => acc + p.amountUsd, 0);
-    const remainingUsd = Math.max(0, Math.round((cartTotalUsd - totalPaidUsd) * 100) / 100);
-    const changeUsd = Math.max(0, Math.round((totalPaidUsd - cartTotalUsd) * 100) / 100);
+    const totalPaidUsd = sumR(payments.map(p => p.amountUsd));
+    const remainingUsd = round2(Math.max(0, subR(cartTotalUsd, totalPaidUsd)));
+    const changeUsd = round2(Math.max(0, subR(totalPaidUsd, cartTotalUsd)));
 
     if (!selectedCustomer && remainingUsd > 0.01) {
         return { success: false, error: 'Se requiere cliente para ventas fiadas' };
@@ -41,10 +44,53 @@ export async function processSaleTransaction({
     }
 
     const fiadoAmountUsd = remainingUsd > 0.01 ? remainingUsd : 0;
+    
+    // Preparar el Payload para la validación centralizada
+    // Se envía currency y methodLabel para que el RPC pueda mapear cuentas contables
+    // correctamente sin depender del methodId hardcodeado.
+    const rpcPayload = {
+      total: cartTotalUsd,
+      cart: cart.map(i => ({ id: i._originalId || i.id, qty: i.qty, priceUsd: i.priceUsd })),
+      payments: payments.map(p => ({
+        methodId: p.methodId,
+        amountUsd: p.amountUsd,
+        currency: p.currency || 'USD',          // 'USD' | 'BS' | 'COP'
+        methodLabel: p.methodLabel || p.methodId // Nombre legible: "Pago Móvil", "Binance", etc.
+      })),
+      fiadoUsd: fiadoAmountUsd
+    };
+
+    let saleMode = 'online';
+    let finalSaleId = null;
+
+    if (navigator.onLine) {
+       try {
+         // Intentar RPC Transaccional Atómica
+         const rpcPromise = supabase.rpc('process_checkout', { payload: rpcPayload });
+         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 3000));
+         
+         const { data, error } = await Promise.race([rpcPromise, timeoutPromise]);
+         if (error) throw error;
+         
+         finalSaleId = data.sale_id;
+       } catch (err) {
+         console.warn("[Checkout] Fallo en RPC Supabase, cambiando a MODO OFFLINE", err);
+         saleMode = 'offline';
+       }
+    } else {
+       saleMode = 'offline';
+    }
+
+    if (saleMode === 'offline') {
+       // Delegar a la cola de emergencia
+       await offlineQueueService.addSaleToQueue(rpcPayload);
+    }
+
+    // ── GESTIÓN DE CACHÉ LOCAL (Para no bloquear al usuario) ──
     const sale = {
-        id: crypto.randomUUID(),
+        id: finalSaleId || crypto.randomUUID(),
         tipo: fiadoAmountUsd > 0 ? 'VENTA_FIADA' : 'VENTA',
-        status: 'COMPLETADA',
+        status: saleMode === 'online' ? 'COMPLETADA' : 'PENDIENTE_SYNC',
         items: cart.map(i => ({ id: i.id, name: i.name, qty: i.qty, priceUsd: i.priceUsd, costBs: i.costBs || 0, costUsd: i.costUsd || 0, isWeight: i.isWeight })),
         cartSubtotalUsd: cartSubtotalUsd,
         discountType: discountData?.type || null,
@@ -68,8 +114,6 @@ export async function processSaleTransaction({
         fiadoUsd: fiadoAmountUsd
     };
 
-    Object.freeze(sale);
-
     const existingSales = await storageService.getItem(SALES_KEY, []);
     const saleNumber = existingSales.reduce((mx, s) => Math.max(mx, s.saleNumber || 0), 0) + 1;
     const finalPersistedSale = Object.freeze({ ...sale, saleNumber });
@@ -79,9 +123,9 @@ export async function processSaleTransaction({
     // Audit log
     const user = useAuthStore.getState().usuarioActivo;
     const tipo = fiadoAmountUsd > 0 ? 'VENTA_FIADO' : 'VENTA_COMPLETADA';
-    logEvent('VENTA', tipo, `Venta #${saleNumber} - $${cartTotalUsd.toFixed(2)} - ${cart.length} items - ${selectedCustomer?.name || 'Consumidor Final'}`, user, { saleId: finalPersistedSale.id, total: cartTotalUsd, items: cart.length });
+    logEvent('VENTA', tipo, `Venta #${saleNumber} [${saleMode.toUpperCase()}] - $${cartTotalUsd.toFixed(2)} - ${cart.length} items - ${selectedCustomer?.name || 'Consumidor Final'}`, user, { saleId: finalPersistedSale.id, total: cartTotalUsd, items: cart.length });
 
-    // Deduct stock
+    // Deduct stock in local cache immediately
     const updatedProducts = products.map(p => {
         const cartItemsForThisProduct = cart.filter(i => (i._originalId || i.id) === p.id);
         if (cartItemsForThisProduct.length > 0) {
@@ -98,14 +142,11 @@ export async function processSaleTransaction({
         return p;
     });
 
-    // Persist updated stock to disk
     await storageService.setItem('bodega_products_v1', updatedProducts);
-
 
     let updatedCustomer = null;
     let updatedCustomers = customers;
 
-    // Update customer debt via centralized logic
     if (selectedCustomer) {
         const amount_favor_used = payments.filter(p => p.methodId === 'saldo_favor').reduce((sum, p) => sum + p.amountUsd, 0);
 
@@ -126,6 +167,7 @@ export async function processSaleTransaction({
         success: true,
         sale: finalPersistedSale,
         updatedProducts,
-        updatedCustomers
+        updatedCustomers,
+        syncMode: saleMode
     };
 }

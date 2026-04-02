@@ -92,6 +92,7 @@ export const storageService = {
     async setItem(key, value) {
         try {
             await localforage.setItem(key, value);
+            try { localStorage.removeItem(key); } catch(e) {} // Ensure stale localStorage fallback is wiped to prevent zombie data
             if (typeof window !== "undefined") {
                 window.dispatchEvent(new CustomEvent("app_storage_update", { detail: { key } }));
             }
@@ -119,6 +120,12 @@ export const storageService = {
         try {
             await localforage.removeItem(key);
             localStorage.removeItem(key); // Por si acaso quedó algún residuo
+            // Notificar a componentes React del borrado
+            if (typeof window !== "undefined") {
+                window.dispatchEvent(new CustomEvent("app_storage_update", { detail: { key } }));
+            }
+            // Sincronizar borrado a la nube (enviar array vacío para que no restaure datos viejos)
+            pushCloudSync(key, []);
         } catch (error) {
             console.error(`[Storage Error] Borrando ${key}:`, error);
         }
