@@ -29,8 +29,24 @@ const LOCAL_KEYS = [
     'auto_cop_enabled'
 ];
 
+// ─── Realtime selectivo ────────────────────────────────────────────────────
+// Solo llaves pequeñas (<1KB) van por Realtime para multi-dispositivo instantáneo.
+// Datos pesados (productos, ventas, clientes) siguen con polling cada 10 min.
+const REALTIME_KEYS = [
+    'monitor_rates_v12',
+    'bodega_custom_rate',
+    'bodega_use_auto_rate',
+    'tasa_cop',
+    'cop_enabled',
+    'auto_cop_enabled'
+];
+
+// Llaves pesadas — solo polling (evita egreso masivo por Realtime)
+const POLLING_ONLY_KEYS = SYNC_KEYS.filter(k => !REALTIME_KEYS.includes(k));
+
 // ─── Estado Global del Motor ───────────────────────────────────────────────
 let pollIntervalId = null;
+let realtimeChannel = null;     // Canal Realtime para tasas/config (payloads pequeños)
 // Intentional module-level singletons: shared across all hook instances to
 // coordinate cloud-sync echo prevention and debounce timers.
 let isSyncingFromCloud = false; // true mientras aplicamos cambios de la nube → evita eco
@@ -141,6 +157,10 @@ export function useCloudSync() {
                 isInitialized.current = false;
                 lastSyncTime = null;
             }
+            if (realtimeChannel) {
+                supabaseCloud.removeChannel(realtimeChannel);
+                realtimeChannel = null;
+            }
             return () => { localStorage.setItem = originalSetItem; };
         }
 
@@ -153,6 +173,7 @@ export function useCloudSync() {
                 if (!session?.user?.id) return;
 
                 isInitialized.current = true;
+                const userId = session.user.id;
 
                 // ── Pull Inicial: descarga todos los documentos ──────────────
                 const { data: docs } = await supabaseCloud
@@ -169,12 +190,40 @@ export function useCloudSync() {
 
                 lastSyncTime = new Date().toISOString();
 
-                // ── Polling cada 5 min (reemplaza Realtime) ──────────────────
-                // Realtime generaba ~150MB/día de egreso porque reenviaba el
-                // payload completo de cada upsert. Polling solo descarga los
-                // documentos que cambiaron desde el último check.
+                // ── Realtime: solo tasas y config (payloads <1KB) ─────────────
+                // Esto permite que 2 dispositivos con la misma cuenta vean
+                // cambios de tasa instantáneamente sin egreso significativo.
+                if (!realtimeChannel) {
+                    realtimeChannel = supabaseCloud
+                        .channel('sync-rates')
+                        .on(
+                            'postgres_changes',
+                            {
+                                event: 'UPDATE',
+                                schema: 'public',
+                                table: 'sync_documents',
+                                filter: `user_id=eq.${userId}`
+                            },
+                            async (payload) => {
+                                if (isSyncingFromCloud) return;
+                                const { doc_id, collection, data } = payload.new;
+                                // Solo procesar llaves de Realtime (tasas/config)
+                                if (!REALTIME_KEYS.includes(doc_id)) return;
+                                console.log(`[CloudSync] Realtime: ${doc_id} actualizado`);
+                                await _applyFromCloud(doc_id, collection, data.payload);
+                            }
+                        )
+                        .subscribe((status) => {
+                            console.log(`[CloudSync] Realtime canal: ${status}`);
+                        });
+                }
+
+                // ── Polling cada 10 min: solo datos pesados ──────────────────
+                // Productos, ventas, clientes, cuentas — payloads grandes que
+                // no necesitan ser instantáneos. 10 min es suficiente para
+                // multi-dispositivo en datos de catálogo.
                 if (!pollIntervalId) {
-                    const POLL_INTERVAL = 5 * 60 * 1000; // 5 minutos
+                    const POLL_INTERVAL = 10 * 60 * 1000; // 10 minutos
 
                     const pollForChanges = async () => {
                         if (isSyncingFromCloud) return;
@@ -182,11 +231,11 @@ export function useCloudSync() {
                             const currentSession = (await supabaseCloud.auth.getSession()).data.session;
                             if (!currentSession?.user?.id) return;
 
-                            // Solo pedir docs modificados después del último sync
+                            // Solo pedir docs pesados modificados después del último sync
                             let query = supabaseCloud
                                 .from('sync_documents')
                                 .select('collection, doc_id, data, updated_at')
-                                .in('collection', ['store', 'local']);
+                                .in('doc_id', POLLING_ONLY_KEYS);
 
                             if (lastSyncTime) {
                                 query = query.gt('updated_at', lastSyncTime);
@@ -196,7 +245,7 @@ export function useCloudSync() {
 
                             if (changed?.length > 0) {
                                 for (const doc of changed) {
-                                    console.log(`[CloudSync] Polling: actualización recibida → ${doc.doc_id}`);
+                                    console.log(`[CloudSync] Polling: ${doc.doc_id} actualizado`);
                                     await _applyFromCloud(doc.doc_id, doc.collection, doc.data.payload);
                                 }
                             }
@@ -208,7 +257,7 @@ export function useCloudSync() {
                     };
 
                     pollIntervalId = setInterval(pollForChanges, POLL_INTERVAL);
-                    console.log('[CloudSync] Polling P2P iniciado (cada 5 min)');
+                    console.log('[CloudSync] Híbrido iniciado: Realtime (tasas) + Polling 10min (datos)');
                 }
 
             } catch (err) {
@@ -224,6 +273,10 @@ export function useCloudSync() {
             if (pollIntervalId) {
                 clearInterval(pollIntervalId);
                 pollIntervalId = null;
+            }
+            if (realtimeChannel) {
+                supabaseCloud.removeChannel(realtimeChannel);
+                realtimeChannel = null;
             }
         };
     }, [isCloudConfigured, adminEmail, adminPassword]);
