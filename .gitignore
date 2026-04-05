@@ -85,3 +85,7 @@ scripts/
 .agent/
 .vercel
 capacitor.config.json
+
+# Android signing keys
+*.jks
+*.keystore
