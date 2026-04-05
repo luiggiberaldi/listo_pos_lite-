@@ -1,3 +1,5 @@
+import { round4 } from '../utils/dinero';
+
 /**
  * Service responsible for determining appropriate exchange rates and contexts.
  * Decouples rate logic from UI/Chat components.
@@ -43,7 +45,7 @@ export const RateService = {
 
         if (currency === 'USD') {
             if (effectiveTarget === 'EUR') {
-                rateUsed = rates.bcv.price / rates.euro.price;
+                rateUsed = rates.euro.price > 0 ? round4(rates.bcv.price / rates.euro.price) : 0;
                 rateName = 'Cross (USD → EUR)';
             } else {
                 rateUsed = rates.bcv.price;
@@ -52,7 +54,7 @@ export const RateService = {
             }
         } else if (currency === 'EUR') {
             if (effectiveTarget === 'USD') {
-                rateUsed = rates.euro.price / rates.bcv.price;
+                rateUsed = rates.bcv.price > 0 ? round4(rates.euro.price / rates.bcv.price) : 0;
                 rateName = 'EUR → USD (Implícito)';
                 effectiveTarget = 'USD';
             } else {
@@ -62,10 +64,10 @@ export const RateService = {
             }
         } else if (currency === 'VES') {
             if (effectiveTarget === 'EUR') {
-                rateUsed = 1 / rates.euro.price;
+                rateUsed = rates.euro.price > 0 ? round4(1 / rates.euro.price) : 0;
                 rateName = 'Compra EUR';
             } else {
-                rateUsed = 1 / rates.bcv.price;
+                rateUsed = rates.bcv.price > 0 ? round4(1 / rates.bcv.price) : 0;
                 rateName = 'Compra USD (BCV)';
                 effectiveTarget = 'USD';
             }

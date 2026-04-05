@@ -72,7 +72,8 @@ export default function CheckoutModal({
     
     const changeUsd = round2(Math.max(0, subR(totalPaidUsd, cartTotalUsd)));
     const changeBs = round2(Math.max(0, subR(totalPaidBs, cartTotalBs)));
-    const isPaid = remainingUsd < 0.009;
+    const PAYMENT_TOLERANCE = 0.01;
+    const isPaid = remainingUsd < PAYMENT_TOLERANCE;
 
     // -- Handlers --
     const handleBarChange = useCallback((methodId, value) => {

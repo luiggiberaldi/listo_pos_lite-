@@ -12,6 +12,22 @@
 
 import { round2, mulR, divR, subR, sumR } from '../utils/dinero';
 
+/**
+ * @typedef {Object} CartItem
+ * @property {string} id - Product ID (may include '_unit' suffix for unit-mode items)
+ * @property {string} [_originalId] - Original product ID before unit-mode transformation
+ * @property {string} [_mode] - Sale mode: 'package' (default) or 'unit'
+ * @property {number} [_unitsPerPackage] - Units per package (used when _mode is 'unit')
+ * @property {string} name - Display name of the product
+ * @property {number} qty - Quantity being sold
+ * @property {number} priceUsd - Unit price in USD
+ * @property {number} [exactBs] - Exact bolivar price (when set by VES-native pricing)
+ * @property {number} [costUsd] - Unit cost in USD (for profit calculation)
+ * @property {number} [costBs] - Unit cost in Bs (fallback for profit calculation)
+ * @property {boolean} [isWeight] - Whether this item is sold by weight
+ * @property {number} [discount] - Discount percentage applied to this line item
+ */
+
 // ── Labels de métodos de pago de fábrica (lookup puro, sin async) ──
 // Resuelve el nombre legible de un methodId sin necesitar el módulo async.
 const FACTORY_LABELS = {

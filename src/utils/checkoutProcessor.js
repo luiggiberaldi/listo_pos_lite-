@@ -27,6 +27,10 @@ export async function processSaleTransaction({
     if (cart.length === 0) return { success: false, error: 'Carrito vacío' };
 
     const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
+
+    const invalidPayment = payments.find(p => typeof p.amountUsd !== 'number' || isNaN(p.amountUsd));
+    if (invalidPayment) return { success: false, error: 'Pago sin monto válido en USD' };
+
     const totalPaidUsd = sumR(payments.map(p => p.amountUsd));
     const remainingUsd = round2(Math.max(0, subR(cartTotalUsd, totalPaidUsd)));
     const changeUsd = round2(Math.max(0, subR(totalPaidUsd, cartTotalUsd)));
@@ -66,9 +70,17 @@ export async function processSaleTransaction({
     if (navigator.onLine) {
        try {
          // Intentar RPC Transaccional Atómica
+         // NOTE: Supabase JS client (.rpc()) does not support AbortController/signal.
+         // We use Promise.race as a client-side timeout. The server-side request may
+         // continue to completion even after the client gives up — this is acceptable
+         // because the offline queue will deduplicate via idempotency keys.
+         const abortController = new AbortController();
          const rpcPromise = supabase.rpc('process_checkout', { payload: rpcPayload });
-         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 3000));
-         
+         const timeoutPromise = new Promise((_, reject) => setTimeout(() => {
+           abortController.abort();
+           reject(new Error('TIMEOUT'));
+         }, 3000));
+
          const { data, error } = await Promise.race([rpcPromise, timeoutPromise]);
          if (error) throw error;
          
@@ -131,7 +143,10 @@ export async function processSaleTransaction({
         if (cartItemsForThisProduct.length > 0) {
             const totalDeducted = cartItemsForThisProduct.reduce((sum, item) => {
                 if (item.isWeight) return sum + item.qty;
-                if (item._mode === 'unit') return sum + (item.qty / (item._unitsPerPackage || 1));
+                if (item._mode === 'unit') {
+                    const pkg = item._unitsPerPackage > 0 ? item._unitsPerPackage : 1;
+                    return sum + (item.qty / pkg);
+                }
                 return sum + item.qty;
             }, 0);
 

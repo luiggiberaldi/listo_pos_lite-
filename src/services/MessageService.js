@@ -1,10 +1,10 @@
 import { formatBs, formatUsd } from '../utils/calculatorUtils';
+import { mulR, divR, round2 } from '../utils/dinero';
 
 /**
  * Service responsible for constructing user-facing messages.
  */
 export const MessageService = {
-    /**
     /**
      * Builds the payment message string.
      * @param {object} params
@@ -30,7 +30,7 @@ export const MessageService = {
         const valBot = safeParse(amountBot);
 
         const rateTo = currencies.find(c => c.id === to)?.rate;
-        const rateFrom = currencies.find(c => c.id === from)?.rate;
+        const rateFrom = currencies.find(c => c.id === from)?.rate || 0;
 
         const isBsAccount = selectedAccount.currency === 'VES';
         const automaticRefRate = rates.bcv.price;
@@ -39,13 +39,13 @@ export const MessageService = {
         let totalBsRaw = 0;
         if (to === 'VES') totalBsRaw = valBot;
         else if (from === 'VES') totalBsRaw = valTop;
-        else totalBsRaw = valTop * rateFrom; // Divisa a Divisa
+        else totalBsRaw = mulR(valTop, rateFrom); // Divisa a Divisa
 
-        const totalUsdRaw = totalBsRaw / automaticRefRate;
+        const totalUsdRaw = divR(totalBsRaw, automaticRefRate);
 
         const strBs = formatBs(totalBsRaw);
         const strUsd = formatUsd(totalUsdRaw);
-        const strEur = formatUsd(totalUsdRaw * (rates.euro.price / rates.bcv.price)); // Aprox Eur value
+        const strEur = formatUsd(mulR(totalUsdRaw, divR(rates.euro.price, rates.bcv.price))); // Aprox Eur value
 
         // Header Formatting based on Preferences
         let amountStr = '';
@@ -72,7 +72,7 @@ export const MessageService = {
                 valToShow = strEur;
             } else if (mainCurrency === 'BCV') {
                 symbol = '$';
-                valToShow = formatUsd(totalBsRaw / rates.bcv.price);
+                valToShow = formatUsd(divR(totalBsRaw, rates.bcv.price));
             } else {
                 symbol = 'USDT';
                 valToShow = strUsd;
@@ -82,7 +82,7 @@ export const MessageService = {
 
             // Solo mostrar ref en Bs si TENGO no es ya Bs
             if (showReference && !fromIsBs) {
-                const refBs = formatBs(totalUsdRaw * automaticRefRate);
+                const refBs = formatBs(mulR(totalUsdRaw, automaticRefRate));
                 amountStr += ` (Ref: ${refBs} Bs)`;
             }
         }

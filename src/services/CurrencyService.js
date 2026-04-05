@@ -1,3 +1,5 @@
+import { mulR, divR } from '../utils/dinero';
+
 /**
  * Service responsible for monetary calculations and formatting rules.
  * Follows SRP: Only handles number crunching and string formatting related to currency.
@@ -24,6 +26,9 @@ export const CurrencyService = {
      * @returns {string}
      */
     applyRoundingRule: (value, currencyId) => {
+        // Business rule: VES cash amounts are always rounded UP (ceil) to the nearest
+        // integer bolivar. This is intentional — Venezuelan cash transactions do not
+        // use fractional amounts, and rounding up protects the merchant from shortfall.
         if (currencyId === 'VES') return Math.ceil(value).toString();
         // Ensure we handle cases where toFixed might be needed even for small numbers
         return value.toFixed(2);
@@ -38,6 +43,6 @@ export const CurrencyService = {
      */
     calculateExchange: (amount, rateFrom, rateTo) => {
         if (!rateTo || rateTo === 0 || !rateFrom) return 0;
-        return (amount * rateFrom) / rateTo;
+        return divR(mulR(amount, rateFrom), rateTo);
     }
 };
