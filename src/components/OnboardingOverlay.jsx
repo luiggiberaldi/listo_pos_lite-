@@ -10,7 +10,7 @@ const STEPS = [
         color: 'text-emerald-500',
         bg: 'bg-emerald-100',
         title: 'Inicio',
-        headline: 'Tu bodega de un vistazo',
+        headline: 'Tu negocio de un vistazo',
         description: 'Dashboard con resumen de ventas del día, productos con stock bajo y accesos rápidos a todas las funciones.',
         tip: '💡 Las tasas de cambio se actualizan automáticamente para calcular precios en Bolívares.',
     },
@@ -28,11 +28,9 @@ const STEPS = [
         color: 'text-indigo-500',
         bg: 'bg-indigo-100',
         title: 'Inventario',
-        headline: 'Tu inventario de productos',
-        descriptionFree: 'Listo POS Lite Free incluye uso ilimitado y gratis para siempre. Guarda hasta 50 productos, convierte precios y consulta la tasa del día al instante.',
-        descriptionPremium: 'Con Listo POS Lite Premium puedes gestionar un inventario ilimitado, cobrar con POS y compartir tu inventario.',
-        tipPremium: '💡 Comparte tu inventario con otros usando un código de 6 dígitos.',
-        tipFree: '👑 Activa tu licencia para desbloquear todas las funciones.',
+        headline: 'Tu catálogo de productos',
+        description: 'Gestiona tu inventario sin límites: crea, edita y organiza productos en categorías. Comparte tu catálogo con otros usando un código de 6 dígitos.',
+        tip: '💡 Usa la búsqueda por voz para encontrar productos más rápido.',
     },
     {
         icon: Users,
@@ -40,14 +38,12 @@ const STEPS = [
         bg: 'bg-amber-100',
         title: 'Clientes',
         headline: 'Gestiona tus clientes',
-        descriptionPremium: 'Registra a tus clientes frecuentes, lleva control de fiados y pagos parciales. Todo offline y seguro.',
-        descriptionFree: 'Con Listo POS Lite Premium puedes gestionar tu cartera de clientes y control de deudas.',
-        tipPremium: '💡 Toca un cliente para ver su historial completo de fiados.',
-        tipFree: '👑 Activa tu licencia para gestionar clientes.',
+        description: 'Registra a tus clientes frecuentes, lleva control de fiados y pagos parciales. Todo offline y seguro.',
+        tip: '💡 Toca un cliente para ver su historial completo de fiados.',
     },
 ];
 
-export default function OnboardingOverlay({ isPremium = false }) {
+export default function OnboardingOverlay() {
     const [done, setDone] = useState(
         () => localStorage.getItem('pda_onboarding_done') === 'true'
     );
@@ -60,7 +56,6 @@ export default function OnboardingOverlay({ isPremium = false }) {
     const isFirst = step === 0;
     const isLast = step === STEPS.length - 1;
     const isWelcome = current.type === 'welcome';
-    const hasVariants = current.descriptionPremium !== undefined;
 
     const finish = () => {
         localStorage.setItem('pda_onboarding_done', 'true');
@@ -114,17 +109,17 @@ export default function OnboardingOverlay({ isPremium = false }) {
                             <div className="relative mx-auto mb-5">
                                 <img
                                     src="/logo.png"
-                                    alt="Listo POS Lite Bodega"
+                                    alt="Listo POS Lite"
                                     className="w-44 h-auto mx-auto drop-shadow-lg"
                                 />
                                 <div className="absolute inset-0 bg-emerald-500/15 rounded-full blur-2xl -z-10 scale-150" />
                             </div>
                             <p className="text-xs font-bold text-emerald-500 uppercase tracking-[0.2em] mb-5">
-                                Tu bodega inteligente
+                                Tu negocio, resuelto
                             </p>
 
                             <p className="text-sm text-slate-500 leading-relaxed mb-6 max-w-[260px] mx-auto">
-                                Inventario, ventas y gestión de clientes en una sola app, diseñada para el bodeguero venezolano.
+                                Inventario, ventas y gestión de clientes en una sola app, para cualquier tipo de negocio.
                             </p>
 
                             {/* Feature pills */}
@@ -156,17 +151,13 @@ export default function OnboardingOverlay({ isPremium = false }) {
 
                             {/* Description */}
                             <p className="text-sm text-slate-500 text-center leading-relaxed mb-4">
-                                {hasVariants
-                                    ? (isPremium ? current.descriptionPremium : current.descriptionFree)
-                                    : current.description}
+                                {current.description}
                             </p>
 
                             {/* Tip */}
                             <div className="bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
                                 <p className="text-xs text-slate-600 font-medium text-center">
-                                    {hasVariants
-                                        ? (isPremium ? current.tipPremium : current.tipFree)
-                                        : current.tip}
+                                    {current.tip}
                                 </p>
                             </div>
                         </div>

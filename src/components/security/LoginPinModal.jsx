@@ -2,20 +2,26 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Delete, Loader2 } from 'lucide-react';
 import LoginAvatar from './LoginAvatar';
 
-const PIN_LENGTH = 4;
+const getPinLength = (rol) => rol === 'ADMIN' ? 6 : 4;
 
 export default function LoginPinModal({ isOpen, onClose, user, onSubmit }) {
+  const PIN_LENGTH = getPinLength(user?.rol);
   const [pin, setPin] = useState('');
   const [error, setError] = useState(false);
   const [processing, setProcessing] = useState(false);
   const inputRef = useRef(null);
 
-  // Focus el input invisible al abrir
+  // Detectar si es dispositivo táctil (móvil/tablet)
+  const isTouchDevice = () => window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+
+  // Focus el input invisible al abrir — solo en PC (no en móvil para no abrir teclado nativo)
   useEffect(() => {
     if (isOpen) {
       setPin('');
       setError(false);
-      setTimeout(() => inputRef.current?.focus(), 100);
+      if (!isTouchDevice()) {
+        setTimeout(() => inputRef.current?.focus(), 100);
+      }
     }
   }, [isOpen]);
 
@@ -37,7 +43,9 @@ export default function LoginPinModal({ isOpen, onClose, user, onSubmit }) {
       setPin('');
       setProcessing(false);
       setTimeout(() => setError(false), 600);
-      setTimeout(() => inputRef.current?.focus(), 100);
+      if (!isTouchDevice()) {
+        setTimeout(() => inputRef.current?.focus(), 100);
+      }
     }
     // Si fue exitoso, el componente padre cierra el modal
   };
@@ -73,7 +81,7 @@ export default function LoginPinModal({ isOpen, onClose, user, onSubmit }) {
             <LoginAvatar user={user} />
           </div>
           <h2 className="text-xl font-bold text-slate-800">{userName}</h2>
-          <p className="text-xs text-slate-500 mt-1">Ingresa tu PIN de 4 digitos</p>
+          <p className="text-xs text-slate-500 mt-1">Ingresa tu PIN de {PIN_LENGTH} dígitos</p>
         </div>
 
         {/* PIN Dots */}
@@ -92,7 +100,7 @@ export default function LoginPinModal({ isOpen, onClose, user, onSubmit }) {
           ))}
         </div>
 
-        {/* Input invisible para teclado nativo */}
+        {/* Input invisible para teclado físico (PC) — en móvil no recibe focus para no abrir teclado nativo */}
         <input
           ref={inputRef}
           type="tel"
@@ -105,6 +113,7 @@ export default function LoginPinModal({ isOpen, onClose, user, onSubmit }) {
           className="absolute opacity-0 w-0 h-0"
           autoComplete="off"
           inputMode="numeric"
+          readOnly={isTouchDevice()}
         />
 
         {/* Numpad */}

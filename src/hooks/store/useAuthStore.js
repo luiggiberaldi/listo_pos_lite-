@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { logEvent } from '../../services/auditService';
 
 const DEFAULT_USERS = [
-    { id: 1, nombre: 'Administrador', rol: 'ADMIN', pin: '1234' },
+    { id: 1, nombre: 'Administrador', rol: 'ADMIN', pin: '123456' },
     { id: 2, nombre: 'Cajero', rol: 'CAJERO', pin: '0000' }
 ];
 
@@ -122,6 +122,18 @@ export const useAuthStore = create(
         }),
         {
             name: 'abasto-auth-storage', // Nombre para localStorage
+            version: 1,
+            migrate: (persistedState, fromVersion) => {
+                // v0 → v1: admin PIN cambia de 4 a 6 dígitos (1234 → 123456)
+                if (fromVersion < 1 && persistedState?.usuarios) {
+                    persistedState.usuarios = persistedState.usuarios.map(u =>
+                        u.rol === 'ADMIN' && u.pin === '1234'
+                            ? { ...u, pin: '123456' }
+                            : u
+                    );
+                }
+                return persistedState;
+            },
             partialize: (state) => ({
                 usuarios: state.usuarios,
                 requireLogin: state.requireLogin,

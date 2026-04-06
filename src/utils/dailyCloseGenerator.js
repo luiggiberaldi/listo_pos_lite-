@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import { formatBs } from './calculatorUtils';
 import { getPaymentLabel, toTitleCase } from '../config/paymentMethods';
+import { divR, mulR } from './dinero';
 
 /**
  * Genera un PDF de Cierre del Día con reporte detallado.
@@ -110,7 +111,7 @@ export async function generateDailyClosePDF({
         ['Artículos vendidos', `${todayItemsSold}`],
         ['Ingresos brutos ($)', `$${todayTotalUsd.toFixed(2)}`],
         ['Ingresos brutos (Bs)', `Bs ${formatBs(todayTotalBs)}`],
-        ['Ganancia estimada ($)', `$${(todayProfit / bcvRate).toFixed(2)}`],
+        ['Ganancia estimada ($)', `$${divR(todayProfit, bcvRate).toFixed(2)}`],
         ['Ganancia estimada (Bs)', `Bs ${formatBs(todayProfit)}`],
         ['Tasa BCV', `Bs ${formatBs(bcvRate)} / $1`],
     ];
@@ -140,7 +141,7 @@ export async function generateDailyClosePDF({
             const val = (data.currency === 'USD' || data.currency === 'FIADO')
                 ? `$${data.total.toFixed(2)}`
                 : data.currency === 'COP'
-                ? `COP ${data.total.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                ? `COP ${Math.round(data.total).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
                 : `Bs ${formatBs(data.total)}`;
 
             doc.setFont('helvetica', 'normal');
@@ -242,7 +243,7 @@ export async function generateDailyClosePDF({
 
             doc.setFontSize(6);
             doc.setTextColor(...MUTED);
-            doc.text(`${p.qty} vendidos · $${p.revenue.toFixed(2)} · Bs ${formatBs(p.revenue * bcvRate)}`, M + 5, y);
+            doc.text(`${p.qty} vendidos · $${p.revenue.toFixed(2)} · Bs ${formatBs(mulR(p.revenue, bcvRate))}`, M + 5, y);
             y += 5;
         });
 
@@ -286,7 +287,7 @@ export async function generateDailyClosePDF({
                 doc.setFontSize(6);
                 doc.setTextColor(...MUTED);
                 doc.text(`  ${qty} ${name}`, M, y);
-                doc.text(`$${(item.priceUsd * item.qty).toFixed(2)}`, RIGHT, y, { align: 'right' });
+                doc.text(`$${mulR(item.priceUsd, item.qty).toFixed(2)}`, RIGHT, y, { align: 'right' });
                 y += 3.5;
             });
 

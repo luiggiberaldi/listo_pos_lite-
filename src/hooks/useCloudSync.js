@@ -120,7 +120,28 @@ async function _applyFromCloud(docId, collection, payload) {
     isSyncingFromCloud = true;
     try {
         if (collection === 'local') {
-            const stringPayload = typeof payload === 'string' ? payload : JSON.stringify(payload);
+            let finalPayload = payload;
+
+            // abasto-auth-storage: the cloud copy has adminPassword stripped for security.
+            // Preserve the local credentials so isCloudConfigured stays true.
+            if (docId === 'abasto-auth-storage') {
+                try {
+                    const incoming = typeof payload === 'string' ? JSON.parse(payload) : JSON.parse(JSON.stringify(payload));
+                    const existingRaw = localStorage.getItem('abasto-auth-storage');
+                    if (existingRaw) {
+                        const existing = JSON.parse(existingRaw);
+                        if (existing?.state?.adminPassword && !incoming?.state?.adminPassword) {
+                            incoming.state.adminPassword = existing.state.adminPassword;
+                        }
+                        if (existing?.state?.adminEmail && !incoming?.state?.adminEmail) {
+                            incoming.state.adminEmail = existing.state.adminEmail;
+                        }
+                    }
+                    finalPayload = incoming;
+                } catch { /* keep original payload on parse error */ }
+            }
+
+            const stringPayload = typeof finalPayload === 'string' ? finalPayload : JSON.stringify(finalPayload);
             _nativeSetItem(docId, stringPayload);   // Escribe sin pasar por el interceptor
             window.dispatchEvent(new StorageEvent('storage', {
                 key: docId,
@@ -148,7 +169,7 @@ async function _applyFromCloud(docId, collection, payload) {
 export function useCloudSync() {
     const adminEmail = useAuthStore(s => s.adminEmail);
     const adminPassword = useAuthStore(s => s.adminPassword);
-    const isCloudConfigured = Boolean(adminEmail && adminPassword);
+    const isCloudConfigured = Boolean(adminEmail);
     const isInitialized = useRef(false);
 
     useEffect(() => {

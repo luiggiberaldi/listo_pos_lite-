@@ -12,7 +12,7 @@ export default function PremiumGuard({ children, featureName = "Esta función", 
     // Cloud Auth Check
     const adminEmail = useAuthStore(state => state.adminEmail);
     const adminPassword = useAuthStore(state => state.adminPassword);
-    const isCloudConfigured = Boolean(adminEmail && adminPassword);
+    const isCloudConfigured = Boolean(adminEmail);
 
     const [copied, setCopied] = useState(false);
     const [demoLoading, setDemoLoading] = useState(false);
@@ -55,7 +55,7 @@ export default function PremiumGuard({ children, featureName = "Esta función", 
     };
 
     const openWhatsApp = () => {
-        const message = `Hola! Quiero adquirir una licencia Premium para Listo POS Lite Bodega. Mi ID de instalación es: ${deviceId}`;
+        const message = `Hola! Quiero adquirir una licencia para Listo POS Lite. Mi ID de instalación es: ${deviceId}`;
         const url = `https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent(message)}`;
         window.open(url, '_blank');
     };
@@ -65,7 +65,7 @@ export default function PremiumGuard({ children, featureName = "Esta función", 
 
     if (isShop) {
         title = <span>Listo POS Lite <span className="text-amber-500">Business</span> 👑</span>;
-        message = "Desbloquea el potencial completo para tu bodega.";
+        message = "Desbloquea el potencial completo para tu negocio.";
         Icon = Store;
         iconColor = "text-indigo-600 dark:text-indigo-400 animate-pulse";
         benefits = (
@@ -79,8 +79,8 @@ export default function PremiumGuard({ children, featureName = "Esta función", 
             </>
         );
     } else {
-        title = <span>Listo POS Lite <span className="text-amber-500">Premium</span> 👑</span>;
-        message = <span>Acceso exclusivo a <strong>{featureName}</strong> para miembros.</span>;
+        title = <span>Listo <span className="text-amber-500">POS Lite</span> 👑</span>;
+        message = <span>Activa tu acceso para usar <strong>{featureName}</strong>.</span>;
         Icon = Lock;
         iconColor = "text-amber-500";
         benefits = (
@@ -135,7 +135,7 @@ export default function PremiumGuard({ children, featureName = "Esta función", 
                     <span>Solicitar Licencia</span>
                 </button>
 
-                {/* CTA: Probar gratis 7 días */}
+                {/* CTA: Probar demo */}
                 <button
                     onClick={handleActivateDemo}
                     disabled={demoUsed || demoLoading}

@@ -6,6 +6,14 @@ import { ToastProvider } from './components/Toast.jsx'
 import { supabaseCloud } from './config/supabaseCloud.js'
 import './index.css'
 
+// ── Service Worker: auto-reload cuando el nuevo SW toma control ──
+// Evita que el usuario quede atrapado con assets desactualizados tras un deploy.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    window.location.reload();
+  });
+}
+
 // ── Evitar que la rueda del mouse cambie valores en inputs numéricos ──
 document.addEventListener('wheel', (e) => {
   if (e.target?.type === 'number') {

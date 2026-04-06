@@ -255,7 +255,7 @@ export default function App() {
   const adminPassword = useAuthStore(s => s.adminPassword);
 
   const isCajero = usuarioActivo?.rol === 'CAJERO';
-  const isCloudConfigured = Boolean(adminEmail && adminPassword);
+  const isCloudConfigured = Boolean(adminEmail);
   // El PIN solo bloquea si requireLogin está activado Y hay cuenta cloud registrada
   const pinLoginEnabled = requireLogin && isCloudConfigured;
 
@@ -311,7 +311,11 @@ export default function App() {
 
   // Local Guard: si el PIN local aplica y no ha desbloqueado
   if (!usuarioActivo && pinLoginEnabled) return <LockScreen />;
-  if (!usuarioActivo) return null;
+  if (!usuarioActivo) return (
+    <div className="h-[100dvh] w-full bg-[#F8FAFC] flex items-center justify-center">
+      <div className="w-8 h-8 rounded-full border-4 border-[#0EA5E9] border-t-transparent animate-spin" />
+    </div>
+  );
 
   return (
     <div className="font-sans antialiased bg-[#F8FAFC] h-[100dvh] flex flex-col overflow-clip">
@@ -430,7 +434,7 @@ export default function App() {
 
       {/* Bottom Nav — hidden in POS mode for full-screen selling */}
       {!isKeyboardOpen && (
-        <div className="fixed bottom-0 left-0 right-0 px-6 pb-[env(safe-area-inset-bottom)] pt-0 mb-4 max-w-md md:max-w-lg mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300">
+        <div className="fixed bottom-0 left-0 right-0 px-4 sm:px-6 pb-[env(safe-area-inset-bottom)] pt-0 mb-4 max-w-sm sm:max-w-lg md:max-w-2xl mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300">
           <div className="bg-[#1E293B]/95 backdrop-blur-xl rounded-2xl p-1 flex justify-between items-center shadow-2xl shadow-slate-900/30 border border-white/10 ring-1 ring-black/5 pointer-events-auto">
             {TABS.map(tab => (
               <TabButton
@@ -522,9 +526,9 @@ export default function App() {
 
 function TabButton({ icon, label, isActive, onClick, 'data-tour': dataTour }) {
   return (
-    <button data-tour={dataTour} onClick={onClick} className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl transition-all duration-300 ${isActive ? 'bg-[#0EA5E9] text-white shadow-md shadow-sky-500/30' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+    <button data-tour={dataTour} onClick={onClick} className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 sm:py-2.5 rounded-xl transition-all duration-300 ${isActive ? 'bg-[#0EA5E9] text-white shadow-md shadow-sky-500/30' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
       {icon}
-      {isActive && <span className="text-[9px] font-extrabold animate-in zoom-in duration-200">{label}</span>}
+      {isActive && <span className="text-[9px] sm:text-[10px] font-extrabold animate-in zoom-in duration-200">{label}</span>}
     </button>
   );
 }

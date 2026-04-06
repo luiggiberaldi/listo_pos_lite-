@@ -1,7 +1,7 @@
 import React from 'react';
 import {
     Database, Palette, Fingerprint, Upload, Download, Share2,
-    Check, Sun, Moon, ChevronRight, Trash2, AlertTriangle, FileText
+    Check, Sun, Moon, ChevronRight, RotateCcw, AlertTriangle, FileText
 } from 'lucide-react';
 import { SectionCard, Toggle } from '../../SettingsShared';
 import AuditLogViewer from '../AuditLogViewer';
@@ -13,7 +13,7 @@ export default function SettingsTabSistema({
     importStatus, statusMessage,
     handleExport, handleImportClick,
     setIsShareOpen,
-    setShowDeleteConfirm,
+    setShowFactoryReset,
     triggerHaptic,
 }) {
     return (
@@ -115,17 +115,17 @@ export default function SettingsTabSistema({
             <SectionCard icon={AlertTriangle} title="Zona de Peligro" subtitle="Acciones irreversibles" iconColor="text-red-500">
                 <div className="p-2.5 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/30 rounded-xl mb-3">
                     <p className="text-[10px] text-red-700 dark:text-red-400 leading-relaxed font-bold">
-                        Esta accion eliminara todo el historial de ventas y reportes estadisticos. El inventario NO sera afectado.
+                        Esta accion eliminara TODOS los datos: inventario, ventas, clientes, cuentas, configuraciones y usuarios. El dispositivo quedara como nuevo de fabrica.
                     </p>
                 </div>
                 <button
-                    onClick={() => setShowDeleteConfirm(true)}
+                    onClick={() => setShowFactoryReset(true)}
                     className="w-full flex items-center gap-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors group active:scale-[0.98]"
                 >
-                    <div className="p-2 bg-red-100 dark:bg-red-900/40 rounded-lg"><Trash2 size={18} className="text-red-600 dark:text-red-400" /></div>
+                    <div className="p-2 bg-red-100 dark:bg-red-900/40 rounded-lg"><RotateCcw size={18} className="text-red-600 dark:text-red-400" /></div>
                     <div className="text-left flex-1">
-                        <p className="text-sm font-bold text-red-700 dark:text-red-400">Borrar Historial de Ventas</p>
-                        <p className="text-[10px] text-red-500/80 dark:text-red-400/80">El inventario no se borrara</p>
+                        <p className="text-sm font-bold text-red-700 dark:text-red-400">Reinicio de Fábrica</p>
+                        <p className="text-[10px] text-red-500/80 dark:text-red-400/80">Borra todo y deja la app como nueva</p>
                     </div>
                 </button>
             </SectionCard>

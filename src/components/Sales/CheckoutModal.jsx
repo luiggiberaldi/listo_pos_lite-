@@ -287,7 +287,7 @@ export default function CheckoutModal({
                         </span>
                         {copEnabled && (
                             <span className="block text-sm sm:text-base font-bold text-amber-600 dark:text-amber-400 mt-0.5">
-                                COP {(cartTotalUsd * tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                COP {mulR(cartTotalUsd, tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                             </span>
                         )}
                     </div>
@@ -361,7 +361,7 @@ export default function CheckoutModal({
                                 {copEnabled && (
                                     <span className={`text-sm font-bold ${isPaid ? 'text-emerald-500' : 'text-orange-500'
                                         }`}>
-                                        COP {isPaid ? (changeUsd * tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : (remainingUsd * tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        COP {isPaid ? mulR(changeUsd, tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : mulR(remainingUsd, tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                     </span>
                                 )}
                             </div>
@@ -388,7 +388,7 @@ export default function CheckoutModal({
                                                 const v = e.target.value;
                                                 const usd = Math.min(Math.max(0, parseFloat(v) || 0), changeUsd);
                                                 setChangeUsdGiven(v);
-                                                setChangeBsGiven(Math.max(0, (changeUsd - usd) * effectiveRate).toFixed(0));
+                                                setChangeBsGiven(Math.max(0, mulR(subR(changeUsd, usd), effectiveRate)).toFixed(0));
                                             }}
                                             className="w-full py-2 px-3 pr-10 rounded-lg border-2 border-emerald-200 dark:border-emerald-700 bg-white dark:bg-slate-900 font-black text-sm text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/30"
                                         />

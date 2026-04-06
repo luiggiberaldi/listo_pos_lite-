@@ -6,7 +6,7 @@ export function useAutoLock() {
     const { usuarioActivo, logout, requireLogin } = useAuthStore();
     const adminEmail = useAuthStore(s => s.adminEmail);
     const adminPassword = useAuthStore(s => s.adminPassword);
-    const isCloudConfigured = Boolean(adminEmail && adminPassword);
+    const isCloudConfigured = Boolean(adminEmail);
     // El auto-lock solo tiene sentido si hay cuenta cloud Y requireLogin está activo.
     // Sin cloud no hay LockScreen que mostrar → nunca bloquear.
     const isLoginRequired = (requireLogin ?? false) && isCloudConfigured;

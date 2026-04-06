@@ -25,9 +25,12 @@ const ROLE_CONFIG = {
     }
 };
 
-// ─── PIN Input (4 digits) ─────────────────────────
-function PinInput({ value, onChange, label }) {
-    const digits = (value || '').padEnd(4, '').slice(0, 4).split('');
+// ─── PIN Length by role ───────────────────────────
+const getPinLength = (rol) => rol === 'ADMIN' ? 6 : 4;
+
+// ─── PIN Input (4 or 6 digits) ─────────────────────────
+function PinInput({ value, onChange, label, length = 4 }) {
+    const digits = (value || '').padEnd(length, '').slice(0, length).split('');
 
     const handleChange = (index, digit) => {
         if (!/^\d?$/.test(digit)) return;
@@ -36,7 +39,7 @@ function PinInput({ value, onChange, label }) {
         onChange(newDigits.join('').replace(/ /g, ''));
 
         // Auto-focus next
-        if (digit && index < 3) {
+        if (digit && index < length - 1) {
             const next = document.getElementById(`pin-${label}-${index + 1}`);
             next?.focus();
         }
@@ -51,7 +54,7 @@ function PinInput({ value, onChange, label }) {
 
     return (
         <div className="flex gap-2 justify-center">
-            {[0, 1, 2, 3].map(i => (
+            {Array.from({ length }).map((_, i) => (
                 <input
                     key={i}
                     id={`pin-${label}-${i}`}
@@ -154,8 +157,9 @@ export default function UsersManager({ triggerHaptic }) {
 
     // ─── Handlers ────────────────────────────────────
     const handleAdd = () => {
+        const pinLength = getPinLength(newRole);
         if (!newName.trim()) return showToast('Ingresa un nombre', 'error');
-        if (newPin.length !== 4) return showToast('El PIN debe tener 4 digitos', 'error');
+        if (newPin.length !== pinLength) return showToast(`El PIN debe tener ${pinLength} dígitos`, 'error');
         // Check duplicate PIN
         if (usuarios.some(u => u.pin === newPin)) return showToast('Ese PIN ya esta en uso', 'error');
 
@@ -169,7 +173,8 @@ export default function UsersManager({ triggerHaptic }) {
     };
 
     const handleChangePin = () => {
-        if (pinValue.length !== 4) return showToast('El PIN debe tener 4 digitos', 'error');
+        const pinLength = getPinLength(changePinUser.rol);
+        if (pinValue.length !== pinLength) return showToast(`El PIN debe tener ${pinLength} dígitos`, 'error');
         if (usuarios.some(u => u.id !== changePinUser.id && u.pin === pinValue)) return showToast('Ese PIN ya esta en uso', 'error');
 
         cambiarPin(changePinUser.id, pinValue);
@@ -272,14 +277,14 @@ export default function UsersManager({ triggerHaptic }) {
 
                     {/* PIN */}
                     <div>
-                        <label className="text-[10px] uppercase font-bold text-slate-400 block mb-2">PIN de 4 digitos</label>
-                        <PinInput value={newPin} onChange={setNewPin} label="new" />
+                        <label className="text-[10px] uppercase font-bold text-slate-400 block mb-2">PIN de {getPinLength(newRole)} dígitos</label>
+                        <PinInput value={newPin} onChange={setNewPin} label="new" length={getPinLength(newRole)} />
                     </div>
 
                     {/* Submit */}
                     <button
                         onClick={handleAdd}
-                        disabled={!newName.trim() || newPin.length !== 4}
+                        disabled={!newName.trim() || newPin.length !== getPinLength(newRole)}
                         className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all active:scale-[0.98] shadow-md shadow-indigo-500/20 disabled:shadow-none"
                     >
                         <Check size={16} /> Crear Usuario
@@ -300,7 +305,7 @@ export default function UsersManager({ triggerHaptic }) {
                         </div>
 
                         <div className="mb-4">
-                            <PinInput value={pinValue} onChange={setPinValue} label="change" />
+                            <PinInput value={pinValue} onChange={setPinValue} label="change" length={getPinLength(changePinUser.rol)} />
                         </div>
 
                         <div className="flex items-center justify-center gap-2 mb-5">
@@ -322,7 +327,7 @@ export default function UsersManager({ triggerHaptic }) {
                             </button>
                             <button
                                 onClick={handleChangePin}
-                                disabled={pinValue.length !== 4}
+                                disabled={pinValue.length !== getPinLength(changePinUser.rol)}
                                 className="flex-1 py-3 text-sm font-bold text-white bg-indigo-500 rounded-xl hover:bg-indigo-600 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Guardar

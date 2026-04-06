@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, useDeferredValue } from 'react';
 import { FinancialEngine } from '../core/FinancialEngine';
 import { storageService } from '../utils/storageService';
 import { round2, divR } from '../utils/dinero';
@@ -698,11 +698,11 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                         </div>
                     </div>
 
-                    {/* ── Split Layout: Products (left) + Cart Sidebar (right) on desktop ── */}
-                    <div className="flex-1 min-h-0 flex flex-col lg:flex-row lg:gap-4">
+                    {/* ── Split Layout: Products (left) + Cart Sidebar (right) on tablet+ ── */}
+                    <div className="flex-1 min-h-0 flex flex-col md:flex-row md:gap-4">
 
                         {/* ── Left Column: Search + Categories ── */}
-                        <div className="flex-1 min-h-0 flex flex-col lg:min-w-0 overflow-y-auto lg:overflow-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
+                        <div className="flex-1 min-h-0 flex flex-col md:min-w-0 overflow-y-auto md:overflow-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
                             {/* Search + Popups */}
                             <div className="shrink-0 mb-3 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-sm border border-slate-100 dark:border-slate-800">
                                 <SearchBar
@@ -736,8 +736,8 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                     )}
                 </div>
 
-                {/* ── Right Column: Cart Sidebar — desktop only ── */}
-                <div className="hidden lg:flex lg:w-[380px] lg:shrink-0 lg:flex-col">
+                {/* ── Right Column: Cart Sidebar — tablet+ ── */}
+                <div className="hidden md:flex md:w-[300px] md:shrink-0 md:flex-col lg:w-[380px]">
                     <CartPanel
                         cart={cart} effectiveRate={effectiveRate}
                         cartSubtotalUsd={cartSubtotalUsd} cartSubtotalBs={cartSubtotalBs}
@@ -755,8 +755,8 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
 
             </div>
 
-            {/* ── Mobile Cart FAB & Bottom Sheet (lg:hidden) ── */}
-            <div className="lg:hidden">
+            {/* ── Mobile Cart FAB & Bottom Sheet (md:hidden) ── */}
+            <div className="md:hidden">
                 {/* Floating Action Button */}
                 {cart.length > 0 && !isCartSheetOpen && !showCheckout && !showReceipt && (
                     <button 

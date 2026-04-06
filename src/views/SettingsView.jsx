@@ -72,6 +72,8 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
     const [statusMessage, setStatusMessage] = useState('');
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [deleteInput, setDeleteInput] = useState('');
+    const [showFactoryReset, setShowFactoryReset] = useState(false);
+    const [factoryResetInput, setFactoryResetInput] = useState('');
 
     const [businessName, setBusinessName] = useState(localStorage.getItem('business_name') || '');
     const [businessRif, setBusinessRif] = useState(localStorage.getItem('business_rif') || '');
@@ -79,7 +81,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
     const [allowNegativeStock, setAllowNegativeStock] = useState(localStorage.getItem('allow_negative_stock') !== 'false');
     const [autoLockMinutes, setAutoLockMinutes] = useState(localStorage.getItem('admin_auto_lock_minutes') || '5');
 
-    const isCloudConfigured = Boolean(adminEmail && adminPassword);
+    const isCloudConfigured = Boolean(adminEmail);
 
     const handleSaveBusinessData = () => {
         localStorage.setItem('business_name', businessName);
@@ -307,7 +309,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                 setShareSales(s);
                                 setIsShareOpen(true);
                             }}
-                            setShowDeleteConfirm={setShowDeleteConfirm}
+                            setShowFactoryReset={setShowFactoryReset}
                             triggerHaptic={triggerHaptic}
                         />
                     )}
@@ -321,53 +323,61 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                 </div>
             </div>
 
-            {/* ── Delete Confirm Modal ── */}
-            {showDeleteConfirm && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowDeleteConfirm(false)}>
+            {/* ── Factory Reset Modal ── */}
+            {showFactoryReset && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowFactoryReset(false)}>
                     <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200 text-center" onClick={e => e.stopPropagation()}>
                         <div className="w-16 h-16 mx-auto bg-red-100 dark:bg-red-900/30 text-red-500 rounded-2xl flex items-center justify-center mb-4">
                             <AlertTriangle size={28} />
                         </div>
-                        <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">Borrar historial y reportes</h3>
+                        <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">Reinicio de Fábrica</h3>
                         <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 leading-relaxed">
-                            Se eliminará <strong>todo el historial de ventas y los reportes generados</strong> de forma permanente. Escribe <span className="font-mono font-black text-red-500">ELIMINAR</span> para confirmar:
+                            Se eliminará <strong>todo</strong>: inventario, ventas, clientes, cuentas, configuraciones y usuarios. La app quedará como recién instalada. Escribe <span className="font-mono font-black text-red-500">REINICIAR</span> para confirmar:
                         </p>
                         <input
                             type="text"
-                            value={deleteInput}
-                            onChange={e => setDeleteInput(e.target.value.toUpperCase())}
-                            placeholder="ELIMINAR"
+                            value={factoryResetInput}
+                            onChange={e => setFactoryResetInput(e.target.value.toUpperCase())}
+                            placeholder="REINICIAR"
                             className="w-full bg-slate-50 dark:bg-slate-950 border-2 border-slate-200 dark:border-slate-800 focus:border-red-400 rounded-xl px-4 py-3 text-center font-mono font-bold text-slate-800 dark:text-white mb-4 outline-none uppercase transition-colors"
                             autoFocus
                         />
                         <div className="flex gap-3">
-                            <button onClick={() => { setShowDeleteConfirm(false); setDeleteInput(''); }} className="flex-1 py-3.5 text-sm font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all">
+                            <button onClick={() => { setShowFactoryReset(false); setFactoryResetInput(''); }} className="flex-1 py-3.5 text-sm font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all">
                                 Cancelar
                             </button>
                             <button
-                                disabled={deleteInput !== 'ELIMINAR'}
+                                disabled={factoryResetInput !== 'REINICIAR'}
                                 onClick={async () => {
-                                    if (deleteInput !== 'ELIMINAR') return;
+                                    if (factoryResetInput !== 'REINICIAR') return;
                                     triggerHaptic?.();
-                                    // 1. Borrar local (IndexedDB + localStorage)
-                                    await storageService.removeItem('bodega_sales_v1');
-                                    localStorage.removeItem('cierre_notified_date');
-                                    // 2. Borrar de la nube para que no se restaure al recargar
+                                    auditLog('SISTEMA', 'FACTORY_RESET', 'Reinicio de fábrica iniciado');
+                                    // 1. Borrar IndexedDB (todos los datos pesados)
+                                    const idbKeys = [
+                                        'bodega_products_v1', 'bodega_customers_v1',
+                                        'bodega_sales_v1', 'bodega_payment_methods_v1',
+                                        'bodega_accounts_v2', 'abasto_audit_log_v1'
+                                    ];
+                                    for (const key of idbKeys) {
+                                        await storageService.removeItem(key);
+                                    }
+                                    // 2. Borrar localStorage completo
+                                    localStorage.clear();
+                                    // 3. Borrar nube si está configurada
                                     try {
                                         const { data: { session } } = await supabaseCloud.auth.getSession();
                                         if (session?.user?.id) {
-                                            await supabaseCloud.from('sync_documents').delete()
-                                                .eq('user_id', session.user.id)
-                                                .eq('doc_id', 'bodega_sales_v1');
+                                            await supabaseCloud.from('sync_documents').delete().eq('user_id', session.user.id);
+                                            await supabaseCloud.from('cloud_backups').delete().eq('email', session.user.email);
+                                            await supabaseCloud.auth.signOut();
                                         }
-                                    } catch (e) { /* sin nube configurada, ignorar */ }
-                                    auditLog('SISTEMA', 'HISTORIAL_BORRADO', 'Historial y reportes eliminados');
-                                    showToast('Historial y reportes eliminados', 'success');
-                                    setTimeout(() => window.location.reload(), 1500);
+                                    } catch (e) { /* sin nube, ignorar */ }
+                                    // 4. Recargar
+                                    window.location.reload();
                                 }}
                                 className="flex-1 py-3.5 text-sm font-bold text-white bg-red-500 rounded-xl hover:bg-red-600 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                             >
-                                Sí, borrar
+                                Reiniciar
                             </button>
                         </div>
                     </div>

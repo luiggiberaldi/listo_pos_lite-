@@ -20,7 +20,7 @@ export function useCloudAuthLogic() {
     // ─── STATE ──────────────────────────────────────────
     const [inputEmail, setInputEmail] = useState(adminEmail || '');
     const [inputPassword, setInputPassword] = useState(''); // ← Siempre en blanco por seguridad
-    const isCloudConfigured = Boolean(adminEmail && adminPassword);
+    const isCloudConfigured = Boolean(adminEmail);
     const [isCloudLogin, setIsCloudLogin] = useState(true);
     
     const [localDeviceAlias, setLocalDeviceAlias] = useState(() => localStorage.getItem('pda_device_alias') || '');
@@ -248,7 +248,7 @@ export function useCloudAuthLogic() {
                 if (rpcResult === 'limit_reached') {
                     const { data: licenseData } = await supabaseCloud
                         .from('cloud_licenses').select('max_devices').eq('email', emailToUse).maybeSingle();
-                    const DEVICE_LIMIT = licenseData?.max_devices || 1;
+                    const DEVICE_LIMIT = licenseData?.max_devices || 2;
 
                     const { data: existingDevices } = await supabaseCloud
                         .from('account_devices').select('*').eq('email', emailToUse).order('created_at', { ascending: true });
@@ -307,7 +307,7 @@ export function useCloudAuthLogic() {
                         const { error: licErr } = await supabaseCloud.from('cloud_licenses').upsert({
                             email: emailToUse,
                             license_type: 'trial',
-                            max_devices: 1,
+                            max_devices: 2,
                             valid_until: trialExpiry.toISOString(),
                             business_name: businessName || 'Bodega',
                             phone: inputPhone || '',

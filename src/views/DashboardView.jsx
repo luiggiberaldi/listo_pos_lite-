@@ -36,7 +36,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const requireLogin = useAuthStore(s => s.requireLogin ?? false);
     const adminEmail = useAuthStore(s => s.adminEmail);
     const adminPassword = useAuthStore(s => s.adminPassword);
-    const isCloudConfigured = Boolean(adminEmail && adminPassword);
+    const isCloudConfigured = Boolean(adminEmail);
     const { log: auditLog } = useAudit();
     const confirm = useConfirm();
     const [sales, setSales] = useState([]);
@@ -462,14 +462,9 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                     )}
                 </div>
 
-                {/* ====== LOGO FLOTANTE EXACTO (Solo PC) ====== */}
-                <div className="hidden sm:flex absolute z-0 pointer-events-none inset-y-0 items-center" style={{ left: '785px' }}>
-                    <img src="/logo.png" alt="Listo POS Lite" style={{ height: '99px' }} className="w-auto object-contain select-none drop-shadow-sm pointer-events-auto transition-transform hover:scale-105 duration-300 cursor-pointer" draggable={false} />
-                </div>
-
-                {/* ====== LOGO FLOTANTE EXACTO (Solo Móvil) ====== */}
-                <div className="flex sm:hidden absolute z-0 pointer-events-none inset-y-0 items-center" style={{ left: '115px' }}>
-                    <img src="/logo.png" alt="Listo POS Lite" style={{ height: '65px' }} className="w-auto object-contain select-none drop-shadow-sm pointer-events-auto transition-transform hover:scale-105 duration-75" draggable={false} />
+                {/* ====== LOGO CENTRADO ====== */}
+                <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 flex items-center pointer-events-none z-0">
+                    <img src="/logo.png" alt="Listo POS Lite" style={{ height: '65px' }} className="sm:h-[99px] w-auto object-contain select-none drop-shadow-sm pointer-events-auto transition-transform hover:scale-105 duration-200" draggable={false} />
                 </div>
 
                 {/* ====== LATERAL DERECHO: Botones de Salir ====== */}
@@ -493,7 +488,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             </div>
 
             {/* ── SCROLL CONTENT ── */}
-            <div className="flex flex-col gap-3 px-4 pt-2 pb-28">
+            <div className="flex flex-col gap-3 px-4 sm:px-6 pt-2 pb-28">
 
             {/* Demo Banner */}
             {isDemo && demoTimeLeft && (

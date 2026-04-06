@@ -2,7 +2,7 @@ import { storageService } from './storageService';
 import { procesarImpactoCliente } from './financialLogic';
 import { logEvent } from '../services/auditService';
 import { useAuthStore } from '../hooks/store/useAuthStore';
-import { round2, subR, sumR } from './dinero';
+import { round2, subR, sumR, mulR } from './dinero';
 import { supabase } from '../core/supabaseClient';
 import { offlineQueueService } from '../services/offlineQueueService';
 
@@ -110,7 +110,7 @@ export async function processSaleTransaction({
         discountAmountUsd: discountData?.amountUsd || 0,
         totalUsd: cartTotalUsd,
         totalBs: cartTotalBs,
-        totalCop: copEnabled && tasaCop > 0 ? cartTotalUsd * tasaCop : 0,
+        totalCop: copEnabled && tasaCop > 0 ? mulR(cartTotalUsd, tasaCop) : 0,
         payments,
         rate: effectiveRate,
         tasaCop: copEnabled ? tasaCop : 0,
