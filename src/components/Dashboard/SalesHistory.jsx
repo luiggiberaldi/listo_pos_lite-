@@ -91,7 +91,9 @@ export default function SalesHistory({
                                     <p className={`text-sm font-bold flex items-center gap-1.5 truncate ${isCanceled ? 'line-through text-slate-400' : 'text-slate-800 dark:text-slate-200'}`}>
                                         {s.customerName || 'Consumidor Final'} {s.tipo === 'VENTA_FIADA' && <span className="text-[9px] bg-amber-100 text-amber-600 px-1 rounded uppercase">Fiado</span>}
                                     </p>
-                                    <p className="text-[11px] text-slate-500 flex items-center gap-1">
+                                    <p className="text-[11px] text-slate-500 flex items-center gap-1 flex-wrap">
+                                        {s.saleNumber && <span className="font-bold text-indigo-400">#{String(s.saleNumber).padStart(7, '0')}</span>}
+                                        {s.saleNumber && <span>·</span>}
                                         <span>{d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}</span> ·
                                         <span>{methodLabel}</span>
                                     </p>

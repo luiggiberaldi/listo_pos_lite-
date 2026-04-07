@@ -413,10 +413,11 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                         || (historyFilter === 'voided' && s.status === 'ANULADA');
                     if (!matchesFilter) return false;
                     if (!historySearch.trim()) return true;
-                    const q = historySearch.toLowerCase();
+                    const q = historySearch.toLowerCase().replace(/^#/, '');
                     if ((s.customerName || 'consumidor final').toLowerCase().includes(q)) return true;
                     if (s.items && s.items.some(i => i.name.toLowerCase().includes(q))) return true;
                     if (s.id.toLowerCase().includes(q)) return true;
+                    if (s.saleNumber && String(s.saleNumber).includes(q)) return true;
                     return false;
                 });
                 const completedInList = searchedSales.filter(s => s.status !== 'ANULADA');
@@ -451,7 +452,7 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                                             type="text"
                                             value={historySearch}
                                             onChange={e => { setHistorySearch(e.target.value); setVisibleCount(30); }}
-                                            placeholder="Buscar por cliente, producto u orden..."
+                                            placeholder="Buscar por cliente, producto, #correlativo..."
                                             className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-2 pl-9 pr-8 text-xs font-medium text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all"
                                         />
                                         {historySearch && (
@@ -676,7 +677,9 @@ function TransactionRow({ sale: s, bcvRate, isExpanded, onToggle, onVoidSale, on
                         {s.tipo === 'VENTA_FIADA' && <span className="text-[9px] bg-amber-100 text-amber-600 px-1 rounded uppercase">Fiado</span>}
                         {isCanceled && <span className="text-[9px] bg-red-100 text-red-500 px-1 rounded uppercase">Anulada</span>}
                     </p>
-                    <p className="text-[11px] text-slate-500 flex items-center gap-1">
+                    <p className="text-[11px] text-slate-500 flex items-center gap-1 flex-wrap">
+                        {s.saleNumber && <span className="font-bold text-indigo-400">#{String(s.saleNumber).padStart(7, '0')}</span>}
+                        {s.saleNumber && <span>·</span>}
                         <span>{dateLabel}</span> · <span>{d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}</span> · <span>{methodLabel}</span>
                     </p>
                 </div>
@@ -704,15 +707,66 @@ function TransactionRow({ sale: s, bcvRate, isExpanded, onToggle, onVoidSale, on
                         <p className="text-xs text-slate-400 mb-3 pt-2">Pago de Deudas (Sin productos)</p>
                     )}
 
-                    <div className="flex justify-between text-[10px] font-medium text-slate-400 bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-lg p-2 mb-3">
-                        <div className="flex flex-col gap-0.5">
-                            <span>Ref: {formatBs(s.totalBs)} Bs @ {formatBs(s.rate || bcvRate)}</span>
-                            {s.tasaCop > 0 && <span>COP: {(s.totalCop || (s.totalUsd * s.tasaCop)).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} @ {s.tasaCop}</span>}
+                    <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-2.5 mb-3 space-y-1.5">
+                        <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-2">Resumen de cobro</p>
+
+                        <div className="flex justify-between items-center text-[11px]">
+                            <span className="text-slate-500">Total en Bs</span>
+                            <span className="font-bold text-slate-700 dark:text-slate-200">{formatBs(s.totalBs)} Bs</span>
                         </div>
+
+                        <div className="flex justify-between items-center text-[11px]">
+                            <span className="text-slate-400">Tasa BCV aplicada</span>
+                            <span className="text-slate-400">{formatBs(s.rate || bcvRate)} Bs/$</span>
+                        </div>
+
+                        {s.tasaCop > 0 && (
+                            <div className="flex justify-between items-center text-[11px]">
+                                <span className="text-slate-500">Total en COP</span>
+                                <span className="font-bold text-amber-600">{(s.totalCop || (s.totalUsd * s.tasaCop)).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COP</span>
+                            </div>
+                        )}
+
+                        {s.payments && s.payments.length > 0 && (
+                            <>
+                                <div className="border-t border-slate-100 dark:border-slate-800 pt-1.5 mt-1">
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Pagos recibidos</p>
+                                    {s.payments.map((p, i) => {
+                                        const isCop = p.currency === 'COP';
+                                        const isBs = !isCop && (p.currency ? p.currency !== 'USD' : (p.methodId?.includes('_bs') || p.methodId === 'pago_movil'));
+                                        const val = isCop
+                                            ? `${(p.amountBs || (p.amountUsd * (s.tasaCop || 1))).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COP`
+                                            : isBs
+                                            ? `${formatBs(p.amountBs || (p.amountUsd * (s.rate || bcvRate)))} Bs`
+                                            : `$${(p.amountUsd || 0).toFixed(2)}`;
+                                        return (
+                                            <div key={i} className="flex justify-between items-center text-[11px]">
+                                                <span className="text-slate-500">{p.methodLabel || 'Pago'}</span>
+                                                <span className="font-semibold text-slate-700 dark:text-slate-200">{val}</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </>
+                        )}
+
+                        {s.fiadoUsd > 0 && (
+                            <div className="flex justify-between items-center text-[11px] border-t border-slate-100 dark:border-slate-800 pt-1.5 mt-1">
+                                <span className="text-amber-600 font-bold">Pendiente (fiado)</span>
+                                <div className="text-right">
+                                    <div className="font-bold text-amber-600">${s.fiadoUsd.toFixed(2)}</div>
+                                    <div className="text-amber-500 text-[10px]">{formatBs(s.fiadoUsd * (s.rate || bcvRate))} Bs</div>
+                                </div>
+                            </div>
+                        )}
+
                         {(s.changeUsd > 0 || s.changeBs > 0) && (
-                            <div className="text-emerald-500 font-bold self-start mt-0.5 text-right">
-                                {s.changeUsd > 0 && <div>Vuelto: ${s.changeUsd.toFixed(2)}</div>}
-                                <div className="font-medium">{formatBs(s.changeBs || s.changeUsd * (s.rate || bcvRate))} Bs</div>
+                            <div className="flex justify-between items-center text-[11px] border-t border-slate-100 dark:border-slate-800 pt-1.5 mt-1">
+                                <span className="text-emerald-600 font-bold">Cambio entregado</span>
+                                <div className="text-right">
+                                    {s.changeUsd > 0 && <div className="font-bold text-emerald-600">${s.changeUsd.toFixed(2)}</div>}
+                                    <div className="text-emerald-500 text-[10px]">{formatBs(s.changeBs || s.changeUsd * (s.rate || bcvRate))} Bs</div>
+                                </div>
                             </div>
                         )}
                     </div>
