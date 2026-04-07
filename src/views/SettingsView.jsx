@@ -7,6 +7,7 @@ import {
     ChevronRight, ShieldCheck, Package, Printer, BadgeCheck
 } from 'lucide-react';
 import { storageService } from '../utils/storageService';
+import { broadcastFactoryReset } from '../hooks/useCloudSync';
 import { showToast } from '../components/Toast';
 import PaymentMethodsManager from '../components/Settings/PaymentMethodsManager';
 import UsersManager from '../components/Settings/UsersManager';
@@ -350,10 +351,12 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                     await localforage.clear();
                                     // 2. Borrar localStorage completo
                                     localStorage.clear();
-                                    // 3. Borrar nube si está configurada
+                                    // 3. Borrar nube si está configurada y notificar otros equipos
                                     try {
                                         const { data: { session } } = await supabaseCloud.auth.getSession();
                                         if (session?.user?.id) {
+                                            // Broadcast antes de sign out para que otros equipos reciban el evento
+                                            await broadcastFactoryReset(session.user.id);
                                             await supabaseCloud.from('sync_documents').delete().eq('user_id', session.user.id);
                                             await supabaseCloud.from('cloud_backups').delete().eq('email', session.user.email);
                                             await supabaseCloud.auth.signOut();

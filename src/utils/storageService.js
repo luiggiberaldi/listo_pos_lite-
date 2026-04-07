@@ -93,6 +93,8 @@ export const storageService = {
         try {
             await localforage.setItem(key, value);
             try { localStorage.removeItem(key); } catch(e) {} // Ensure stale localStorage fallback is wiped to prevent zombie data
+            // Registrar timestamp de modificación local para resolución de conflictos con nube
+            try { localStorage.setItem('_sync_local_ts_' + key, new Date().toISOString()); } catch(e) {}
             if (typeof window !== "undefined") {
                 window.dispatchEvent(new CustomEvent("app_storage_update", { detail: { key } }));
             }
@@ -103,6 +105,7 @@ export const storageService = {
             // Fallback de emergencia a localStorage si falla algo catastrófico
             try {
                 localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+                try { localStorage.setItem('_sync_local_ts_' + key, new Date().toISOString()); } catch(e) {}
                 if (typeof window !== "undefined") {
                     window.dispatchEvent(new CustomEvent("app_storage_update", { detail: { key } }));
                 }

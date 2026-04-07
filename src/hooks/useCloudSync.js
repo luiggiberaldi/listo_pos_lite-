@@ -1,7 +1,22 @@
 import { useEffect, useRef } from 'react';
+import localforage from 'localforage';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { storageService } from '../utils/storageService';
 import { useAuthStore } from './store/useAuthStore';
+
+// Exportado para que SettingsView pueda enviar el broadcast antes de hacer signOut
+export const broadcastFactoryReset = async (userId) => {
+    try {
+        const ch = supabaseCloud.channel(`factory-reset-${userId}`);
+        await ch.subscribe();
+        await ch.send({ type: 'broadcast', event: 'factory_reset', payload: {} });
+        // Pequeña pausa para que el mensaje llegue antes de continuar
+        await new Promise(r => setTimeout(r, 800));
+        supabaseCloud.removeChannel(ch);
+    } catch (e) {
+        console.warn('[CloudSync] No se pudo broadcast factory_reset:', e.message);
+    }
+};
 
 const SYNC_KEYS = [
     'bodega_products_v1',
@@ -92,7 +107,7 @@ export const pushCloudSync = async (key, value) => {
         const serialized = typeof sanitizedValue === 'string' ? sanitizedValue : JSON.stringify(sanitizedValue);
         const hash = serialized.length + ':' + serialized.slice(0, 100) + serialized.slice(-100);
         if (_lastPushHash[key] === hash) return; // Sin cambios reales → skip
-        _lastPushHash[key] = hash;
+        // NOTA: hash se actualiza DESPUÉS del push exitoso para garantizar reintentos si falla
 
         const { data: { session } } = await supabaseCloud.auth.getSession();
         if (!session?.user?.id) return;
@@ -107,6 +122,9 @@ export const pushCloudSync = async (key, value) => {
             updated_at: new Date().toISOString()
         }, { onConflict: 'user_id,collection,doc_id' });
 
+        // Solo marcar como enviado si el push fue exitoso
+        _lastPushHash[key] = hash;
+
     } catch (e) {
         console.warn('[CloudSync] Error al enviar a la nube:', e.message ?? e);
     }
@@ -115,8 +133,30 @@ export const pushCloudSync = async (key, value) => {
 /**
  * Aplica un documento recibido de la nube al almacenamiento local.
  * Garantiza que isSyncingFromCloud esté activo durante toda la operación.
+ * Si cloudUpdatedAt se provee, verifica que sea más reciente que el timestamp local
+ * para evitar sobreescribir cambios locales con datos desactualizados de la nube.
  */
-async function _applyFromCloud(docId, collection, payload) {
+async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
+    // Protección contra sobreescritura: no aplicar si local es más reciente que la nube
+    if (cloudUpdatedAt) {
+        try {
+            const localTs = localStorage.getItem('_sync_local_ts_' + docId);
+            if (localTs && localTs > cloudUpdatedAt) {
+                console.log(`[CloudSync] Skip ${docId}: local (${localTs}) más reciente que nube (${cloudUpdatedAt}). Resubiendo...`);
+                // Re-subir los datos locales a la nube ya que son más nuevos
+                const { default: lf } = await import('localforage');
+                lf.config({ name: 'BodegaApp', storeName: 'bodega_app_data' });
+                const localData = await lf.getItem(docId);
+                if (localData !== null) {
+                    // Forzar push limpiando el hash para que no sea filtrado por deduplicación
+                    delete _lastPushHash[docId];
+                    pushCloudSync(docId, localData).catch(() => {});
+                }
+                return;
+            }
+        } catch(e) { /* Si falla la comparación, aplicar de todas formas */ }
+    }
+
     isSyncingFromCloud = true;
     try {
         if (collection === 'local') {
@@ -217,18 +257,30 @@ export function useCloudSync() {
                 } else {
                     const { data: docs } = await supabaseCloud
                         .from('sync_documents')
-                        .select('collection, doc_id, data')
+                        .select('collection, doc_id, data, updated_at')
                         .in('collection', ['store', 'local']);
 
                     if (docs?.length > 0) {
                         for (const doc of docs) {
-                            await _applyFromCloud(doc.doc_id, doc.collection, doc.data.payload);
+                            await _applyFromCloud(doc.doc_id, doc.collection, doc.data.payload, doc.updated_at);
                         }
-                        console.log(`[CloudSync] Pull inicial: ${docs.length} documentos aplicados.`);
+                        console.log(`[CloudSync] Pull inicial: ${docs.length} documentos procesados.`);
                     }
                 }
 
                 lastSyncTime = new Date().toISOString();
+
+                // ── Listener de Factory Reset remoto ─────────────────────────
+                // Si otro dispositivo con la misma cuenta hace factory reset,
+                // este equipo también limpia y recarga.
+                supabaseCloud.channel(`factory-reset-${userId}`)
+                    .on('broadcast', { event: 'factory_reset' }, async () => {
+                        console.log('[CloudSync] Factory reset remoto recibido — limpiando...');
+                        await localforage.clear();
+                        localStorage.clear();
+                        window.location.reload();
+                    })
+                    .subscribe();
 
                 // ── Realtime: solo tasas y config (payloads <1KB) ─────────────
                 // Esto permite que 2 dispositivos con la misma cuenta vean
@@ -288,7 +340,7 @@ export function useCloudSync() {
                             if (changed?.length > 0) {
                                 for (const doc of changed) {
                                     console.log(`[CloudSync] Polling: ${doc.doc_id} actualizado`);
-                                    await _applyFromCloud(doc.doc_id, doc.collection, doc.data.payload);
+                                    await _applyFromCloud(doc.doc_id, doc.collection, doc.data.payload, doc.updated_at);
                                 }
                             }
 
