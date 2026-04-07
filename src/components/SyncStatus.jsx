@@ -126,7 +126,7 @@ export default function SyncStatus() {
             {/* Banner ventas fallidas */}
             {showFailedBanner && failedCount > 0 && (
                 <button
-                    onClick={handleOpenLog}
+                    onClick={() => setShowErrorModal(true)}
                     className="flex items-center gap-1.5 px-2 py-1 bg-red-50 border border-red-200 rounded-lg text-[10px] text-red-600 font-medium max-w-[200px] hover:bg-red-100 transition-colors text-left"
                 >
                     <AlertTriangle size={11} className="shrink-0" />
