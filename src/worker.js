@@ -96,9 +96,22 @@ async function handleCheckout(request, env) {
 
     // ── Paso 2: llamar a process_checkout con el payload limpio ──
     // El RPC sólo necesita {id, qty, priceUsd} por item; quitamos "name".
+    // El RPC requiere sum(payments) + fiadoUsd == total (doble entrada).
+    // En ventas con cambio, el pago bruto supera el total. Se escalan
+    // proporcionalmente los pagos al monto esperado antes de enviar al RPC.
+    const paymentsList = Array.isArray(payload.payments) ? payload.payments : [];
+    const fiadoUsd = payload.fiadoUsd || 0;
+    const paymentsSum = paymentsList.reduce((s, p) => s + (p.amountUsd || 0), 0);
+    const expectedSum = (payload.total || 0) - fiadoUsd;
+
+    const normalizedPayments = paymentsSum > expectedSum + 0.005
+        ? paymentsList.map(p => ({ ...p, amountUsd: Math.round(p.amountUsd / paymentsSum * expectedSum * 100) / 100 }))
+        : paymentsList;
+
     const rpcPayload = {
         ...payload,
         cart: cart.map(({ id, qty, priceUsd }) => ({ id, qty, priceUsd })),
+        payments: normalizedPayments,
     };
 
     const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/process_checkout`, {

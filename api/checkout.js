@@ -71,9 +71,22 @@ export default async function handler(req, res) {
     }
 
     // Call process_checkout RPC (strip name from cart items)
+    const payments = Array.isArray(payload.payments) ? payload.payments : [];
+    const fiadoUsd = payload.fiadoUsd || 0;
+    const paymentsSum = payments.reduce((s, p) => s + (p.amountUsd || 0), 0);
+    const expectedSum = (payload.total || 0) - fiadoUsd;
+
+    // RPC requires sum(payments) + fiadoUsd == total (double-entry balance).
+    // In change scenarios the gross cash payment exceeds the sale total.
+    // Scale all payments proportionally to the expected sum so they balance.
+    const normalizedPayments = paymentsSum > expectedSum + 0.005
+        ? payments.map(p => ({ ...p, amountUsd: Math.round(p.amountUsd / paymentsSum * expectedSum * 100) / 100 }))
+        : payments;
+
     const rpcPayload = {
         ...payload,
         cart: cart.map(({ id, qty, priceUsd }) => ({ id, qty, priceUsd })),
+        payments: normalizedPayments,
     };
 
     const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/process_checkout`, {
