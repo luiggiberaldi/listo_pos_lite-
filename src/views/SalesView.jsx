@@ -538,13 +538,58 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
     const handleCheckout = async (payments, changeBreakdown) => {
         triggerHaptic && triggerHaptic();
 
-        // Overpayment sanity check: if paid > 5× total, ask for confirmation
-        const totalPaidUsd = payments.reduce((sum, p) => sum + (p.amountUsd || 0), 0);
-        if (cartTotalUsd > 0.5 && totalPaidUsd > cartTotalUsd * 5) {
-            const ok = window.confirm(
-                `¿Seguro que el cliente pagó $${totalPaidUsd.toFixed(2)} por una compra de $${cartTotalUsd.toFixed(2)}?`
-            );
-            if (!ok) return;
+        // ── Overpayment sanity check (3 layers) ──────────────────────────
+        if (cartTotalUsd > 0.5) {
+            const totalPaidUsd = payments.reduce((sum, p) => sum + (p.amountUsd || 0), 0);
+            const ratio = totalPaidUsd / cartTotalUsd;
+            const diff = totalPaidUsd - cartTotalUsd;
+
+            let alertMsg = null;
+
+            // Capa 1: confusión de moneda Bs → USD
+            // El cajero ingresó bolívares en un campo de dólares
+            if (!alertMsg && effectiveRate > 1) {
+                const usdPayments = payments.filter(p => {
+                    const label = (p.label || p.method || '').toLowerCase();
+                    return label.includes('dólar') || label.includes('dolar') || label.includes('usd') || label === 'efectivo';
+                });
+                for (const p of usdPayments) {
+                    const rawAmount = p.amountUsd || 0;
+                    const asUsd = rawAmount / effectiveRate;
+                    if (Math.abs(asUsd - cartTotalUsd) / cartTotalUsd < 0.10) {
+                        const totalBsExpected = (cartTotalUsd * effectiveRate).toFixed(2);
+                        alertMsg = `¿Ingresaste bolívares en el campo de dólares?\n\nMonto ingresado: $${rawAmount.toFixed(2)}\nTotal real en Bs: Bs ${totalBsExpected}\n\nSi pagó en bolívares, el total correcto es Bs ${totalBsExpected}.`;
+                        break;
+                    }
+                }
+            }
+
+            // Capa 2: umbral proporcional por tamaño de venta
+            if (!alertMsg) {
+                let triggerRatio = null;
+                let triggerDiff = null;
+                if      (cartTotalUsd <= 10)  { triggerRatio = 4;   triggerDiff = 15;  }
+                else if (cartTotalUsd <= 50)  { triggerRatio = 3;   triggerDiff = 30;  }
+                else if (cartTotalUsd <= 200) { triggerRatio = 2;   triggerDiff = 50;  }
+                else                          { triggerRatio = 1.5; triggerDiff = 100; }
+
+                if (ratio > triggerRatio && diff > triggerDiff) {
+                    alertMsg = `Monto alto detectado.\n\nPagado: $${totalPaidUsd.toFixed(2)} (${ratio.toFixed(1)}× el total)\nTotal venta: $${cartTotalUsd.toFixed(2)}\n\n¿Estás seguro?`;
+                }
+            }
+
+            // Capa 3: número redondo sospechoso (termina en 000 o 500) y supera 3× el total
+            if (!alertMsg && ratio > 3) {
+                const rounded = Math.round(totalPaidUsd);
+                if (rounded % 500 === 0 || rounded % 1000 === 0) {
+                    alertMsg = `El monto parece un número redondeado por error.\n\nIngresado: $${totalPaidUsd.toFixed(2)}\nTotal venta: $${cartTotalUsd.toFixed(2)}\n\n¿Estás seguro?`;
+                }
+            }
+
+            if (alertMsg) {
+                const ok = window.confirm(alertMsg);
+                if (!ok) return;
+            }
         }
 
         const opts = {
