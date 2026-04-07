@@ -267,6 +267,12 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
             return showToast('Nombre y precio requeridos', 'warning');
         }
 
+        const parsedCostUsd = parseFloat(costUsd) || 0;
+        const parsedCostBs = parseFloat(costBs) || 0;
+        if (parsedCostUsd === 0 && parsedCostBs === 0) {
+            showToast('Sin costo registrado — la ganancia no se calculará', 'warning');
+        }
+
         const productData = buildProductPayload({
             name, barcode, priceUsd, priceBs, costUsd, costBs, stock, stockInLotes,
             packagingType, unitsPerPackage, granelUnit, sellByUnit, unitPriceUsd,

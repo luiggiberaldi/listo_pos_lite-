@@ -538,6 +538,15 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
     const handleCheckout = async (payments, changeBreakdown) => {
         triggerHaptic && triggerHaptic();
 
+        // Overpayment sanity check: if paid > 5× total, ask for confirmation
+        const totalPaidUsd = payments.reduce((sum, p) => sum + (p.amountUsd || 0), 0);
+        if (cartTotalUsd > 0.5 && totalPaidUsd > cartTotalUsd * 5) {
+            const ok = window.confirm(
+                `¿Seguro que el cliente pagó $${totalPaidUsd.toFixed(2)} por una compra de $${cartTotalUsd.toFixed(2)}?`
+            );
+            if (!ok) return;
+        }
+
         const opts = {
             cart, cartTotalUsd, cartTotalBs, cartSubtotalUsd, payments, changeBreakdown,
             selectedCustomerId, customers, products, effectiveRate, tasaCop, copEnabled,

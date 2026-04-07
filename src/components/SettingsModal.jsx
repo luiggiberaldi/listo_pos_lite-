@@ -110,13 +110,26 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
                 setStatusMessage('Restaurando datos...');
                 const json = JSON.parse(e.target.result);
 
-                if (!json.data || (!json.data.bodega_products_v1 && !json.data.bodega_accounts_v2)) {
+                if (!json.data || (!json.data.bodega_products_v1 && !json.data.bodega_accounts_v2 && !json.data.idb)) {
                     throw new Error('Formato de archivo inválido.');
                 }
 
                 // Bypass storageService completely to prevent app_storage_update events from firing.
                 // If events fire, ProductContext updates state and triggers its auto-save, which might overwrite our imported data before reload finishes.
                 const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
+
+                // ── v2.0 format: { data: { idb: {...}, ls: {...} } } ──
+                if (json.version === '2.0' && json.data.idb) {
+                    for (const [key, value] of Object.entries(json.data.idb)) {
+                        await lf.setItem(key, value);
+                    }
+                    if (json.data.ls) {
+                        for (const [key, value] of Object.entries(json.data.ls)) {
+                            localStorage.setItem(key, value);
+                        }
+                    }
+                } else {
+                // ── v1 legacy format: flat keys directly under data ──
 
                 if (json.data.bodega_products_v1) {
                     await lf.setItem('bodega_products_v1', typeof json.data.bodega_products_v1 === 'string' ? JSON.parse(json.data.bodega_products_v1) : json.data.bodega_products_v1);
@@ -137,6 +150,7 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
                     const cats = typeof json.data.my_categories_v1 === 'string' ? JSON.parse(json.data.my_categories_v1) : json.data.my_categories_v1;
                     await lf.setItem('my_categories_v1', cats);
                 }
+                } // end legacy format
 
                 setImportStatus('success');
                 setStatusMessage('Datos restaurados. Recargando...');

@@ -255,7 +255,7 @@ export function useCloudSync() {
                 // no necesitan ser instantáneos. 10 min es suficiente para
                 // multi-dispositivo en datos de catálogo.
                 if (!pollIntervalId) {
-                    const POLL_INTERVAL = 10 * 60 * 1000; // 10 minutos
+                    const POLL_INTERVAL = 15 * 60 * 1000; // 15 minutos
 
                     const pollForChanges = async () => {
                         if (isSyncingFromCloud) return;

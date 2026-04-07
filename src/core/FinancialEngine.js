@@ -240,8 +240,10 @@ export class FinancialEngine {
                 breakdown['efectivo_usd'].total = round2(breakdown['efectivo_usd'].total - safeChangeUsd);
             }
             if (safeChangeBs > 0) {
-                if (!breakdown['efectivo_bs']) breakdown['efectivo_bs'] = { total: 0, currency: 'BS', label: 'Efectivo Bs' };
-                breakdown['efectivo_bs'].total = round2(breakdown['efectivo_bs'].total - safeChangeBs);
+                // Separate the Bs change given back into its own positive entry so the
+                // "Efectivo Bs" row never goes negative (even when change came from a USD sale).
+                if (!breakdown['vuelto_bs']) breakdown['vuelto_bs'] = { total: 0, currency: 'BS', label: 'Vuelto en Bs entregado', isChange: true };
+                breakdown['vuelto_bs'].total = round2(breakdown['vuelto_bs'].total + safeChangeBs);
             }
         });
 

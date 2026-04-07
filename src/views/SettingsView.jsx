@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import localforage from 'localforage';
 import {
     Store, CreditCard, Database, Users,
     AlertTriangle, Download, Upload, Share2,
@@ -146,11 +147,15 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                 setImportStatus('loading'); setStatusMessage('Restaurando...');
                 const json = JSON.parse(e.target.result);
                 if (!json.data) throw new Error('Formato invalido.');
+                // Bypass storageService to prevent app_storage_update events from firing.
+                // If events fire, ProductContext auto-save overwrites the imported products
+                // with the old in-memory state before the page reloads.
+                const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
                 if (json.version === '2.0' && json.data.idb) {
-                    for (const [key, value] of Object.entries(json.data.idb)) await storageService.setItem(key, value);
+                    for (const [key, value] of Object.entries(json.data.idb)) await lf.setItem(key, value);
                     if (json.data.ls) for (const [key, value] of Object.entries(json.data.ls)) localStorage.setItem(key, value);
                 } else {
-                    if (json.data.bodega_products_v1) await storageService.setItem('bodega_products_v1', typeof json.data.bodega_products_v1 === 'string' ? JSON.parse(json.data.bodega_products_v1) : json.data.bodega_products_v1);
+                    if (json.data.bodega_products_v1) await lf.setItem('bodega_products_v1', typeof json.data.bodega_products_v1 === 'string' ? JSON.parse(json.data.bodega_products_v1) : json.data.bodega_products_v1);
                 }
                 setImportStatus('success'); setStatusMessage('Restauracion finalizada. Reiniciando...');
                 auditLog('SISTEMA', 'BACKUP_IMPORTADO', 'Backup restaurado'); triggerHaptic?.();
@@ -392,17 +397,19 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                 customers={shareCustomers}
                 sales={shareSales}
                 onImport={async (result) => {
-                    const { storageService } = await import('../utils/storageService');
+                    // Use direct localforage to avoid firing app_storage_update events
+                    // that would trigger ProductContext auto-save with stale state.
+                    const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
                     if (result.categories?.length > 0) setCategories(result.categories);
                     if (result.products?.length > 0) {
                         setProducts(result.products);
-                        await storageService.setItem('bodega_products_v1', result.products);
+                        await lf.setItem('bodega_products_v1', result.products);
                     }
                     if (result.customers?.length > 0) {
-                        await storageService.setItem('bodega_customers_v1', result.customers);
+                        await lf.setItem('bodega_customers_v1', result.customers);
                     }
                     if (result.sales?.length > 0) {
-                        await storageService.setItem('bodega_sales_v1', result.sales);
+                        await lf.setItem('bodega_sales_v1', result.sales);
                     }
                     const types = [];
                     if (result.products?.length) types.push('inventario');

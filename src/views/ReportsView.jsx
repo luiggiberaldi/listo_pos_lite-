@@ -260,13 +260,15 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
             {Object.keys(paymentBreakdown).length > 0 && (() => {
                 const entries = Object.entries(paymentBreakdown);
                 const fiadoMethods = entries.filter(([, d]) => d.currency === 'FIADO');
-                const bsMethods = entries.filter(([, d]) => d.currency === 'BS' || (!d.currency));
+                const bsIncomeMethods = entries.filter(([k, d]) => (d.currency === 'BS' || (!d.currency)) && !d.isChange);
+                const vueltoMethods = entries.filter(([, d]) => d.isChange === true);
+                const bsMethods = [...bsIncomeMethods, ...vueltoMethods];
                 const usdMethods = entries.filter(([, d]) => d.currency === 'USD');
                 const copMethods = entries.filter(([, d]) => d.currency === 'COP');
                 const fmtCop = (v) => v.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
                 const renderMethod = ([method, data]) => {
-                    const label = toTitleCase(getPaymentLabel(method, data.label));
+                    const label = data.label || toTitleCase(getPaymentLabel(method, data.label));
                     const PayIcon = getPaymentIcon(method) || PAYMENT_ICONS[method];
                     let totalBsEquiv = data.total;
                     let pct = 0;
@@ -290,16 +292,18 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                         pct = totalBs > 0 ? (data.total / totalBs * 100) : 0;
                     }
 
+                    const isChange = data.isChange === true;
+
                     return (
                         <div key={method}>
                             <div className="flex justify-between text-sm mb-1">
-                                <span className="text-slate-600 dark:text-slate-300 font-medium flex items-center gap-1.5">
-                                    {PayIcon && <PayIcon size={14} className="text-slate-400" />}
+                                <span className={`font-medium flex items-center gap-1.5 ${isChange ? 'text-orange-500 dark:text-orange-400' : 'text-slate-600 dark:text-slate-300'}`}>
+                                    {PayIcon && <PayIcon size={14} className={isChange ? 'text-orange-400' : 'text-slate-400'} />}
                                     {label}
                                 </span>
                                 <div className="text-right">
-                                    <span className="font-bold text-slate-700 dark:text-white">
-                                        {displayAmount}
+                                    <span className={`font-bold ${isChange ? 'text-orange-500 dark:text-orange-400' : 'text-slate-700 dark:text-white'}`}>
+                                        {isChange ? '− ' : ''}{displayAmount}
                                     </span>
                                     {data.currency === 'FIADO' && (
                                         <div className="text-[10px] text-slate-400 font-medium">
@@ -310,7 +314,7 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                             </div>
                             {data.currency !== 'FIADO' && (
                                 <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                                    <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                                    <div className={`h-full rounded-full transition-all ${isChange ? 'bg-orange-400' : 'bg-indigo-500'}`} style={{ width: `${pct}%` }} />
                                 </div>
                             )}
                         </div>
@@ -339,10 +343,17 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                         <div className="mb-3">
                             <div className="flex items-center justify-between mb-2">
                                 <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">Bolivares</span>
-                                <span className="text-xs font-black text-blue-600 dark:text-blue-400">{formatBs(bsMethods.reduce((s, [,d]) => s + d.total, 0))} Bs</span>
+                                <span className="text-xs font-black text-blue-600 dark:text-blue-400">
+                                    {formatBs(bsIncomeMethods.reduce((s, [,d]) => s + d.total, 0) - vueltoMethods.reduce((s, [,d]) => s + d.total, 0))} Bs neto
+                                </span>
                             </div>
                             <div className="space-y-3 pl-1 border-l-2 border-blue-200 dark:border-blue-800/40">
-                                <div className="pl-3 space-y-3">{bsMethods.map(renderMethod)}</div>
+                                <div className="pl-3 space-y-3">{bsIncomeMethods.map(renderMethod)}</div>
+                                {vueltoMethods.length > 0 && (
+                                    <div className="pl-3 space-y-3 pt-1 border-t border-orange-100 dark:border-orange-900/30">
+                                        {vueltoMethods.map(renderMethod)}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
