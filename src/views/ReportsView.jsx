@@ -685,6 +685,7 @@ function TransactionRow({ sale: s, bcvRate, isExpanded, onToggle, onVoidSale, on
                 </div>
                 <div className="text-right shrink-0">
                     <p className={`text-sm font-black ${isCanceled ? 'text-slate-400' : 'text-slate-800 dark:text-white'}`}>${(s.totalUsd || 0).toFixed(2)}</p>
+                    <p className="text-[10px] text-slate-400 font-medium">{formatBs(s.totalBs || (s.totalUsd * (s.rate || bcvRate)))} Bs</p>
                     <div className="flex justify-end mt-0.5">
                         {isExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
                     </div>
