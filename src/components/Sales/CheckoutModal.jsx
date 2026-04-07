@@ -119,7 +119,7 @@ export default function CheckoutModal({
                 };
             });
         const defaultUsdChange = (!changeUsdGiven && !changeBsGiven) ? changeUsd : round2(parseFloat(changeUsdGiven) || 0);
-        const defaultBsChange = (!changeUsdGiven && !changeBsGiven) ? 0 : round2(parseFloat(changeBsGiven) || 0);
+        const defaultBsChange = (!changeUsdGiven && !changeBsGiven) ? round2(mulR(changeUsd, effectiveRate)) : round2(parseFloat(changeBsGiven) || 0);
 
         onConfirmSale(payments, {
             changeUsdGiven: round2(Math.min(defaultUsdChange, changeUsd)),
