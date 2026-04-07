@@ -11,8 +11,6 @@ export const FACTORY_PAYMENT_METHODS = [
     { id: 'punto_venta', label: 'Punto de Venta', icon: '💳', Icon: CreditCard, currency: 'BS', isFactory: true },
     // Dólares
     { id: 'efectivo_usd', label: 'Efectivo en Dólares', icon: '💲', Icon: DollarSign, currency: 'USD', isFactory: true },
-    // Cashea (BNPL)
-    { id: 'cashea', label: 'Cashea', icon: '🏦', Icon: CreditCard, currency: 'USD', isFactory: true },
     // Pesos
     { id: 'efectivo_cop', label: 'Efectivo en Pesos', icon: '🟡', Icon: Coins, currency: 'COP', isFactory: true },
     { id: 'transferencia_cop', label: 'Transferencia COP', icon: '🏦', Icon: Store, currency: 'COP', isFactory: true },
@@ -152,7 +150,6 @@ export const getPaymentLabel = (id, fallbackLabel) => {
     
     // Virtual categories (not selectable, display-only)
     if (id === 'fiado') return 'Fiado (Por Cobrar)';
-    if (id === 'cashea') return 'Cashea';
 
     // Use fallback if provided and it's not a raw ID
     if (fallbackLabel && fallbackLabel !== id && !fallbackLabel.startsWith('custom_')) {
@@ -182,7 +179,6 @@ export const PAYMENT_ICONS = {
     pago_movil: Smartphone,
     punto_venta: CreditCard,
     efectivo_usd: DollarSign,
-    cashea: CreditCard,
     fiado: ShoppingCart,
 };
 

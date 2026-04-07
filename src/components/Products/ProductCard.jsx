@@ -1,5 +1,5 @@
-import React from 'react';
-import { Tag, Banknote, AlertTriangle, Box, Minus, Plus, Pencil, Trash2, Package, Layers, Clock, Printer } from 'lucide-react';
+import React, { useState } from 'react';
+import { Tag, Banknote, AlertTriangle, Box, Minus, Plus, Pencil, Trash2, Package, Layers, Clock, Printer, Check, X } from 'lucide-react';
 import { CATEGORY_COLORS, CATEGORY_ICONS, UNITS } from '../../config/categories';
 import { formatUsd, formatBs, smartCashRounding } from '../../utils/calculatorUtils';
 
@@ -27,6 +27,8 @@ export default function ProductCard({
     const catInfo = categories.find(c => c.id === p.category);
     const unitInfo = UNITS.find(u => u.id === p.unit);
     const efectivoPrecio = streetRate > 0 ? `$${smartCashRounding(valBs / streetRate)}` : null;
+    const [pendingDelta, setPendingDelta] = useState(0);
+    const pendingStock = (p.stock ?? 0) + pendingDelta;
 
     return (
         <div className={`bg-white dark:bg-slate-900 rounded-2xl shadow-sm border flex flex-col overflow-hidden group ${isLowStock ? 'border-amber-300 dark:border-amber-700' : 'border-slate-100 dark:border-slate-800'} ${isSelected ? 'ring-2 ring-brand border-brand shadow-brand/20 bg-brand/5 dark:bg-brand/10' : ''}`}>
@@ -95,25 +97,41 @@ export default function ProductCard({
                 <div className="mt-auto pt-2 border-t border-slate-100 dark:border-slate-800">
                     <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 rounded-xl p-1">
                         {!readOnly && (
-                        <button onClick={() => onAdjustStock(p.id, -1)} className="w-10 h-10 rounded-lg bg-white dark:bg-slate-700 flex items-center justify-center text-slate-500 hover:text-red-500 shadow-sm active:scale-95 transition-all">
+                        <button onClick={() => setPendingDelta(d => d - 1)} className="w-10 h-10 rounded-lg bg-white dark:bg-slate-700 flex items-center justify-center text-slate-500 hover:text-red-500 shadow-sm active:scale-95 transition-all">
                             <Minus size={18} strokeWidth={2.5} />
                         </button>
                         )}
                         <div className="flex flex-col items-center justify-center px-2 text-center min-w-[50px]">
-                            <span className={`text-base font-black leading-none mb-0.5 ${isLowStock ? 'text-amber-500' : 'text-slate-700 dark:text-slate-200'}`}>
-                                {p.stock ?? 0}
+                            <span className={`text-base font-black leading-none mb-0.5 ${pendingDelta !== 0 ? 'text-blue-500' : isLowStock ? 'text-amber-500' : 'text-slate-700 dark:text-slate-200'}`}>
+                                {pendingStock}
                             </span>
                             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none">{(p.unit === 'kg' || p.unit === 'litro') ? unitInfo?.short : 'UND'}</span>
-                            {p.unit === 'paquete' && p.unitsPerPackage > 0 && Math.floor((p.stock ?? 0) / p.unitsPerPackage) > 0 && (
-                                <span className="text-[8px] text-slate-400 leading-none">= {Math.floor((p.stock ?? 0) / p.unitsPerPackage)} lotes</span>
+                            {p.unit === 'paquete' && p.unitsPerPackage > 0 && Math.floor(pendingStock / p.unitsPerPackage) > 0 && (
+                                <span className="text-[8px] text-slate-400 leading-none">= {Math.floor(pendingStock / p.unitsPerPackage)} lotes</span>
                             )}
                         </div>
                         {!readOnly && (
-                        <button onClick={() => onAdjustStock(p.id, 1)} className="w-10 h-10 rounded-lg bg-white dark:bg-slate-700 flex items-center justify-center text-slate-500 hover:text-emerald-500 shadow-sm active:scale-95 transition-all">
+                        <button onClick={() => setPendingDelta(d => d + 1)} className="w-10 h-10 rounded-lg bg-white dark:bg-slate-700 flex items-center justify-center text-slate-500 hover:text-emerald-500 shadow-sm active:scale-95 transition-all">
                             <Plus size={18} strokeWidth={2.5} />
                         </button>
                         )}
                     </div>
+
+                    {/* Botones confirmar/cancelar cuando hay cambios pendientes */}
+                    {pendingDelta !== 0 && !readOnly && (
+                        <div className="flex gap-1.5 mt-1.5">
+                            <button
+                                onClick={() => setPendingDelta(0)}
+                                className="w-9 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-red-50 hover:text-red-400 dark:hover:bg-red-900/20 transition-all active:scale-95">
+                                <X size={14} strokeWidth={2.5} />
+                            </button>
+                            <button
+                                onClick={() => { onAdjustStock(p.id, pendingDelta); setPendingDelta(0); }}
+                                className="flex-1 h-8 flex items-center justify-center gap-1 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-black transition-all active:scale-95 shadow-sm">
+                                <Check size={13} strokeWidth={2.5} /> Confirmar
+                            </button>
+                        </div>
+                    )}
 
                     {/* Days Remaining Badge */}
                     {daysRemaining !== null && daysRemaining !== undefined && (

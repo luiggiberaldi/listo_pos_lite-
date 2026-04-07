@@ -1,23 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Users, Plus, Search, User, X, Trash2, Pencil, Phone, RefreshCw, Save, ArrowDownRight, ArrowUpRight, Clock, CheckCircle2, CreditCard, ShoppingBag, Truck, CalendarDays, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { Users, Plus, Search, User, X, Trash2, Pencil, Phone, RefreshCw, Save, ArrowDownRight, ArrowUpRight, Clock, CheckCircle2, CreditCard, ShoppingBag, Truck, Check } from 'lucide-react';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
 import { formatBs, formatUsd } from '../utils/calculatorUtils';
 import { procesarImpactoCliente } from '../utils/financialLogic';
 import { round2, mulR, divR, subR } from '../utils/dinero';
 import TransactionModal from '../components/Customers/TransactionModal';
-import CasheaPlanModal from '../components/Customers/CasheaPlanModal';
 import { processCustomerTransaction } from '../utils/customerTransactionProcessor';
-import { DEFAULT_PAYMENT_METHODS } from '../config/paymentMethods';
-import {
-    getAllCasheaPlans,
-    createCasheaPlan,
-    markInstallmentPaid,
-    markInstallmentUnpaid,
-    deleteCasheaPlan,
-    refreshInstallmentStatuses,
-    getCasheaSummary
-} from '../utils/casheaService';
 import ConfirmModal from '../components/ConfirmModal';
 import EmptyState from '../components/EmptyState';
 import SwipeableItem from '../components/SwipeableItem';
@@ -55,11 +44,6 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
     const [editingCustomer, setEditingCustomer] = useState(null);
     const [deleteCustomerTarget, setDeleteCustomerTarget] = useState(null);
 
-    // ── ESTADOS CASHEA ──
-    const [casheaPlans, setCasheaPlans] = useState([]);
-    const [showCasheaPlanModal, setShowCasheaPlanModal] = useState(false);
-    const [casheaPlanTarget, setCasheaPlanTarget] = useState(null); // customer for new plan
-
     // Guard: evita eliminar clientes con deuda o saldo a favor pendiente
     const handleDeleteCustomerRequest = (customer) => {
         const deuda = customer.deuda || 0;
@@ -90,18 +74,16 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
     const [supplierHistoryData, setSupplierHistoryData] = useState([]);
 
     const loadData = async () => {
-        const [savedCustomers, savedSuppliers, savedInvoices, savedMethods, savedCasheaPlans] = await Promise.all([
+        const [savedCustomers, savedSuppliers, savedInvoices, savedMethods] = await Promise.all([
             storageService.getItem('bodega_customers_v1', []),
             storageService.getItem('bodega_suppliers_v1', []),
             storageService.getItem('bodega_supplier_invoices_v1', []),
             getActivePaymentMethods(),
-            getAllCasheaPlans()
         ]);
         setCustomers(savedCustomers);
         setSuppliers(savedSuppliers);
         setInvoices(savedInvoices);
         setActivePaymentMethods(savedMethods);
-        setCasheaPlans(savedCasheaPlans.map(refreshInstallmentStatuses));
     };
 
     useEffect(() => {
@@ -235,7 +217,6 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         if (!matchesSearch) return false;
         if (filterType === 'deuda') return c.deuda > 0.01;
         if (filterType === 'favor') return c.deuda < -0.01;
-        if (filterType === 'cashea') return casheaPlans.some(p => p.customerId === c.id && p.status === 'active');
         return true;
     });
 
@@ -265,30 +246,6 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         showToast(`Saldo reiniciado a cero para ${customer.name}`, 'success');
         auditLog('CLIENTE', 'DEUDA_CONDONADA', `Saldo reiniciado a $0 para ${customer.name}`);
         setResetBalanceCustomer(null);
-    };
-
-    // ── HANDLERS CASHEA ──
-    const handleAddCasheaPlan = async (planData) => {
-        const newPlan = await createCasheaPlan(planData);
-        setCasheaPlans(prev => [newPlan, ...prev]);
-        setShowCasheaPlanModal(false);
-        setCasheaPlanTarget(null);
-        showToast('Plan Cashea registrado', 'success');
-    };
-
-    const handleMarkInstallmentPaid = async (planId, installmentNumber) => {
-        const updated = await markInstallmentPaid(planId, installmentNumber);
-        setCasheaPlans(prev => prev.map(p => p.id === planId ? refreshInstallmentStatuses(updated) : p));
-    };
-
-    const handleMarkInstallmentUnpaid = async (planId, installmentNumber) => {
-        const updated = await markInstallmentUnpaid(planId, installmentNumber);
-        setCasheaPlans(prev => prev.map(p => p.id === planId ? refreshInstallmentStatuses(updated) : p));
-    };
-
-    const handleDeleteCasheaPlan = async (planId) => {
-        await deleteCasheaPlan(planId);
-        setCasheaPlans(prev => prev.filter(p => p.id !== planId));
     };
 
     const handleTransaction = async () => {
@@ -485,13 +442,6 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                         <div className={`w-2 h-2 rounded-full ${filterType === 'favor' ? 'bg-white' : 'bg-emerald-500'}`}></div>
                         Saldo a Favor
                     </button>
-                    <button
-                        onClick={() => { setFilterType('cashea'); triggerHaptic && triggerHaptic(); }}
-                        className={`px-4 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-colors flex items-center gap-1.5 ${filterType === 'cashea' ? 'bg-cyan-500 text-white shadow-sm shadow-cyan-500/30' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'}`}
-                    >
-                        <span className={`text-xs ${filterType === 'cashea' ? 'text-white' : 'text-cyan-500'}`}>🏦</span>
-                        Cashea
-                    </button>
                 </div>
             </div>
 
@@ -525,7 +475,6 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                                 bcvRate={bcvRate}
                                 tasaCop={tasaCop}
                                 copEnabled={copEnabled}
-                                activeCasheaCount={casheaPlans.filter(p => p.customerId === customer.id && p.status === 'active').length}
                                 onClick={() => {
                                     setSelectedCustomer(customer);
                                     toggleHistory(customer.id);
@@ -610,14 +559,6 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                 tasaCop={tasaCop}
                 copEnabled={copEnabled}
                 sales={historyData}
-                casheaPlans={casheaPlans.filter(p => selectedCustomer && p.customerId === selectedCustomer.id)}
-                onAddCasheaPlan={() => {
-                    setCasheaPlanTarget(selectedCustomer);
-                    setShowCasheaPlanModal(true);
-                }}
-                onMarkInstallmentPaid={handleMarkInstallmentPaid}
-                onMarkInstallmentUnpaid={handleMarkInstallmentUnpaid}
-                onDeleteCasheaPlan={handleDeleteCasheaPlan}
             />
 
             {/* Modal Confirmación: Reiniciar Saldo */}
@@ -662,21 +603,12 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                 />
             )}
 
-            {/* Modal Nuevo Plan Cashea */}
-            {showCasheaPlanModal && casheaPlanTarget && (
-                <CasheaPlanModal
-                    customer={casheaPlanTarget}
-                    bcvRate={bcvRate}
-                    onClose={() => { setShowCasheaPlanModal(false); setCasheaPlanTarget(null); }}
-                    onSave={handleAddCasheaPlan}
-                />
-            )}
         </div >
     );
 }
 
 // ─── Sub-componente: Tarjeta Compacta ───────────────────────
-function CustomerCard({ customer, bcvRate, tasaCop, copEnabled, activeCasheaCount, onClick, onDelete }) {
+function CustomerCard({ customer, bcvRate, tasaCop, copEnabled, onClick, onDelete }) {
     return (
         <div className="bg-white dark:bg-slate-900 rounded-2xl px-4 py-3 border border-slate-100 dark:border-slate-800 shadow-sm transition-all active:scale-[0.98] flex items-center gap-2 relative">
             <div
@@ -691,11 +623,6 @@ function CustomerCard({ customer, bcvRate, tasaCop, copEnabled, activeCasheaCoun
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                         <h3 className="font-bold text-slate-800 dark:text-white text-sm truncate">{customer.name}</h3>
-                        {activeCasheaCount > 0 && (
-                            <span className="shrink-0 text-[9px] font-black bg-cyan-100 dark:bg-cyan-900/40 text-cyan-600 dark:text-cyan-400 px-1.5 py-0.5 rounded-full border border-cyan-200 dark:border-cyan-800/40">
-                                🏦 {activeCasheaCount > 1 ? `${activeCasheaCount} Cashea` : 'Cashea'}
-                            </span>
-                        )}
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
                         {customer.documentId && (
@@ -746,8 +673,7 @@ function CustomerCard({ customer, bcvRate, tasaCop, copEnabled, activeCasheaCoun
 }
 
 // ─── Sub-componente: Bottom Sheet de Detalle ────────────────
-function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, onReset, onEdit, onDelete, bcvRate, tasaCop, copEnabled, sales, casheaPlans = [], onAddCasheaPlan, onMarkInstallmentPaid, onMarkInstallmentUnpaid, onDeleteCasheaPlan }) {
-    const [expandedPlanId, setExpandedPlanId] = useState(null);
+function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, onReset, onEdit, onDelete, bcvRate, tasaCop, copEnabled, sales }) {
     if (!isOpen || !customer) return null;
 
     const createdDate = customer.createdAt
@@ -839,140 +765,6 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                                 <RefreshCw size={18} />
                                 <span>Poner en 0</span>
                             </button>
-                        )}
-                    </div>
-
-                    {/* ── SECCIÓN CASHEA ── */}
-                    <div>
-                        <div className="flex items-center justify-between mb-3">
-                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                <span className="text-sm">🏦</span> Planes Cashea
-                                {casheaPlans.filter(p => p.status === 'active').length > 0 && (
-                                    <span className="bg-cyan-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">
-                                        {casheaPlans.filter(p => p.status === 'active').length}
-                                    </span>
-                                )}
-                            </h4>
-                            <button
-                                onClick={onAddCasheaPlan}
-                                className="flex items-center gap-1 text-[10px] font-black text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800/40 px-2.5 py-1.5 rounded-lg hover:bg-cyan-100 dark:hover:bg-cyan-900/40 transition-colors active:scale-95"
-                            >
-                                <Plus size={10} /> Nuevo Plan
-                            </button>
-                        </div>
-
-                        {casheaPlans.length === 0 ? (
-                            <p className="text-xs text-slate-400 text-center py-4 bg-slate-50 dark:bg-slate-950 rounded-xl">
-                                Sin planes Cashea registrados
-                            </p>
-                        ) : (
-                            <div className="space-y-2">
-                                {casheaPlans.map(plan => {
-                                    const paidCount = plan.installments.filter(i => i.status === 'paid').length;
-                                    const overdueCount = plan.installments.filter(i => i.status === 'overdue').length;
-                                    const isExpanded = expandedPlanId === plan.id;
-                                    const pendingAmount = plan.installments.filter(i => i.status !== 'paid').reduce((s, i) => s + i.amount, 0);
-
-                                    return (
-                                        <div key={plan.id} className={`border rounded-xl overflow-hidden ${plan.status === 'completed' ? 'border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/50 dark:bg-emerald-900/10' : overdueCount > 0 ? 'border-red-200 dark:border-red-800/40 bg-red-50/50 dark:bg-red-900/10' : 'border-cyan-200 dark:border-cyan-800/40 bg-cyan-50/50 dark:bg-cyan-900/10'}`}>
-                                            {/* Plan header — tappable */}
-                                            <button
-                                                onClick={() => setExpandedPlanId(isExpanded ? null : plan.id)}
-                                                className="w-full text-left px-3 py-2.5 flex items-center justify-between gap-2"
-                                            >
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${plan.status === 'completed' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400' : overdueCount > 0 ? 'bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400' : 'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-600 dark:text-cyan-400'}`}>
-                                                            {plan.status === 'completed' ? '✓ Pagado' : overdueCount > 0 ? `${overdueCount} vencida${overdueCount > 1 ? 's' : ''}` : 'Activo'}
-                                                        </span>
-                                                        {plan.notes && (
-                                                            <span className="text-[10px] text-slate-400 truncate">{plan.notes}</span>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex items-center gap-2 mt-0.5">
-                                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                                                            ${plan.totalAmount.toFixed(2)} total
-                                                        </span>
-                                                        <span className="text-[10px] text-slate-400">
-                                                            {paidCount}/{plan.installmentCount} cuotas
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                <div className="shrink-0 text-right">
-                                                    {plan.status !== 'completed' && (
-                                                        <p className="text-xs font-black text-amber-600 dark:text-amber-400">${Math.round(pendingAmount * 100) / 100}</p>
-                                                    )}
-                                                    <p className="text-[9px] text-slate-400 flex items-center gap-0.5 justify-end mt-0.5">
-                                                        {isExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
-                                                    </p>
-                                                </div>
-                                            </button>
-
-                                            {/* Progress bar */}
-                                            <div className="px-3 pb-1">
-                                                <div className="h-1 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                                                    <div
-                                                        className="h-full bg-cyan-500 rounded-full transition-all"
-                                                        style={{ width: `${plan.installmentCount > 0 ? (paidCount / plan.installmentCount) * 100 : 100}%` }}
-                                                    />
-                                                </div>
-                                            </div>
-
-                                            {/* Installments detail (expandable) */}
-                                            {isExpanded && (
-                                                <div className="px-3 pb-3 pt-2 border-t border-slate-200/70 dark:border-slate-700/70 space-y-2">
-                                                    {plan.installments.map(inst => {
-                                                        const dueDate = new Date(inst.dueDate);
-                                                        const dateStr = dueDate.toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: '2-digit' });
-                                                        const isOverdue = inst.status === 'overdue';
-                                                        const isPaid = inst.status === 'paid';
-                                                        return (
-                                                            <div key={inst.number} className="flex items-center gap-2">
-                                                                <button
-                                                                    onClick={() => isPaid
-                                                                        ? onMarkInstallmentUnpaid(plan.id, inst.number)
-                                                                        : onMarkInstallmentPaid(plan.id, inst.number)
-                                                                    }
-                                                                    className={`w-5 h-5 rounded-md shrink-0 flex items-center justify-center transition-all active:scale-90 border-2 ${isPaid ? 'bg-emerald-500 border-emerald-500' : isOverdue ? 'border-red-400 hover:border-red-500' : 'border-slate-300 dark:border-slate-600 hover:border-cyan-400'}`}
-                                                                >
-                                                                    {isPaid && <Check size={11} className="text-white" strokeWidth={3} />}
-                                                                </button>
-                                                                <div className="flex-1 min-w-0">
-                                                                    <div className="flex justify-between items-center">
-                                                                        <span className={`text-xs font-bold ${isPaid ? 'text-slate-400 line-through' : isOverdue ? 'text-red-500' : 'text-slate-700 dark:text-slate-200'}`}>
-                                                                            Cuota {inst.number}
-                                                                        </span>
-                                                                        <span className={`text-xs font-black ${isPaid ? 'text-slate-400' : isOverdue ? 'text-red-500' : 'text-slate-700 dark:text-slate-200'}`}>
-                                                                            ${inst.amount.toFixed(2)}
-                                                                        </span>
-                                                                    </div>
-                                                                    <div className="flex justify-between items-center">
-                                                                        <span className={`text-[10px] flex items-center gap-0.5 ${isPaid ? 'text-slate-400' : isOverdue ? 'text-red-400' : 'text-slate-400'}`}>
-                                                                            <CalendarDays size={9} />
-                                                                            {isPaid && inst.paidAt
-                                                                                ? `Pagada ${new Date(inst.paidAt).toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })}`
-                                                                                : isOverdue ? `Vencida ${dateStr}` : dateStr
-                                                                            }
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                    {isAdmin && (
-                                                        <button
-                                                            onClick={() => onDeleteCasheaPlan(plan.id)}
-                                                            className="w-full mt-1 py-1.5 text-[10px] font-bold text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors flex items-center justify-center gap-1"
-                                                        >
-                                                            <Trash2 size={10} /> Eliminar plan
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
                         )}
                     </div>
 

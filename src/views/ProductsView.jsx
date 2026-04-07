@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
-import { Package, Plus, Trash2, X, Store, Tag, Pencil, Banknote, Search, ChevronLeft, ChevronRight, AlertTriangle, Box, LayoutGrid, List, Minus, ArrowUpDown, Clock, Percent, Printer, CheckSquare } from 'lucide-react';
+import { Package, Plus, Trash2, X, Store, Tag, Pencil, Banknote, Search, ChevronLeft, ChevronRight, AlertTriangle, Box, LayoutGrid, List, Minus, ArrowUpDown, Clock, Percent, Printer, CheckSquare, Check } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { ProductShareModal } from '../components/ProductShareModal';
 
@@ -24,6 +24,7 @@ import { useProductFiltering } from '../hooks/useProductFiltering';
 import { buildProductPayload } from '../utils/productProcessor';
 import { useAuthStore } from '../hooks/store/useAuthStore';
 import { useAudit } from '../hooks/useAudit';
+import { pushCloudSync } from '../hooks/useCloudSync';
 
 export const ProductsView = ({ rates, triggerHaptic }) => {
     // ─── STATE DEL HOOK ─────────────────────────────────────
@@ -117,6 +118,16 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
     // Selección múltiple para etiquetas
     const [selectedIds, setSelectedIds] = useState(new Set());
+
+    // Pendientes de confirmación en vista lista
+    const [pendingDeltas, setPendingDeltas] = useState({});
+    const adjustPending = (id, d) => setPendingDeltas(prev => ({ ...prev, [id]: (prev[id] || 0) + d }));
+    const confirmPending = (id) => {
+        const d = pendingDeltas[id];
+        if (d) { adjustStock(id, d); }
+        setPendingDeltas(prev => { const n = { ...prev }; delete n[id]; return n; });
+    };
+    const cancelPending = (id) => setPendingDeltas(prev => { const n = { ...prev }; delete n[id]; return n; });
     
     const handleToggleSelect = (id) => {
         const newSet = new Set(selectedIds);
@@ -280,17 +291,21 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         }, effectiveRate);
 
         if (editingId) {
-            setProducts(products.map(p =>
+            const updated = products.map(p =>
                 p.id === editingId ? { ...p, ...productData, image: image || p.image } : p
-            ));
+            );
+            setProducts(updated);
+            pushCloudSync('bodega_products_v1', updated).catch(() => {});
             auditLog('INVENTARIO', 'PRODUCTO_EDITADO', `Producto "${name}" editado`);
         } else {
-            setProducts([{
+            const updated = [{
                 id: crypto.randomUUID(),
                 ...productData,
                 image,
                 createdAt: new Date().toISOString()
-            }, ...products]);
+            }, ...products];
+            setProducts(updated);
+            pushCloudSync('bodega_products_v1', updated).catch(() => {});
             auditLog('INVENTARIO', 'PRODUCTO_CREADO', `Producto "${name}" creado - $${priceUsd || '0'}`);
         }
         handleClose();
@@ -702,9 +717,15 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                                                 <button onClick={() => handlePrintSingle(p)} className="p-1.5 text-slate-300 hover:text-brand transition-colors"><Printer size={14} /></button>
                                                 {!isCajero && (
                                                 <div className="flex items-center bg-slate-50 dark:bg-slate-800 rounded-lg">
-                                                    <button onClick={() => adjustStock(p.id, -1)} className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"><Minus size={14} /></button>
-                                                    <span className={`text-xs font-black min-w-[28px] text-center ${isLowStock ? 'text-amber-500' : 'text-slate-700 dark:text-slate-200'}`}>{p.stock ?? 0}</span>
-                                                    <button onClick={() => adjustStock(p.id, 1)} className="p-1.5 text-slate-400 hover:text-emerald-500 transition-colors"><Plus size={14} /></button>
+                                                    <button onClick={() => adjustPending(p.id, -1)} className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"><Minus size={14} /></button>
+                                                    <span className={`text-xs font-black min-w-[28px] text-center ${pendingDeltas[p.id] ? 'text-blue-500' : isLowStock ? 'text-amber-500' : 'text-slate-700 dark:text-slate-200'}`}>{(p.stock ?? 0) + (pendingDeltas[p.id] || 0)}</span>
+                                                    <button onClick={() => adjustPending(p.id, 1)} className="p-1.5 text-slate-400 hover:text-emerald-500 transition-colors"><Plus size={14} /></button>
+                                                    {pendingDeltas[p.id] ? (
+                                                        <>
+                                                            <button onClick={() => cancelPending(p.id)} className="p-1 text-slate-400 hover:text-red-400 transition-colors"><X size={13} /></button>
+                                                            <button onClick={() => confirmPending(p.id)} className="p-1.5 text-emerald-600 hover:text-emerald-700 transition-colors"><Check size={14} /></button>
+                                                        </>
+                                                    ) : null}
                                                 </div>
                                                 )}
                                                 {isCajero && <span className={`text-xs font-black ${isLowStock ? 'text-amber-500' : 'text-slate-700 dark:text-slate-200'}`}>{p.stock ?? 0}</span>}
@@ -730,9 +751,15 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                                                 ) : <span className="text-[10px] text-slate-300">-</span>) : <span className="text-[10px] text-slate-300">-</span>}
                                             </div>
                                             <div className="hidden sm:flex items-center gap-1">
-                                                {!isCajero && <button onClick={() => adjustStock(p.id, -1)} className="w-7 h-7 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors active:scale-90"><Minus size={14} /></button>}
-                                                <span className={`text-sm font-black min-w-[32px] text-center ${isLowStock ? 'text-amber-500' : 'text-slate-700 dark:text-slate-200'}`}>{p.stock ?? 0}</span>
-                                                {!isCajero && <button onClick={() => adjustStock(p.id, 1)} className="w-7 h-7 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-emerald-500 transition-colors active:scale-90"><Plus size={14} /></button>}
+                                                {!isCajero && <button onClick={() => adjustPending(p.id, -1)} className="w-7 h-7 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors active:scale-90"><Minus size={14} /></button>}
+                                                <span className={`text-sm font-black min-w-[32px] text-center ${pendingDeltas[p.id] ? 'text-blue-500' : isLowStock ? 'text-amber-500' : 'text-slate-700 dark:text-slate-200'}`}>{(p.stock ?? 0) + (pendingDeltas[p.id] || 0)}</span>
+                                                {!isCajero && <button onClick={() => adjustPending(p.id, 1)} className="w-7 h-7 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-emerald-500 transition-colors active:scale-90"><Plus size={14} /></button>}
+                                                {!isCajero && pendingDeltas[p.id] ? (
+                                                    <>
+                                                        <button onClick={() => cancelPending(p.id)} className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"><X size={13} /></button>
+                                                        <button onClick={() => confirmPending(p.id)} className="w-6 h-6 flex items-center justify-center rounded-lg text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all"><Check size={13} /></button>
+                                                    </>
+                                                ) : null}
                                             </div>
                                             <div className="hidden sm:flex items-center justify-end gap-1">
                                                 <button onClick={() => handlePrintSingle(p)} className="p-1.5 rounded-lg text-slate-300 hover:text-brand hover:bg-brand/10 transition-all" title="Imprimir Etiqueta"><Printer size={14} /></button>
