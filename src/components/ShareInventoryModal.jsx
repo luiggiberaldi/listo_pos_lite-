@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import localforage from 'localforage';
+import { pushCloudSync } from '../hooks/useCloudSync';
 import { Share2, Download, X, Copy, Check, Loader2, AlertTriangle, Package, Users, ShoppingBag, Database } from 'lucide-react';
 
 // IDB keys per group
@@ -152,6 +153,8 @@ export default function ShareInventoryModal({ isOpen, onClose }) {
                     const len = Array.isArray(value) ? value.length : typeof value;
                     console.log(`[Import] Escribiendo ${key} (${len})...`);
                     await lf.setItem(key, value);
+                    // También actualiza Supabase para que el Pull inicial no sobreescriba con datos viejos
+                    pushCloudSync(key, value).catch(() => {});
                     console.log(`[Import] ✓ ${key}`);
                 }
                 if (importResult.ls && typeof importResult.ls === 'object') {
@@ -161,14 +164,21 @@ export default function ShareInventoryModal({ isOpen, onClose }) {
                 }
             } else {
                 // Old format: { products: [], categories: [], customers: [], sales: [] }
-                if (Array.isArray(importResult.products) && importResult.products.length > 0)
+                if (Array.isArray(importResult.products) && importResult.products.length > 0) {
                     await lf.setItem('bodega_products_v1', importResult.products);
-                if (Array.isArray(importResult.categories) && importResult.categories.length > 0)
+                    pushCloudSync('bodega_products_v1', importResult.products).catch(() => {});
+                }
+                if (Array.isArray(importResult.categories) && importResult.categories.length > 0) {
                     await lf.setItem('my_categories_v1', importResult.categories);
-                if (Array.isArray(importResult.customers) && importResult.customers.length > 0)
+                }
+                if (Array.isArray(importResult.customers) && importResult.customers.length > 0) {
                     await lf.setItem('bodega_customers_v1', importResult.customers);
-                if (Array.isArray(importResult.sales) && importResult.sales.length > 0)
+                    pushCloudSync('bodega_customers_v1', importResult.customers).catch(() => {});
+                }
+                if (Array.isArray(importResult.sales) && importResult.sales.length > 0) {
                     await lf.setItem('bodega_sales_v1', importResult.sales);
+                    pushCloudSync('bodega_sales_v1', importResult.sales).catch(() => {});
+                }
             }
             console.log('[Import] Todo escrito. Recargando en 500ms...');
             setTimeout(() => window.location.reload(), 500);

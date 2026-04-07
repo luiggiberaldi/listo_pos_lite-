@@ -1,13 +1,23 @@
 import { useState, useEffect } from 'react';
-import { Users, Plus, Search, User, X, Trash2, Pencil, Phone, RefreshCw, Save, ArrowDownRight, ArrowUpRight, Clock, CheckCircle2, CreditCard, ShoppingBag, Truck } from 'lucide-react';
+import { Users, Plus, Search, User, X, Trash2, Pencil, Phone, RefreshCw, Save, ArrowDownRight, ArrowUpRight, Clock, CheckCircle2, CreditCard, ShoppingBag, Truck, CalendarDays, Check } from 'lucide-react';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
 import { formatBs, formatUsd } from '../utils/calculatorUtils';
 import { procesarImpactoCliente } from '../utils/financialLogic';
 import { round2, mulR, divR, subR } from '../utils/dinero';
 import TransactionModal from '../components/Customers/TransactionModal';
+import CasheaPlanModal from '../components/Customers/CasheaPlanModal';
 import { processCustomerTransaction } from '../utils/customerTransactionProcessor';
 import { DEFAULT_PAYMENT_METHODS } from '../config/paymentMethods';
+import {
+    getAllCasheaPlans,
+    createCasheaPlan,
+    markInstallmentPaid,
+    markInstallmentUnpaid,
+    deleteCasheaPlan,
+    refreshInstallmentStatuses,
+    getCasheaSummary
+} from '../utils/casheaService';
 import ConfirmModal from '../components/ConfirmModal';
 import EmptyState from '../components/EmptyState';
 import SwipeableItem from '../components/SwipeableItem';
@@ -45,6 +55,11 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
     const [editingCustomer, setEditingCustomer] = useState(null);
     const [deleteCustomerTarget, setDeleteCustomerTarget] = useState(null);
 
+    // ── ESTADOS CASHEA ──
+    const [casheaPlans, setCasheaPlans] = useState([]);
+    const [showCasheaPlanModal, setShowCasheaPlanModal] = useState(false);
+    const [casheaPlanTarget, setCasheaPlanTarget] = useState(null); // customer for new plan
+
     // Guard: evita eliminar clientes con deuda o saldo a favor pendiente
     const handleDeleteCustomerRequest = (customer) => {
         const deuda = customer.deuda || 0;
@@ -75,16 +90,18 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
     const [supplierHistoryData, setSupplierHistoryData] = useState([]);
 
     const loadData = async () => {
-        const [savedCustomers, savedSuppliers, savedInvoices, savedMethods] = await Promise.all([
+        const [savedCustomers, savedSuppliers, savedInvoices, savedMethods, savedCasheaPlans] = await Promise.all([
             storageService.getItem('bodega_customers_v1', []),
             storageService.getItem('bodega_suppliers_v1', []),
             storageService.getItem('bodega_supplier_invoices_v1', []),
-            getActivePaymentMethods()
+            getActivePaymentMethods(),
+            getAllCasheaPlans()
         ]);
         setCustomers(savedCustomers);
         setSuppliers(savedSuppliers);
         setInvoices(savedInvoices);
         setActivePaymentMethods(savedMethods);
+        setCasheaPlans(savedCasheaPlans.map(refreshInstallmentStatuses));
     };
 
     useEffect(() => {
@@ -218,6 +235,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         if (!matchesSearch) return false;
         if (filterType === 'deuda') return c.deuda > 0.01;
         if (filterType === 'favor') return c.deuda < -0.01;
+        if (filterType === 'cashea') return casheaPlans.some(p => p.customerId === c.id && p.status === 'active');
         return true;
     });
 
@@ -247,6 +265,30 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         showToast(`Saldo reiniciado a cero para ${customer.name}`, 'success');
         auditLog('CLIENTE', 'DEUDA_CONDONADA', `Saldo reiniciado a $0 para ${customer.name}`);
         setResetBalanceCustomer(null);
+    };
+
+    // ── HANDLERS CASHEA ──
+    const handleAddCasheaPlan = async (planData) => {
+        const newPlan = await createCasheaPlan(planData);
+        setCasheaPlans(prev => [newPlan, ...prev]);
+        setShowCasheaPlanModal(false);
+        setCasheaPlanTarget(null);
+        showToast('Plan Cashea registrado', 'success');
+    };
+
+    const handleMarkInstallmentPaid = async (planId, installmentNumber) => {
+        const updated = await markInstallmentPaid(planId, installmentNumber);
+        setCasheaPlans(prev => prev.map(p => p.id === planId ? refreshInstallmentStatuses(updated) : p));
+    };
+
+    const handleMarkInstallmentUnpaid = async (planId, installmentNumber) => {
+        const updated = await markInstallmentUnpaid(planId, installmentNumber);
+        setCasheaPlans(prev => prev.map(p => p.id === planId ? refreshInstallmentStatuses(updated) : p));
+    };
+
+    const handleDeleteCasheaPlan = async (planId) => {
+        await deleteCasheaPlan(planId);
+        setCasheaPlans(prev => prev.filter(p => p.id !== planId));
     };
 
     const handleTransaction = async () => {
@@ -436,12 +478,19 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                         <div className={`w-2 h-2 rounded-full ${filterType === 'deuda' ? 'bg-white' : 'bg-red-500'}`}></div>
                         Con Deuda
                     </button>
-                    <button 
+                    <button
                         onClick={() => { setFilterType('favor'); triggerHaptic && triggerHaptic(); }}
                         className={`px-4 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-colors flex items-center gap-1.5 ${filterType === 'favor' ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/30' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'}`}
                     >
                         <div className={`w-2 h-2 rounded-full ${filterType === 'favor' ? 'bg-white' : 'bg-emerald-500'}`}></div>
                         Saldo a Favor
+                    </button>
+                    <button
+                        onClick={() => { setFilterType('cashea'); triggerHaptic && triggerHaptic(); }}
+                        className={`px-4 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-colors flex items-center gap-1.5 ${filterType === 'cashea' ? 'bg-cyan-500 text-white shadow-sm shadow-cyan-500/30' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'}`}
+                    >
+                        <span className={`text-xs ${filterType === 'cashea' ? 'text-white' : 'text-cyan-500'}`}>🏦</span>
+                        Cashea
                     </button>
                 </div>
             </div>
@@ -476,6 +525,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                                 bcvRate={bcvRate}
                                 tasaCop={tasaCop}
                                 copEnabled={copEnabled}
+                                activeCasheaCount={casheaPlans.filter(p => p.customerId === customer.id && p.status === 'active').length}
                                 onClick={() => {
                                     setSelectedCustomer(customer);
                                     toggleHistory(customer.id);
@@ -557,7 +607,17 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                     setSelectedCustomer(null);
                 }}
                 bcvRate={bcvRate}
+                tasaCop={tasaCop}
+                copEnabled={copEnabled}
                 sales={historyData}
+                casheaPlans={casheaPlans.filter(p => selectedCustomer && p.customerId === selectedCustomer.id)}
+                onAddCasheaPlan={() => {
+                    setCasheaPlanTarget(selectedCustomer);
+                    setShowCasheaPlanModal(true);
+                }}
+                onMarkInstallmentPaid={handleMarkInstallmentPaid}
+                onMarkInstallmentUnpaid={handleMarkInstallmentUnpaid}
+                onDeleteCasheaPlan={handleDeleteCasheaPlan}
             />
 
             {/* Modal Confirmación: Reiniciar Saldo */}
