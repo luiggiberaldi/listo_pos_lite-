@@ -35,6 +35,8 @@ dist-ssr
 # API serverless (deploy via Vercel, usar vars de entorno para keys)
 !api/
 api/*.js
+!api/share.js
+!api/checkout.js
 
 # Backups y datos locales
 backup_*.json
