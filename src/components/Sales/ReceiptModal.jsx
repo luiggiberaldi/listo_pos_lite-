@@ -69,12 +69,23 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                         {receipt.payments && receipt.payments.length > 0 && (
                             <div className="mt-4 pt-4 border-t border-slate-200 text-sm">
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Pagos Recibidos</p>
-                                {receipt.payments.map(p => (
+                                {receipt.payments.filter(p => p.methodId !== 'cashea').map(p => (
                                     <div key={p.id} className="flex justify-between text-slate-600 mb-1">
                                         <span>{p.methodLabel}:</span>
                                         <span className="font-bold">{p.amountInputCurrency === 'USD' ? '$' : p.amountInputCurrency === 'COP' ? 'COP' : 'Bs'} {p.amountInput}</span>
                                     </div>
                                 ))}
+
+                                {/* Cashea financing row */}
+                                {receipt.payments.some(p => p.methodId === 'cashea') && (() => {
+                                    const casheaP = receipt.payments.find(p => p.methodId === 'cashea');
+                                    return (
+                                        <div className="flex justify-between text-purple-600 font-bold mt-2 pt-2 border-t border-slate-200">
+                                            <span>💜 Financiado por Cashea ({casheaP.casheaPercent}%):</span>
+                                            <span>${casheaP.amountUsd.toFixed(2)}</span>
+                                        </div>
+                                    );
+                                })()}
 
                                 {receipt.changeUsd > 0 && (
                                     <div className="flex justify-between text-emerald-600 font-bold mt-2 pt-2 border-t border-slate-200">

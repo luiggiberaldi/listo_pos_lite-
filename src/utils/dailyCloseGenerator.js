@@ -73,8 +73,15 @@ export async function generateDailyClosePDF({
         const img = new Image();
         img.src = '/logo.png';
         await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
-        const logoW = 46;
-        const logoH = 11;
+        const maxLogoW = 46;
+        const maxLogoH = 18;
+        const aspect = img.naturalWidth / img.naturalHeight;
+        let logoW = maxLogoW;
+        let logoH = logoW / aspect;
+        if (logoH > maxLogoH) {
+            logoH = maxLogoH;
+            logoW = logoH * aspect;
+        }
         doc.addImage(img, 'PNG', CX - logoW / 2, y, logoW, logoH);
         y += logoH + 3;
     } catch (_) { y += 2; }

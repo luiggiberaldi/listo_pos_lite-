@@ -121,10 +121,10 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                 const val = localStorage.getItem(key);
                 if (val !== null) lsData[key] = val;
             }
-            const blob = new Blob([JSON.stringify({ timestamp: new Date().toISOString(), version: '2.0', appName: 'TasasAlDia_Bodegas', data: { idb: idbData, ls: lsData } })], { type: 'application/json' });
+            const blob = new Blob([JSON.stringify({ timestamp: new Date().toISOString(), version: '2.0', appName: 'Listo_POS', data: { idb: idbData, ls: lsData } })], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url; a.download = `backup_tasasaldia_${new Date().toISOString().slice(0,10)}.json`;
+            a.href = url; a.download = `backup_listo_pos_${new Date().toISOString().slice(0,10)}.json`;
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
             URL.revokeObjectURL(url);
             setImportStatus('success'); setStatusMessage('Backup descargado.');
@@ -346,23 +346,59 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                 onClick={async () => {
                                     if (factoryResetInput !== 'REINICIAR') return;
                                     triggerHaptic?.();
-                                    auditLog('SISTEMA', 'FACTORY_RESET', 'Reinicio de fábrica iniciado');
-                                    // 1. Borrar IndexedDB completo (todas las claves sin excepción)
-                                    await localforage.clear();
-                                    // 2. Borrar localStorage completo
-                                    localStorage.clear();
-                                    // 3. Borrar nube si está configurada y notificar otros equipos
+
+                                    // ── FASE 1: Operaciones de NUBE (mientras la sesión está viva) ──
+                                    // Hacemos todo lo de nube ANTES de tocar localStorage para que
+                                    // el token de Supabase siga activo durante el delete.
+                                    let cloudSession = null;
                                     try {
                                         const { data: { session } } = await supabaseCloud.auth.getSession();
-                                        if (session?.user?.id) {
-                                            // Broadcast antes de sign out para que otros equipos reciban el evento
-                                            await broadcastFactoryReset(session.user.id);
-                                            await supabaseCloud.from('sync_documents').delete().eq('user_id', session.user.id);
-                                            await supabaseCloud.from('cloud_backups').delete().eq('email', session.user.email);
+                                        cloudSession = session;
+                                    } catch (e) { /* sin nube */ }
+
+                                    if (cloudSession?.user?.id) {
+                                        try {
+                                            // Broadcast a otros equipos primero
+                                            await broadcastFactoryReset(cloudSession.user.id);
+                                            // Borrar datos de la nube (sesión activa garantizada)
+                                            await supabaseCloud.from('sync_documents').delete().eq('user_id', cloudSession.user.id);
+                                            await supabaseCloud.from('cloud_backups').delete().eq('email', cloudSession.user.email);
+                                            await supabaseCloud.from('device_backups').delete().eq('device_id', localStorage.getItem('pda_device_id') || '');
                                             await supabaseCloud.auth.signOut();
+                                        } catch (e) { /* ignorar */ }
+                                    }
+
+                                    // ── FASE 2: Limpiar TODO el almacenamiento local ──
+                                    // IndexedDB principal
+                                    await localforage.clear();
+                                    // IndexedDB legacy (TasasAlDiaApp — fuente de migración automática)
+                                    try {
+                                        const oldStore = localforage.createInstance({ name: 'TasasAlDiaApp', storeName: 'app_data' });
+                                        await oldStore.clear();
+                                    } catch (e) { /* no existe */ }
+                                    // Eliminar bases de datos IndexedDB por completo (más agresivo que .clear())
+                                    try {
+                                        indexedDB.deleteDatabase('BodegaApp');
+                                        indexedDB.deleteDatabase('TasasAlDiaApp');
+                                    } catch (e) { /* ignorar */ }
+                                    // localStorage y sessionStorage
+                                    localStorage.clear();
+                                    sessionStorage.clear();
+                                    // Cachés del service worker
+                                    try {
+                                        if ('caches' in window) {
+                                            const cacheKeys = await caches.keys();
+                                            await Promise.all(cacheKeys.map(k => caches.delete(k)));
                                         }
-                                    } catch (e) { /* sin nube, ignorar */ }
-                                    // 4. Recargar
+                                        if ('serviceWorker' in navigator) {
+                                            const regs = await navigator.serviceWorker.getRegistrations();
+                                            await Promise.all(regs.map(r => r.unregister()));
+                                        }
+                                    } catch (e) { /* ignorar */ }
+
+                                    // ── FASE 3: Recargar ──
+                                    // Flag para que el Pull Inicial de cloud sync sea skipped en este arranque
+                                    sessionStorage.setItem('skip_cloud_pull', '1');
                                     window.location.reload();
                                 }}
                                 className="flex-1 py-3.5 text-sm font-bold text-white bg-red-500 rounded-xl hover:bg-red-600 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"

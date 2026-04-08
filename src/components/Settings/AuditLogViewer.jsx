@@ -156,7 +156,7 @@ async function generateAuditPDF(entries, dateFrom, dateTo) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7);
     doc.setTextColor(...INK);
-    doc.text('Precios Al Dia', CX, y, { align: 'center' });
+    doc.text('Listo POS', CX, y, { align: 'center' });
     y += 3;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(5);

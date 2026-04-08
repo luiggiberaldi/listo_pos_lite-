@@ -82,7 +82,7 @@ export function useCloudAuthLogic() {
         return {
             timestamp: new Date().toISOString(),
             version: '2.0',
-            appName: 'TasasAlDia_Bodegas_Cloud',
+            appName: 'Listo_POS_Cloud',
             data: { idb: idbData, ls: lsData }
         };
     };
@@ -243,7 +243,19 @@ export function useCloudAuthLogic() {
                     throw new Error('Licencia suspendida por el administrador.');
                 }
                 if (rpcResult === 'license_expired') {
-                    throw new Error('Licencia vencida. Contacta a soporte para renovar tu acceso.');
+                    // Verificar período de gracia de 5 días
+                    const GRACE_DAYS = 5;
+                    const { data: licRow } = await supabaseCloud
+                        .from('cloud_licenses')
+                        .select('valid_until')
+                        .eq('email', emailToUse)
+                        .maybeSingle();
+                    const validUntil = licRow?.valid_until ? new Date(licRow.valid_until) : null;
+                    const daysOverdue = validUntil ? Math.ceil((new Date() - validUntil) / 86400000) : 999;
+                    if (!validUntil || daysOverdue > GRACE_DAYS) {
+                        throw new Error(`Licencia vencida hace ${daysOverdue} días. Contacta a soporte para renovar.`);
+                    }
+                    // Dentro de gracia — continuar login, App.jsx mostrará el banner
                 }
                 if (rpcResult === 'limit_reached') {
                     const { data: licenseData } = await supabaseCloud

@@ -245,13 +245,16 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
 
     // Últimas ventas (por defecto las últimas 7, o las del día seleccionado en la gráfica)
     const recentSales = useMemo(() => {
+        // Excluir apertura de caja, pagos a proveedores y otros registros internos del historial visible
+        const VISIBLE_TIPOS = ['VENTA', 'VENTA_FIADA', 'COBRO_DEUDA'];
         if (selectedChartDate) {
             return sales.filter(s => {
+                if (!VISIBLE_TIPOS.includes(s.tipo)) return false;
                 const saleLocalDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : getLocalISODate(new Date());
                 return saleLocalDay === selectedChartDate;
             });
         }
-        return sales.slice(0, 7);
+        return sales.filter(s => VISIBLE_TIPOS.includes(s.tipo)).slice(0, 7);
     }, [sales, selectedChartDate]);
 
     // Datos últimos 7 días (para gráfica)
@@ -692,12 +695,14 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 const entries = Object.entries(paymentBreakdown).filter(([, d]) => d.total > 0);
                 const fiadoMethods = entries.filter(([, d]) => d.currency === 'FIADO');
                 const bsIncomeMethods = entries.filter(([, d]) => (d.currency === 'BS' || (!d.currency)) && !d.isChange);
-                const vueltoMethods = entries.filter(([, d]) => d.isChange === true);
+                const vueltoMethods = entries.filter(([, d]) => d.isChange === true && d.currency !== 'USD');
+                const vueltoUsdMethods = entries.filter(([, d]) => d.isChange === true && d.currency === 'USD');
                 const bsMethods = [...bsIncomeMethods, ...vueltoMethods];
-                const usdMethods = entries.filter(([, d]) => d.currency === 'USD');
+                const usdIncomeMethods = entries.filter(([, d]) => d.currency === 'USD' && !d.isChange);
+                const usdMethods = [...usdIncomeMethods, ...vueltoUsdMethods];
                 const copMethods = entries.filter(([, d]) => d.currency === 'COP');
                 const subtotalBs = bsIncomeMethods.reduce((s, [, d]) => s + d.total, 0) - vueltoMethods.reduce((s, [, d]) => s + d.total, 0);
-                const subtotalUsd = usdMethods.reduce((s, [, d]) => s + d.total, 0);
+                const subtotalUsd = usdIncomeMethods.reduce((s, [, d]) => s + d.total, 0) - vueltoUsdMethods.reduce((s, [, d]) => s + d.total, 0);
                 const subtotalCop = copMethods.reduce((s, [, d]) => s + d.total, 0);
                 const fmtCop = (v) => v.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -778,9 +783,12 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                             <div className="mb-4">
                                 <div className="flex justify-between items-end mb-2 pb-1 border-b border-emerald-50">
                                     <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">Dólares</span>
-                                    <span className="text-xs font-black text-emerald-600">${subtotalUsd.toFixed(2)}</span>
+                                    <span className="text-xs font-black text-emerald-600">${subtotalUsd.toFixed(2)} neto</span>
                                 </div>
-                                <div className="pl-2 border-l-2 border-emerald-200">{usdMethods.map(renderMethod)}</div>
+                                <div className="pl-2 border-l-2 border-emerald-200">
+                                    {usdIncomeMethods.map(renderMethod)}
+                                    {vueltoUsdMethods.length > 0 && vueltoUsdMethods.map(renderMethod)}
+                                </div>
                             </div>
                         )}
                         {copEnabled && copMethods.length > 0 && (

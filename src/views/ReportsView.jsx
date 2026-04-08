@@ -261,9 +261,11 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                 const entries = Object.entries(paymentBreakdown);
                 const fiadoMethods = entries.filter(([, d]) => d.currency === 'FIADO');
                 const bsIncomeMethods = entries.filter(([k, d]) => (d.currency === 'BS' || (!d.currency)) && !d.isChange);
-                const vueltoMethods = entries.filter(([, d]) => d.isChange === true);
+                const vueltoMethods = entries.filter(([, d]) => d.isChange === true && d.currency !== 'USD');
+                const vueltoUsdMethods = entries.filter(([, d]) => d.isChange === true && d.currency === 'USD');
                 const bsMethods = [...bsIncomeMethods, ...vueltoMethods];
-                const usdMethods = entries.filter(([, d]) => d.currency === 'USD');
+                const usdIncomeMethods = entries.filter(([, d]) => d.currency === 'USD' && !d.isChange);
+                const usdMethods = [...usdIncomeMethods, ...vueltoUsdMethods];
                 const copMethods = entries.filter(([, d]) => d.currency === 'COP');
                 const fmtCop = (v) => v.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -361,10 +363,15 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                         <div className={copMethods.length > 0 ? 'mb-3' : ''}>
                             <div className="flex items-center justify-between mb-2">
                                 <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">Dolares</span>
-                                <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">${usdMethods.reduce((s, [,d]) => s + d.total, 0).toFixed(2)}</span>
+                                <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">${(usdIncomeMethods.reduce((s, [,d]) => s + d.total, 0) - vueltoUsdMethods.reduce((s, [,d]) => s + d.total, 0)).toFixed(2)} neto</span>
                             </div>
                             <div className="space-y-3 pl-1 border-l-2 border-emerald-200 dark:border-emerald-800/40">
-                                <div className="pl-3 space-y-3">{usdMethods.map(renderMethod)}</div>
+                                <div className="pl-3 space-y-3">{usdIncomeMethods.map(renderMethod)}</div>
+                                {vueltoUsdMethods.length > 0 && (
+                                    <div className="pl-3 space-y-3 pt-1 border-t border-orange-100 dark:border-orange-900/30">
+                                        {vueltoUsdMethods.map(renderMethod)}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}

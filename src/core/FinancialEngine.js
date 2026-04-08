@@ -39,6 +39,7 @@ const FACTORY_LABELS = {
     transferencia_cop: 'Transferencia COP',
     saldo_favor:       'Saldo a Favor',
     fiado:             'Fiado (Por Cobrar)',
+    cashea:            'Cashea (Por Cobrar)',
 };
 
 function _resolveMethodLabel(methodId) {
@@ -236,8 +237,10 @@ export class FinancialEngine {
             }
 
             if (safeChangeUsd > 0) {
-                if (!breakdown['efectivo_usd']) breakdown['efectivo_usd'] = { total: 0, currency: 'USD', label: 'Efectivo $' };
-                breakdown['efectivo_usd'].total = round2(breakdown['efectivo_usd'].total - safeChangeUsd);
+                // Separate the USD change given back into its own positive entry so the
+                // "Efectivo $" row never goes negative and the change is visible in the UI.
+                if (!breakdown['vuelto_usd']) breakdown['vuelto_usd'] = { total: 0, currency: 'USD', label: 'Vuelto en $ entregado', isChange: true };
+                breakdown['vuelto_usd'].total = round2(breakdown['vuelto_usd'].total + safeChangeUsd);
             }
             if (safeChangeBs > 0) {
                 // Separate the Bs change given back into its own positive entry so the

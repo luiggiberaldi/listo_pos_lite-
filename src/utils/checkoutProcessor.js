@@ -95,6 +95,9 @@ export async function processSaleTransaction({
     }
 
     // ── GESTIÓN DE CACHÉ LOCAL (Para no bloquear al usuario) ──
+    const casheaPayment = payments.find(p => p.methodId === 'cashea');
+    const casheaUsd = casheaPayment ? round2(casheaPayment.amountUsd) : 0;
+
     const sale = {
         id: finalSaleId || crypto.randomUUID(),
         tipo: fiadoAmountUsd > 0 ? 'VENTA_FIADA' : 'VENTA',
@@ -105,7 +108,9 @@ export async function processSaleTransaction({
         discountValue: discountData?.value || 0,
         discountAmountUsd: discountData?.amountUsd || 0,
         totalUsd: cartTotalUsd,
-        totalBs: cartTotalBs,
+        totalBs: (typeof cartTotalBs === 'number' && !isNaN(cartTotalBs) && cartTotalBs >= 0)
+            ? cartTotalBs
+            : mulR(cartTotalUsd, effectiveRate || 0),
         totalCop: copEnabled && tasaCop > 0 ? mulR(cartTotalUsd, tasaCop) : 0,
         payments,
         rate: effectiveRate,
@@ -119,7 +124,8 @@ export async function processSaleTransaction({
         customerName: selectedCustomer ? selectedCustomer.name : 'Consumidor Final',
         customerDocument: selectedCustomer?.documentId || null,
         customerPhone: selectedCustomer?.phone || null,
-        fiadoUsd: fiadoAmountUsd
+        fiadoUsd: fiadoAmountUsd,
+        casheaUsd,
     };
 
     const existingSales = await storageService.getItem(SALES_KEY, []);

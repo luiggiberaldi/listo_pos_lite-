@@ -54,6 +54,7 @@ export default function App() {
   // Cloud Auth Session State
   const [cloudSession, setCloudSession] = useState(null);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [graceInfo, setGraceInfo] = useState(null); // { daysOverdue, daysLeft } durante período de gracia
 
   // ── Sesión Supabase + límite de dispositivos vía RPC ─────────────────────
   useEffect(() => {
@@ -106,10 +107,29 @@ export default function App() {
         });
 
         if (!error) {
-          if (result === 'license_inactive' || result === 'limit_reached' || result === 'license_expired') {
+          if (result === 'license_inactive' || result === 'limit_reached') {
             await supabaseCloud.auth.signOut();
             if (mounted) { setCloudSession(null); setCheckingSession(false); }
             return;
+          }
+          if (result === 'license_expired') {
+            // Verificar período de gracia de 5 días
+            const GRACE_DAYS = 5;
+            const { data: licRow } = await supabaseCloud
+              .from('cloud_licenses')
+              .select('valid_until')
+              .eq('email', email)
+              .maybeSingle();
+            const validUntil = licRow?.valid_until ? new Date(licRow.valid_until) : null;
+            const now = new Date();
+            const daysOverdue = validUntil ? Math.ceil((now - validUntil) / 86400000) : 999;
+            if (!validUntil || daysOverdue > GRACE_DAYS) {
+              await supabaseCloud.auth.signOut();
+              if (mounted) { setCloudSession(null); setCheckingSession(false); }
+              return;
+            }
+            // Dentro de gracia — permitir pero mostrar banner
+            if (mounted) setGraceInfo({ daysOverdue, daysLeft: GRACE_DAYS - daysOverdue });
           }
         }
         // Si la RPC no existe aún (error), deja pasar sin bloquear
@@ -334,6 +354,15 @@ export default function App() {
             <WifiOff size={14} className="text-red-400" />
             <span className="text-xs font-bold text-white">Sin conexión · Modo offline</span>
           </div>
+        </div>
+      )}
+
+      {/* Grace Period Banner */}
+      {graceInfo && (
+        <div className="w-full bg-amber-500 px-4 py-2 flex items-center justify-center gap-2 text-white text-xs font-semibold z-[190]">
+          <span>⚠️ Tu licencia venció hace {graceInfo.daysOverdue} día{graceInfo.daysOverdue !== 1 ? 's' : ''}.</span>
+          <span>Tienes {graceInfo.daysLeft} día{graceInfo.daysLeft !== 1 ? 's' : ''} restante{graceInfo.daysLeft !== 1 ? 's' : ''} para renovar.</span>
+          <a href="https://wa.me/584124051793" target="_blank" rel="noopener noreferrer" className="underline opacity-90 hover:opacity-100">Contacta a soporte para continuar.</a>
         </div>
       )}
 

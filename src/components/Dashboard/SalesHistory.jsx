@@ -100,7 +100,12 @@ export default function SalesHistory({
                                 </div>
                                 <div className="text-right shrink-0">
                                     <p className={`text-sm font-black ${isCanceled ? 'text-slate-400' : 'text-slate-800 dark:text-white'}`}>${(s.totalUsd || 0).toFixed(2)}</p>
-                                    <p className="text-[10px] text-slate-400 font-medium">{formatBs(s.totalBs || (s.totalUsd * (s.rate || bcvRate)))} Bs</p>
+                                    <p className="text-[10px] text-slate-400 font-medium">{(() => {
+                                        const bs = s.totalBs;
+                                        const safeRate = s.rate || bcvRate || 0;
+                                        const safeBs = (typeof bs === 'number' && !isNaN(bs) && bs >= 0) ? bs : (s.totalUsd || 0) * safeRate;
+                                        return formatBs(safeBs);
+                                    })()} Bs</p>
                                     <div className="flex justify-end mt-0.5">
                                         {isExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
                                     </div>

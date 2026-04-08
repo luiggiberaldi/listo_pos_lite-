@@ -277,7 +277,21 @@ export function useCloudSync() {
                     .on('broadcast', { event: 'factory_reset' }, async () => {
                         console.log('[CloudSync] Factory reset remoto recibido — limpiando...');
                         await localforage.clear();
+                        try {
+                            const oldStore = localforage.createInstance({ name: 'TasasAlDiaApp', storeName: 'app_data' });
+                            await oldStore.clear();
+                        } catch (e) { /* ignorar */ }
                         localStorage.clear();
+                        try {
+                            if ('caches' in window) {
+                                const cacheKeys = await caches.keys();
+                                await Promise.all(cacheKeys.map(k => caches.delete(k)));
+                            }
+                            if ('serviceWorker' in navigator) {
+                                const regs = await navigator.serviceWorker.getRegistrations();
+                                await Promise.all(regs.map(r => r.unregister()));
+                            }
+                        } catch (e) { /* ignorar */ }
                         window.location.reload();
                     })
                     .subscribe();

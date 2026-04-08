@@ -27,7 +27,7 @@ export default function CierreCajaWizard({
 
     if (!isOpen) return null;
 
-    const expectedUsd = paymentBreakdown['efectivo_usd']?.total || 0;
+    const expectedUsd = (paymentBreakdown['efectivo_usd']?.total || 0) - (paymentBreakdown['vuelto_usd']?.total || 0);
     const expectedBs = paymentBreakdown['efectivo_bs']?.total || 0;
     const expectedCop = paymentBreakdown['efectivo_cop']?.total || 0;
 
@@ -43,6 +43,9 @@ export default function CierreCajaWizard({
         expectedCop > 0 ||
         Object.keys(paymentBreakdown).some(k => paymentBreakdown[k].currency === 'COP')
     );
+
+    // Cashea receivable today
+    const casheaTotal = paymentBreakdown['cashea']?.total || 0;
 
     // Total COP del dia (sum of all COP-currency payments)
     const todayTotalCop = copEnabled && tasaCop > 0 ? todayTotalUsd * tasaCop : 0;
@@ -161,6 +164,26 @@ export default function CierreCajaWizard({
                                     <p className="text-[11px] font-bold text-orange-500/70">-{formatBs(todayExpensesUsd * bcvRate)} Bs</p>
                                 </div>
                             </div>
+
+                            {/* Cashea Receivable */}
+                            {casheaTotal > 0 && (
+                                <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/30 rounded-xl p-3">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <div className="flex items-center gap-1.5 mb-1">
+                                                <span className="text-sm">💜</span>
+                                                <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase">Por Cobrar a Cashea</span>
+                                            </div>
+                                            <p className="text-lg font-black text-purple-700 dark:text-purple-300">${casheaTotal.toFixed(2)}</p>
+                                            <p className="text-[11px] font-bold text-purple-500/70">{formatBs(casheaTotal * bcvRate)} Bs</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-[9px] font-bold text-purple-500 uppercase tracking-wide">Cuenta por cobrar</p>
+                                            <p className="text-[9px] text-purple-400 mt-0.5">Financiado por Cashea hoy</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Desglose por metodo de pago */}
                             {paymentEntries.length > 0 && (

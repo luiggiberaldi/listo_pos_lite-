@@ -348,8 +348,8 @@ async function suitePagosInconsistentes() {
             }
         }
 
-        // Restar vuelto dado
-        const changeUsd = sale.changeUsd || 0;
+        // Restar vuelto dado (en USD directo + vuelto en Bs convertido a USD)
+        const changeUsd = sumR(sale.changeUsd || 0, sale.rate ? round2((sale.changeBs || 0) / sale.rate) : 0);
         const netPaidUsd = subR(sumPaidUsd, changeUsd);
 
         // Tolerancia de $0.05 por redondeos de cambio en Bs
