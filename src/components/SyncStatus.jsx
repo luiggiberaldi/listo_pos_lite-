@@ -81,9 +81,25 @@ export default function SyncStatus() {
                 `Error: ${item.last_error || 'Error desconocido'}`,
             ].join('\n');
         }).join('\n\n');
-        navigator.clipboard.writeText(text).then(() => {
+        const doCopy = () => {
+            if (navigator.clipboard?.writeText) {
+                return navigator.clipboard.writeText(text);
+            }
+            // Fallback para contextos sin Clipboard API (iframes, HTTP, etc.)
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.cssText = 'position:fixed;opacity:0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            return Promise.resolve();
+        };
+        doCopy().then(() => {
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
+        }).catch(() => {
+            setCopied(false);
         });
     };
 

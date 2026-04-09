@@ -53,9 +53,12 @@ export async function processSaleTransaction({
     // Preparar el Payload para la validación centralizada
     // Se envía currency y methodLabel para que el RPC pueda mapear cuentas contables
     // correctamente sin depender del methodId hardcodeado.
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const toUuid = id => (id && UUID_RE.test(id) ? id : crypto.randomUUID());
+
     const rpcPayload = {
       total: cartTotalUsd,
-      cart: cart.map(i => ({ id: i._originalId || i.id, qty: i.qty, priceUsd: i.priceUsd, name: i.name || '' })),
+      cart: cart.map(i => ({ id: toUuid(i._originalId || i.id), qty: i.qty, priceUsd: i.priceUsd, name: i.name || '' })),
       payments: payments.map(p => ({
         methodId: p.methodId,
         amountUsd: p.amountUsd,

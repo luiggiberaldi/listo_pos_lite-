@@ -11,6 +11,7 @@ import { showToast } from '../components/Toast';
 import { ShoppingCart, X, DollarSign, CheckCircle2 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useProductContext } from '../context/ProductContext';
+import { useAuthStore } from '../hooks/store/useAuthStore';
 
 // Components
 import SalesHeader from '../components/Sales/SalesHeader';
@@ -39,6 +40,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
 
     // ── Global Context ──────────────────────────────────────
     const { products, setProducts, isLoadingProducts, useAutoRate, setUseAutoRate, customRate, setCustomRate, effectiveRate, copEnabled, tasaCop } = useProductContext();
+    const { usuarioActivo } = useAuthStore();
 
     // ── State ──────────────────────────────────────
     const [customers, setCustomers] = useState([]);
@@ -697,7 +699,9 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                 openingUsd: data.openingUsd,
                 openingBs: data.openingBs,
                 timestamp: today,
-                cajaCerrada: false
+                cajaCerrada: false,
+                cajeroId: usuarioActivo?.id ?? null,
+                cajeroNombre: usuarioActivo?.nombre ?? 'Desconocido',
             };
 
             const existingSales = await storageService.getItem(SALES_KEY, []);

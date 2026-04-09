@@ -1,5 +1,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { X, Users, Receipt, ChevronDown, Wallet, Zap, UserPlus, Check, ArrowLeftRight, AlertTriangle, Smartphone } from 'lucide-react';
+import CasheaIcon from '../CasheaIcon';
+import { BsIcon, UsdIcon } from '../CurrencyIcons';
 import { formatBs } from '../../utils/calculatorUtils';
 import { PAYMENT_ICONS, ICON_COMPONENTS } from '../../config/paymentMethods';
 import { round2, mulR, divR, subR, sumR } from '../../utils/dinero';
@@ -279,11 +281,8 @@ export default function CheckoutModal({
                                 : `bg-white dark:bg-slate-900 ${styles.inputBorder}`
                                 } text-slate-800 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-700 focus:ring-4`}
                         />
-                        <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black px-2 py-0.5 rounded-md border ${hasValue
-                            ? `${styles.titleBg} ${styles.title} ${styles.border}`
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'
-                            }`}>
-                            {method.currency === 'USD' ? '$' : method.currency === 'COP' ? 'COP' : 'Bs'}
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2">
+                            {method.currency === 'USD' ? <UsdIcon size={22} /> : method.currency === 'COP' ? <span className="text-xs font-black px-2 py-0.5 rounded-md border bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700">COP</span> : <BsIcon size={22} />}
                         </span>
                     </div>
                     <button
@@ -357,7 +356,7 @@ export default function CheckoutModal({
                 {methodsUsd.length > 0 && (
                     <div className={`mx-3 mb-3 rounded-2xl border ${sectionStyles.USD.bg} ${sectionStyles.USD.border} p-3`}>
                         <h3 className={`text-[11px] font-black uppercase tracking-widest mb-3 flex items-center gap-2 ${sectionStyles.USD.title}`}>
-                            <span className={`p-1 rounded-lg ${sectionStyles.USD.titleBg}`}>💲</span>
+                            <span className={`p-0.5 rounded-lg ${sectionStyles.USD.titleBg}`}><UsdIcon size={20} /></span>
                             Dólares ($)
                         </h3>
                         {methodsUsd.map(m => renderPaymentBar(m, sectionStyles.USD))}
@@ -369,7 +368,7 @@ export default function CheckoutModal({
                     <div className={`mx-3 mb-3 rounded-2xl border ${sectionStyles.BS.bg} ${sectionStyles.BS.border} p-3`}>
                         <div className="flex items-center justify-between mb-3">
                             <h3 className={`text-[11px] font-black uppercase tracking-widest flex items-center gap-2 ${sectionStyles.BS.title}`}>
-                                <span className={`p-1 rounded-lg ${sectionStyles.BS.titleBg}`}>💵</span>
+                                <span className={`p-0.5 rounded-lg ${sectionStyles.BS.titleBg}`}><BsIcon size={20} /></span>
                                 Bolívares (Bs)
                             </h3>
                             <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg ${sectionStyles.BS.titleBg} ${sectionStyles.BS.title}`}>
@@ -398,6 +397,15 @@ export default function CheckoutModal({
 
                 {/* -- SECCION CASHEA -- */}
                 {casheaEnabled && (
+                    !selectedCustomer ? (
+                        <div className="mx-3 mb-3 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 p-3 flex items-center gap-3">
+                            <CasheaIcon size={28} />
+                            <div>
+                                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Cashea</p>
+                                <p className="text-[10px] text-slate-400">Selecciona un cliente para usar Cashea</p>
+                            </div>
+                        </div>
+                    ) : (
                     <div className={`mx-3 mb-3 rounded-2xl border transition-all ${casheaActive
                         ? 'bg-purple-50/80 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800/60'
                         : 'bg-slate-50/50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-800'}`}>
@@ -441,24 +449,35 @@ export default function CheckoutModal({
                                 <div className="bg-white dark:bg-slate-900 rounded-xl border border-purple-200 dark:border-purple-800/50 divide-y divide-purple-100 dark:divide-purple-900/50">
                                     <div className="flex items-center justify-between px-3 py-2">
                                         <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Cliente paga ahora:</span>
-                                        <span className="text-sm font-black text-slate-800 dark:text-white">
-                                            ${round2(cartTotalUsd - casheaAmountUsd).toFixed(2)}
-                                        </span>
+                                        <div className="text-right">
+                                            <span className="text-sm font-black text-slate-800 dark:text-white block">
+                                                ${round2(cartTotalUsd - casheaAmountUsd).toFixed(2)}
+                                            </span>
+                                            <span className="text-[10px] font-bold text-slate-400">
+                                                {formatBs(mulR(round2(cartTotalUsd - casheaAmountUsd), effectiveRate))} Bs
+                                            </span>
+                                        </div>
                                     </div>
                                     <div className="flex items-center justify-between px-3 py-2 bg-purple-50/50 dark:bg-purple-900/10">
                                         <span className="text-xs font-bold text-purple-600 dark:text-purple-400">Cashea financia ({casheaPercent}%):</span>
-                                        <span className="text-sm font-black text-purple-700 dark:text-purple-300">
-                                            ${casheaAmountUsd.toFixed(2)}
-                                        </span>
+                                        <div className="text-right">
+                                            <span className="text-sm font-black text-purple-700 dark:text-purple-300 block">
+                                                ${casheaAmountUsd.toFixed(2)}
+                                            </span>
+                                            <span className="text-[10px] font-bold text-purple-400">
+                                                {formatBs(mulR(casheaAmountUsd, effectiveRate))} Bs
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
 
-                                <p className="text-[10px] text-purple-500 dark:text-purple-400 font-medium leading-relaxed">
-                                    💜 La venta queda completada. Los ${casheaAmountUsd.toFixed(2)} de Cashea se registran como cuenta por cobrar.
+                                <p className="text-[10px] text-purple-500 dark:text-purple-400 font-medium leading-relaxed flex items-center gap-1.5">
+                                    <CasheaIcon size={14} /> La venta queda completada. Los ${casheaAmountUsd.toFixed(2)} de Cashea se registran como cuenta por cobrar.
                                 </p>
                             </div>
                         )}
                     </div>
+                    )
                 )}
 
                 {/* -- BANNER VUELTO / RESTANTE -- */}
@@ -538,7 +557,7 @@ export default function CheckoutModal({
                                             }}
                                             className="w-full py-2 px-3 pr-8 rounded-lg border-2 border-blue-200 dark:border-blue-700 bg-white dark:bg-slate-900 font-black text-sm text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30"
                                         />
-                                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-black text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-1 py-0.5 rounded">Bs</span>
+                                        <span className="absolute right-2 top-1/2 -translate-y-1/2"><BsIcon size={22} /></span>
                                     </div>
                                 </div>
 
@@ -783,7 +802,7 @@ export default function CheckoutModal({
                                 <div className="flex-1 overflow-y-auto px-4 pb-3 space-y-2 min-h-0">
                                     {/* Consumidor Final */}
                                     <button
-                                        onClick={() => { setSelectedCustomerId(''); closeCustomerSheet(); }}
+                                        onClick={() => { setSelectedCustomerId(''); setCasheaActive(false); closeCustomerSheet(); }}
                                         className={`w-full flex items-center gap-3 p-3 rounded-2xl border-2 transition-all active:scale-[0.98] ${!selectedCustomerId
                                             ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20'
                                             : 'border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50'

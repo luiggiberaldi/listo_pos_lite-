@@ -1,5 +1,6 @@
 import React from 'react';
 import { CheckCircle, Wallet, Send, X, Printer } from 'lucide-react';
+import CasheaIcon from '../CasheaIcon';
 import { formatBs } from '../../utils/calculatorUtils';
 import { printThermalTicket } from '../../utils/ticketGenerator';
 import { PrinterSerial } from '../../services/PrinterSerial';
@@ -81,7 +82,7 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                                     const casheaP = receipt.payments.find(p => p.methodId === 'cashea');
                                     return (
                                         <div className="flex justify-between text-purple-600 font-bold mt-2 pt-2 border-t border-slate-200">
-                                            <span>💜 Financiado por Cashea ({casheaP.casheaPercent}%):</span>
+                                            <span className="flex items-center gap-1.5"><CasheaIcon size={16} /> Financiado por Cashea ({casheaP.casheaPercent}%):</span>
                                             <span>${casheaP.amountUsd.toFixed(2)}</span>
                                         </div>
                                     );

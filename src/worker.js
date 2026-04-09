@@ -69,9 +69,17 @@ async function handleCheckout(request, env) {
 
     const { cart = [] } = payload;
 
+    // Normaliza IDs de carrito: si un item tiene un ID legacy (no-UUID como "p-snack-4"),
+    // le asigna un UUID nuevo para que PostgreSQL no rechace la inserción.
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const normalizedCart = cart.map(item => ({
+        ...item,
+        id: item.id && UUID_RE.test(item.id) ? item.id : crypto.randomUUID(),
+    }));
+
     // ── Paso 1: upsertear productos desconocidos (ON CONFLICT DO NOTHING) ──
     // name puede estar ausente en entradas de la cola offline guardadas antes del fix.
-    const productsToUpsert = cart
+    const productsToUpsert = normalizedCart
         .filter(item => item.id)
         .map(item => ({
             id: item.id,
@@ -110,7 +118,7 @@ async function handleCheckout(request, env) {
 
     const rpcPayload = {
         ...payload,
-        cart: cart.map(({ id, qty, priceUsd }) => ({ id, qty, priceUsd })),
+        cart: normalizedCart.map(({ id, qty, priceUsd }) => ({ id, qty, priceUsd })),
         payments: normalizedPayments,
     };
 

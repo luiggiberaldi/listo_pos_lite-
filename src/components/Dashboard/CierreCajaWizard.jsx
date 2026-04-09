@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, ChevronRight, DollarSign, Wallet, CheckCircle2, AlertTriangle, TrendingUp, ShoppingBag, Package, ArrowRight, Coins } from 'lucide-react';
+import CasheaIcon from '../CasheaIcon';
 import { formatBs } from '../../utils/calculatorUtils';
 import { getPaymentLabel, getPaymentIcon, toTitleCase } from '../../config/paymentMethods';
 
@@ -171,7 +172,7 @@ export default function CierreCajaWizard({
                                     <div className="flex items-center justify-between">
                                         <div>
                                             <div className="flex items-center gap-1.5 mb-1">
-                                                <span className="text-sm">💜</span>
+                                                <CasheaIcon size={18} />
                                                 <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase">Por Cobrar a Cashea</span>
                                             </div>
                                             <p className="text-lg font-black text-purple-700 dark:text-purple-300">${casheaTotal.toFixed(2)}</p>

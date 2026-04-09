@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Lock, DollarSign, X, Check } from 'lucide-react';
+import { Lock, X, Check } from 'lucide-react';
+import { BsIcon, UsdIcon } from '../CurrencyIcons';
 
 /**
  * AperturaCajaModal
@@ -11,7 +12,6 @@ import { Lock, DollarSign, X, Check } from 'lucide-react';
 export default function AperturaCajaModal({ isOpen, onClose, onConfirm }) {
     const [usd, setUsd] = useState('');
     const [bs, setBs] = useState('');
-    const [cashierName, setCashierName] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     if (!isOpen) return null;
@@ -20,20 +20,11 @@ export default function AperturaCajaModal({ isOpen, onClose, onConfirm }) {
         const openingUsd = parseFloat(usd) || 0;
         const openingBs = parseFloat(bs) || 0;
 
-        if (openingUsd === 0 && openingBs === 0) {
-            // Allow zero opening (no change start)
-        }
-
         setIsSubmitting(true);
         try {
-            await onConfirm({
-                openingUsd,
-                openingBs,
-                cashierName: cashierName.trim() || 'Cajero',
-            });
+            await onConfirm({ openingUsd, openingBs });
             setUsd('');
             setBs('');
-            setCashierName('');
         } finally {
             setIsSubmitting(false);
         }
@@ -68,23 +59,11 @@ export default function AperturaCajaModal({ isOpen, onClose, onConfirm }) {
                 </div>
 
                 <div className="space-y-4">
-                    {/* Cashier Name */}
-                    <div>
-                        <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1.5">Cajero (opcional)</label>
-                        <input
-                            type="text"
-                            placeholder="Nombre del cajero"
-                            value={cashierName}
-                            onChange={e => setCashierName(e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all"
-                        />
-                    </div>
-
                     {/* USD Opening */}
                     <div>
                         <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1.5">Efectivo en Dólares ($)</label>
                         <div className="relative">
-                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500 font-bold text-sm">$</span>
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2"><UsdIcon size={22} /></span>
                             <input
                                 type="number"
                                 inputMode="decimal"
@@ -101,7 +80,7 @@ export default function AperturaCajaModal({ isOpen, onClose, onConfirm }) {
                     <div>
                         <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1.5">Efectivo en Bolívares (Bs)</label>
                         <div className="relative">
-                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500 font-bold text-xs">Bs</span>
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2"><BsIcon size={22} /></span>
                             <input
                                 type="number"
                                 inputMode="decimal"

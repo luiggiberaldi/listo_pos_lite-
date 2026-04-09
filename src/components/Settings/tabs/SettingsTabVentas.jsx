@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Package, CreditCard, Smartphone } from 'lucide-react';
+import { Package, CreditCard } from 'lucide-react';
 import { SectionCard, Toggle } from '../../SettingsShared';
 import PaymentMethodsManager from '../PaymentMethodsManager';
+import CasheaIcon from '../../CasheaIcon';
 
 export default function SettingsTabVentas({
     allowNegativeStock, setAllowNegativeStock,
@@ -31,7 +32,7 @@ export default function SettingsTabVentas({
                 </div>
             </SectionCard>
 
-            <SectionCard icon={Smartphone} title="Módulo Cashea" subtitle="Financiamiento buy-now-pay-later" iconColor="text-purple-500">
+            <SectionCard icon={CasheaIcon} title="Módulo Cashea" subtitle="Financiamiento buy-now-pay-later" iconColor="text-purple-500">
                 <div className="flex items-start justify-between gap-3">
                     <div className="flex-1">
                         <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Activar Cashea</p>
@@ -51,7 +52,7 @@ export default function SettingsTabVentas({
                 {casheaEnabled && (
                     <div className="mt-3 p-3 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/40 rounded-xl">
                         <p className="text-[10px] font-bold text-purple-700 dark:text-purple-400 leading-relaxed">
-                            💜 Cuando el módulo está activo, en el cobro aparece la sección <strong>Cashea</strong>. El cajero selecciona el % que financia Cashea, el cliente paga su parte con cualquier método y la venta se registra como completada. El monto de Cashea queda como cuenta por cobrar.
+                            Cuando el módulo está activo, en el cobro aparece la sección <strong>Cashea</strong>. El cajero selecciona el % que financia Cashea, el cliente paga su parte con cualquier método y la venta se registra como completada. El monto de Cashea queda como cuenta por cobrar.
                         </p>
                     </div>
                 )}
