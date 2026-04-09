@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import localforage from 'localforage';
+import { storageService } from '../utils/storageService';
 import { Share2, Download, X, Copy, Check, Loader2, AlertTriangle, Package, Users, ShoppingBag, Database } from 'lucide-react';
 
 // IDB keys per group
@@ -33,10 +33,6 @@ const COLOR_MAP = {
     amber: { bg: 'bg-amber-50 dark:bg-amber-900/20', icon: 'text-amber-500', border: 'border-amber-400', check: 'bg-amber-500' },
 };
 
-// Use the default localforage instance (configured by storageService to BodegaApp/bodega_app_data)
-// Do NOT use createInstance — it can behave differently from the already-initialized default instance
-const lf = localforage;
-
 // Strip product images to keep payload small
 function stripImages(products) {
     if (!Array.isArray(products)) return products;
@@ -58,9 +54,9 @@ export default function ShareInventoryModal({ isOpen, onClose }) {
     useEffect(() => {
         if (!isOpen) return;
         (async () => {
-            const products = await lf.getItem('bodega_products_v1') || [];
-            const customers = await lf.getItem('bodega_customers_v1') || [];
-            const sales = await lf.getItem('bodega_sales_v1') || [];
+            const products = await storageService.getItem('bodega_products_v1', []);
+            const customers = await storageService.getItem('bodega_customers_v1', []);
+            const sales = await storageService.getItem('bodega_sales_v1', []);
             setCounts({
                 inventory: Array.isArray(products) ? products.length : 0,
                 customers: Array.isArray(customers) ? customers.length : 0,
@@ -91,7 +87,7 @@ export default function ShareInventoryModal({ isOpen, onClose }) {
 
             for (const groupId of groups) {
                 for (const key of SHARE_GROUPS[groupId].idbKeys) {
-                    const data = await lf.getItem(key);
+                    const data = await storageService.getItem(key, null);
                     if (data !== null && data !== undefined) {
                         // Strip images from products to reduce payload size
                         idb[key] = key === 'bodega_products_v1' ? stripImages(data) : data;
@@ -146,7 +142,7 @@ export default function ShareInventoryModal({ isOpen, onClose }) {
         try {
             if (importResult.idb && typeof importResult.idb === 'object') {
                 for (const [key, value] of Object.entries(importResult.idb)) {
-                    await lf.setItem(key, value);
+                    await storageService.setItem(key, value);
                 }
                 if (importResult.ls && typeof importResult.ls === 'object') {
                     for (const [key, value] of Object.entries(importResult.ls)) {
@@ -155,13 +151,13 @@ export default function ShareInventoryModal({ isOpen, onClose }) {
                 }
             } else {
                 if (Array.isArray(importResult.products) && importResult.products.length > 0)
-                    await lf.setItem('bodega_products_v1', importResult.products);
+                    await storageService.setItem('bodega_products_v1', importResult.products);
                 if (Array.isArray(importResult.categories) && importResult.categories.length > 0)
-                    await lf.setItem('my_categories_v1', importResult.categories);
+                    await storageService.setItem('my_categories_v1', importResult.categories);
                 if (Array.isArray(importResult.customers) && importResult.customers.length > 0)
-                    await lf.setItem('bodega_customers_v1', importResult.customers);
+                    await storageService.setItem('bodega_customers_v1', importResult.customers);
                 if (Array.isArray(importResult.sales) && importResult.sales.length > 0)
-                    await lf.setItem('bodega_sales_v1', importResult.sales);
+                    await storageService.setItem('bodega_sales_v1', importResult.sales);
             }
             // Marcar que se acaba de importar: CloudSync debe saltarse el Pull inicial
             // para que no sobreescriba con datos viejos de Supabase.
