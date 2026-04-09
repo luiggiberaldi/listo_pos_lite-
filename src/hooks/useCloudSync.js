@@ -143,6 +143,19 @@ export const pushCloudSync = async (key, value) => {
             } catch { }
         }
 
+        // Egress: eliminar imágenes base64 de productos antes de subir a la nube.
+        // Las imágenes (204 KB de 218 KB por usuario) son el mayor driver de egreso.
+        // Se conservan solo en local (IndexedDB); el otro dispositivo verá el producto sin imagen.
+        if (key === 'bodega_products_v1') {
+            try {
+                const arr = Array.isArray(sanitizedValue) ? sanitizedValue
+                    : (typeof sanitizedValue === 'string' ? JSON.parse(sanitizedValue) : sanitizedValue);
+                if (Array.isArray(arr)) {
+                    sanitizedValue = arr.map(({ image, ...rest }) => rest);
+                }
+            } catch { }
+        }
+
         // Deduplicación: generar hash rápido del payload para no resubir datos idénticos.
         const serialized = typeof sanitizedValue === 'string' ? sanitizedValue : JSON.stringify(sanitizedValue);
         const hash = serialized.length + ':' + serialized.slice(0, 100) + serialized.slice(-100);
@@ -398,24 +411,34 @@ export function useCloudSync() {
                             const currentSession = (await supabaseCloud.auth.getSession()).data.session;
                             if (!currentSession?.user?.id) return;
 
-                            // Solo pedir docs pesados modificados después del último sync
-                            // Filtro explícito por user_id como defensa en profundidad (RLS ya filtra)
-                            let query = supabaseCloud
+                            // ── Fase 1: solo metadatos (doc_id + updated_at) ──────────
+                            // Costo: ~1 KB en vez de 218 KB. Solo bajamos data si algo cambió.
+                            let metaQuery = supabaseCloud
                                 .from('sync_documents')
-                                .select('collection, doc_id, data, updated_at')
+                                .select('doc_id, collection, updated_at')
                                 .eq('user_id', currentSession.user.id)
                                 .in('doc_id', POLLING_ONLY_KEYS);
 
                             if (lastSyncTime) {
-                                query = query.gt('updated_at', lastSyncTime);
+                                metaQuery = metaQuery.gt('updated_at', lastSyncTime);
                             }
 
-                            const { data: changed } = await query;
+                            const { data: changedMeta } = await metaQuery;
 
-                            if (changed?.length > 0) {
-                                for (const doc of changed) {
-                                    console.log(`[CloudSync] Polling: ${doc.doc_id} actualizado`);
-                                    await _applyFromCloud(doc.doc_id, doc.collection, doc.data.payload, doc.updated_at);
+                            // ── Fase 2: bajar solo los docs que realmente cambiaron ───
+                            if (changedMeta?.length > 0) {
+                                const changedIds = changedMeta.map(d => d.doc_id);
+                                const { data: changed } = await supabaseCloud
+                                    .from('sync_documents')
+                                    .select('collection, doc_id, data, updated_at')
+                                    .eq('user_id', currentSession.user.id)
+                                    .in('doc_id', changedIds);
+
+                                if (changed?.length > 0) {
+                                    for (const doc of changed) {
+                                        console.log(`[CloudSync] Polling: ${doc.doc_id} actualizado`);
+                                        await _applyFromCloud(doc.doc_id, doc.collection, doc.data.payload, doc.updated_at);
+                                    }
                                 }
                             }
 

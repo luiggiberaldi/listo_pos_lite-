@@ -30,7 +30,8 @@ export const offlineQueueService = {
         const payloadWithOrigin = {
           ...item.payload,
           sync_origin: 'offline_sync',
-          original_created_at: item.created_at
+          original_created_at: item.created_at,
+          queue_id: item.id,  // Clave de idempotencia: evita duplicar ventas en reintentos
         };
 
         const res = await fetch('/api/checkout', {

@@ -12,6 +12,9 @@ const SUPABASE_URL = 'https://fgzwmwrugerptfqfrsjd.supabase.co';
 const TTL_SECONDS = 86400; // 24 horas
 const MAX_PAYLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
 
+// Set de queue_ids procesados en esta instancia del worker (idempotencia en memoria)
+const _processedQueueIds = new Set();
+
 // ── Upstash Redis REST helper ──────────────────────────────────────────────
 async function redis(upstashUrl, upstashToken, command, ...args) {
     const res = await fetch(upstashUrl, {
@@ -68,6 +71,20 @@ async function handleCheckout(request, env) {
     }
 
     const { cart = [] } = payload;
+
+    // ── Idempotencia: evitar duplicar ventas offline si el cliente reintenta ──
+    // queue_id es el UUID del item en la cola offline.
+    // _processedQueueIds es un Set module-level que dura el tiempo de vida del worker.
+    // Para idempotencia persistente ejecutar la migración SQL (agrega queue_id a sales).
+    if (payload.queue_id && payload.sync_origin === 'offline_sync') {
+        if (_processedQueueIds.has(payload.queue_id)) {
+            console.log(`[checkout] Venta duplicada ignorada en memoria (queue_id=${payload.queue_id})`);
+            return Response.json({ ok: true, duplicate: true }, { headers });
+        }
+        _processedQueueIds.add(payload.queue_id);
+        // Limpiar el Set si crece demasiado (evitar fuga de memoria)
+        if (_processedQueueIds.size > 500) _processedQueueIds.clear();
+    }
 
     // Normaliza IDs de carrito: si un item tiene un ID legacy (no-UUID como "p-snack-4"),
     // le asigna un UUID nuevo para que PostgreSQL no rechace la inserción.
