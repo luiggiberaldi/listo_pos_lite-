@@ -19,41 +19,81 @@ export const broadcastFactoryReset = async (userId) => {
 };
 
 const SYNC_KEYS = [
+    // ── IndexedDB (store) ──────────────────────────────────────────────────
     'bodega_products_v1',
     'bodega_customers_v1',
     'bodega_sales_v1',
     'bodega_payment_methods_v1',
-    'monitor_rates_v12',
     'bodega_accounts_v2',
     'abasto_audit_log_v1',
-    'abasto-auth-storage',
+    'my_categories_v1',           // Categorías de productos
+    'bodega_suppliers_v1',        // Proveedores
+    'bodega_supplier_invoices_v1',// Facturas de proveedores
+    // ── localStorage (local) ──────────────────────────────────────────────
+    'abasto-auth-storage',        // Usuarios, PINs, roles
+    'monitor_rates_v12',
     'bodega_custom_rate',
     'bodega_use_auto_rate',
     'tasa_cop',
     'cop_enabled',
-    'auto_cop_enabled'
+    'auto_cop_enabled',
+    // ── Configuración del negocio (localStorage) ──────────────────────────
+    'cashea_enabled',
+    'business_address',
+    'business_phone',
+    'business_instagram',
+    'admin_auto_lock_minutes',
+    'theme',
+    'catalog_show_cash_price',
+    'catalog_custom_usdt_price',
+    'catalog_use_auto_usdt',
+    'street_rate_bs',
+    'printer_paper_width',
 ];
 
 // Llaves que van a colección 'local' (localStorage); el resto va a 'store' (IndexedDB)
 const LOCAL_KEYS = [
     'abasto-auth-storage',
+    'monitor_rates_v12',
     'bodega_custom_rate',
     'bodega_use_auto_rate',
     'tasa_cop',
     'cop_enabled',
-    'auto_cop_enabled'
+    'auto_cop_enabled',
+    'cashea_enabled',
+    'business_address',
+    'business_phone',
+    'business_instagram',
+    'admin_auto_lock_minutes',
+    'theme',
+    'catalog_show_cash_price',
+    'catalog_custom_usdt_price',
+    'catalog_use_auto_usdt',
+    'street_rate_bs',
+    'printer_paper_width',
 ];
 
 // ─── Realtime selectivo ────────────────────────────────────────────────────
 // Solo llaves pequeñas (<1KB) van por Realtime para multi-dispositivo instantáneo.
-// Datos pesados (productos, ventas, clientes) siguen con polling cada 10 min.
+// Datos pesados (productos, ventas, clientes) siguen con polling cada 5 min.
 const REALTIME_KEYS = [
     'monitor_rates_v12',
     'bodega_custom_rate',
     'bodega_use_auto_rate',
     'tasa_cop',
     'cop_enabled',
-    'auto_cop_enabled'
+    'auto_cop_enabled',
+    'cashea_enabled',
+    'business_address',
+    'business_phone',
+    'business_instagram',
+    'admin_auto_lock_minutes',
+    'theme',
+    'catalog_show_cash_price',
+    'catalog_custom_usdt_price',
+    'catalog_use_auto_usdt',
+    'street_rate_bs',
+    'printer_paper_width',
 ];
 
 // Llaves pesadas — solo polling (evita egreso masivo por Realtime)
@@ -270,6 +310,27 @@ export function useCloudSync() {
 
                 lastSyncTime = new Date().toISOString();
 
+                // ── Catch-up push: subir datos locales que la nube no tiene ──
+                // Asegura que claves recién agregadas al sync (ej. categorías, proveedores,
+                // config) queden en Supabase aunque nunca hayan sido modificadas en este
+                // dispositivo desde que se activó el sync.
+                // El hash deduplication evita resubir lo que ya está igual en la nube.
+                (async () => {
+                    const { default: lf } = await import('localforage');
+                    lf.config({ name: 'BodegaApp', storeName: 'bodega_app_data' });
+                    for (const key of SYNC_KEYS) {
+                        if (LOCAL_KEYS.includes(key)) {
+                            const val = localStorage.getItem(key);
+                            if (val != null) pushCloudSync(key, val).catch(() => {});
+                        } else {
+                            const val = await lf.getItem(key);
+                            if (val != null) pushCloudSync(key, val).catch(() => {});
+                        }
+                        // Pausa entre keys para no saturar Supabase con burst
+                        await new Promise(r => setTimeout(r, 120));
+                    }
+                })().catch(() => {});
+
                 // ── Listener de Factory Reset remoto ─────────────────────────
                 // Si otro dispositivo con la misma cuenta hace factory reset,
                 // este equipo también limpia y recarga.
@@ -329,7 +390,7 @@ export function useCloudSync() {
                 // no necesitan ser instantáneos. 10 min es suficiente para
                 // multi-dispositivo en datos de catálogo.
                 if (!pollIntervalId) {
-                    const POLL_INTERVAL = 15 * 60 * 1000; // 15 minutos
+                    const POLL_INTERVAL = 5 * 60 * 1000; // 5 minutos (incremental: solo docs cambiados)
 
                     const pollForChanges = async () => {
                         if (isSyncingFromCloud) return;
@@ -365,7 +426,19 @@ export function useCloudSync() {
                     };
 
                     pollIntervalId = setInterval(pollForChanges, POLL_INTERVAL);
-                    console.log('[CloudSync] Híbrido iniciado: Realtime (tasas) + Polling 10min (datos)');
+                    console.log('[CloudSync] Híbrido iniciado: Realtime (config) + Polling 5min (datos)');
+
+                    // ── Sync al recuperar visibilidad ─────────────────────────
+                    // Cuando el usuario vuelve al tab o desbloquea el teléfono,
+                    // disparar un pull inmediato sin esperar el próximo intervalo.
+                    const onVisible = () => {
+                        if (document.visibilityState === 'visible') {
+                            pollForChanges().catch(() => {});
+                        }
+                    };
+                    document.addEventListener('visibilitychange', onVisible);
+                    // Guardar referencia para cleanup
+                    window.__cloudSyncVisibilityListener = onVisible;
                 }
 
             } catch (err) {
@@ -385,6 +458,10 @@ export function useCloudSync() {
             if (realtimeChannel) {
                 supabaseCloud.removeChannel(realtimeChannel);
                 realtimeChannel = null;
+            }
+            if (window.__cloudSyncVisibilityListener) {
+                document.removeEventListener('visibilitychange', window.__cloudSyncVisibilityListener);
+                delete window.__cloudSyncVisibilityListener;
             }
         };
     }, [isCloudConfigured, adminEmail, adminPassword]);
