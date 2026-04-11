@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import ResetPasswordView from './views/ResetPasswordView.jsx'
+import EmailConfirmedView from './views/EmailConfirmedView.jsx'
 import { ToastProvider } from './components/Toast.jsx'
 import { supabaseCloud } from './config/supabaseCloud.js'
 import './index.css'
@@ -36,8 +37,14 @@ function detectRecovery() {
   return hash.includes('type=recovery') || params.has('code');
 }
 
+// Detectar confirmación de email (type=signup en el hash de Supabase)
+function detectEmailConfirmed() {
+  return window.location.hash.includes('type=signup');
+}
+
 function AppRouter() {
   const [isRecovery, setIsRecovery] = useState(detectRecovery);
+  const [isEmailConfirmed, setIsEmailConfirmed] = useState(detectEmailConfirmed);
 
   useEffect(() => {
     const { data: { subscription } } = supabaseCloud.auth.onAuthStateChange((event) => {
@@ -45,6 +52,14 @@ function AppRouter() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  if (isEmailConfirmed) {
+    return (
+      <EmailConfirmedView
+        onDone={() => setIsEmailConfirmed(false)}
+      />
+    );
+  }
 
   if (isRecovery) {
     return (
