@@ -1,6 +1,6 @@
 import { useMemo, useDeferredValue } from 'react';
 
-export function useProductFiltering(products, searchTerm, activeCategory, sortField, sortDir, effectiveRate) {
+export function useProductFiltering(products, searchTerm, activeCategory, sortField, sortDir, effectiveRate, duplicateNames) {
     const deferredSearchTerm = useDeferredValue(searchTerm);
 
     const filteredProducts = useMemo(() => {
@@ -9,6 +9,9 @@ export function useProductFiltering(products, searchTerm, activeCategory, sortFi
             const matchesSearch = p.name.toLowerCase().includes(term) || (p.barcode && p.barcode.toLowerCase().includes(term));
             if (activeCategory === 'bajo-stock') {
                 return matchesSearch && (p.stock ?? 0) <= (p.lowStockAlert ?? 5);
+            }
+            if (activeCategory === 'duplicados') {
+                return matchesSearch && duplicateNames && duplicateNames.has((p.name || '').trim().toLowerCase());
             }
             const matchesCategory = activeCategory === 'todos' || p.category === activeCategory;
             return matchesSearch && matchesCategory;

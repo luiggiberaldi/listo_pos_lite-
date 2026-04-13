@@ -196,7 +196,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
     // ─── FILTERING & PAGINATION ─────────────────────────────
 
-    const { filteredProducts } = useProductFiltering(products, searchTerm, activeCategory, sortField, sortDir, effectiveRate);
+    const { filteredProducts } = useProductFiltering(products, searchTerm, activeCategory, sortField, sortDir, effectiveRate, duplicateNames);
 
     const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
     const paginatedProducts = filteredProducts.slice(
@@ -218,6 +218,18 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
     // Low stock count
     const lowStockCount = products.filter(p => (p.stock ?? 0) <= (p.lowStockAlert ?? 5) && (p.stock ?? 0) >= 0).length;
+
+    // Duplicate product detection (same name, case-insensitive)
+    const duplicateNames = useMemo(() => {
+        const nameCount = {};
+        for (const p of products) {
+            const key = (p.name || '').trim().toLowerCase();
+            if (!key) continue;
+            nameCount[key] = (nameCount[key] || 0) + 1;
+        }
+        return new Set(Object.keys(nameCount).filter(k => nameCount[k] > 1));
+    }, [products]);
+    const duplicateCount = duplicateNames.size;
 
     // ─── IMAGE HANDLER ──────────────────────────────────────
 
@@ -504,6 +516,16 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                             </button>
                         </>
                     )}
+                    {duplicateCount > 0 && (
+                        <>
+                            <div className="w-px h-4 bg-slate-200 dark:bg-slate-700" />
+                            <button
+                                onClick={() => { handleSetActiveCategory('duplicados'); triggerHaptic && triggerHaptic(); }}
+                                className="text-[10px] font-bold bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-2.5 py-1 rounded-full flex items-center gap-1 cursor-pointer hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors">
+                                <AlertTriangle size={12} /> {duplicateCount} duplicados
+                            </button>
+                        </>
+                    )}
                     <div className="ml-auto" />
                     <button
                         onClick={toggleViewMode}
@@ -619,6 +641,14 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                         <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 px-3 py-2 rounded-xl mb-3 shrink-0">
                             <span className="text-xs font-bold text-amber-600 dark:text-amber-400">Mostrando productos con stock bajo</span>
                             <button onClick={() => handleSetActiveCategory('todos')} className="text-xs font-bold text-amber-500 hover:text-amber-700 transition-colors flex items-center gap-1">
+                                × Ver todos
+                            </button>
+                        </div>
+                    )}
+                    {activeCategory === 'duplicados' && (
+                        <div className="flex items-center justify-between bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 px-3 py-2 rounded-xl mb-3 shrink-0">
+                            <span className="text-xs font-bold text-red-600 dark:text-red-400">Mostrando {duplicateCount} nombres duplicados ({filteredProducts.length} productos)</span>
+                            <button onClick={() => handleSetActiveCategory('todos')} className="text-xs font-bold text-red-500 hover:text-red-700 transition-colors flex items-center gap-1">
                                 × Ver todos
                             </button>
                         </div>
