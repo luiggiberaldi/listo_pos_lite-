@@ -346,7 +346,9 @@ export default function App() {
     { id: 'reportes', label: 'Reportes', icon: BarChart3, adminOnly: true },
     { id: 'ajustes', label: 'Config.', icon: Settings, adminOnly: true },
   ];
-  const TABS = isCajero ? ALL_TABS.filter(t => !t.adminOnly) : ALL_TABS;
+  // Solo ocultar tabs admin si el PIN está activo Y el usuario es cajero.
+  // Sin PIN, todos ven todas las pestañas (no hay seguridad que justifique ocultarlas).
+  const TABS = (isCajero && pinLoginEnabled) ? ALL_TABS.filter(t => !t.adminOnly) : ALL_TABS;
 
   // Global Hard Gate: Loading State
   if (checkingSession) {
