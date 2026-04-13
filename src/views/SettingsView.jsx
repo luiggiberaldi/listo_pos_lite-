@@ -4,7 +4,7 @@ import {
     Store, CreditCard, Database, Users,
     AlertTriangle, Download, Upload, Share2,
     Sun, Moon, LogOut, Trash2, Copy, Check,
-    ChevronRight, ShieldCheck, Package, Printer, BadgeCheck
+    ChevronRight, ShieldCheck, Package, Printer, BadgeCheck, CloudUpload
 } from 'lucide-react';
 import { storageService } from '../utils/storageService';
 import { broadcastFactoryReset } from '../hooks/useCloudSync';
@@ -82,6 +82,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
     const [autoLockMinutes, setAutoLockMinutes] = useState(localStorage.getItem('admin_auto_lock_minutes') || '5');
 
     const isCloudConfigured = Boolean(adminEmail);
+    const [showPostImportCloud, setShowPostImportCloud] = useState(false);
 
     const handleSaveBusinessData = () => {
         localStorage.setItem('business_name', businessName);
@@ -156,9 +157,17 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                 } else {
                     if (json.data.bodega_products_v1) await lf.setItem('bodega_products_v1', typeof json.data.bodega_products_v1 === 'string' ? JSON.parse(json.data.bodega_products_v1) : json.data.bodega_products_v1);
                 }
-                setImportStatus('success'); setStatusMessage('Restauracion finalizada. Reiniciando...');
+                setImportStatus('success'); setStatusMessage('Restauracion finalizada.');
                 auditLog('SISTEMA', 'BACKUP_IMPORTADO', 'Backup restaurado'); triggerHaptic?.();
-                setTimeout(() => window.location.reload(), 1500);
+                // Check if imported data has cloud credentials
+                const importedAuth = json.data?.ls?.['abasto-auth-storage'];
+                let hasCloudInBackup = false;
+                try { hasCloudInBackup = importedAuth && !!JSON.parse(importedAuth)?.state?.adminEmail; } catch {}
+                if (!hasCloudInBackup) {
+                    setShowPostImportCloud(true);
+                } else {
+                    setTimeout(() => window.location.reload(), 1500);
+                }
             } catch {
                 setImportStatus('error'); setStatusMessage('Error: archivo corrupto o invalido.');
             }
@@ -404,6 +413,43 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                 className="flex-1 py-3.5 text-sm font-bold text-white bg-red-500 rounded-xl hover:bg-red-600 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                                 Reiniciar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Post-Import: Vincular cuenta cloud ── */}
+            {showPostImportCloud && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200 text-center" onClick={e => e.stopPropagation()}>
+                        <div className="w-16 h-16 mx-auto bg-indigo-100 dark:bg-indigo-900/30 text-indigo-500 rounded-2xl flex items-center justify-center mb-4">
+                            <CloudUpload size={28} />
+                        </div>
+                        <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">Backup importado</h3>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 leading-relaxed">
+                            El backup no tenía cuenta cloud vinculada. ¿Deseas conectar una cuenta ahora para activar la licencia y sincronización?
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => {
+                                    setShowPostImportCloud(false);
+                                    setTimeout(() => window.location.reload(), 300);
+                                }}
+                                className="flex-1 py-3.5 text-sm font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all"
+                            >
+                                Ahora no
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowPostImportCloud(false);
+                                    setActiveTab('usuarios');
+                                    // Scroll to top to show the cloud login section
+                                    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
+                                }}
+                                className="flex-1 py-3.5 text-sm font-bold text-white bg-indigo-500 rounded-xl hover:bg-indigo-600 active:scale-95 transition-all flex items-center justify-center gap-2"
+                            >
+                                <CloudUpload size={16} /> Vincular cuenta
                             </button>
                         </div>
                     </div>

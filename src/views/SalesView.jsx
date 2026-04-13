@@ -537,7 +537,10 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
 
 
 
+    const [isProcessingSale, setIsProcessingSale] = useState(false);
     const handleCheckout = async (payments, changeBreakdown) => {
+        if (isProcessingSale) return;
+        setIsProcessingSale(true);
         triggerHaptic && triggerHaptic();
 
         // ── Overpayment sanity check (3 layers) ──────────────────────────
@@ -590,7 +593,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
 
             if (alertMsg) {
                 const ok = window.confirm(alertMsg);
-                if (!ok) return;
+                if (!ok) { setIsProcessingSale(false); return; }
             }
         }
 
@@ -606,6 +609,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
             console.error('Abortando venta:', result.error);
             showToast(result.error, result.error.includes('No se pueden') ? 'warning' : 'error');
             playError();
+            setIsProcessingSale(false);
             return;
         }
 
@@ -623,10 +627,11 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
         setShowConfetti(true);
         notifyLowStock(result.updatedProducts);
         
-        setCart([]); 
-        setShowCheckout(false); 
-        setSelectedCustomerId(''); 
+        setCart([]);
+        setShowCheckout(false);
+        setSelectedCustomerId('');
         setCartSelectedIndex(-1);
+        setIsProcessingSale(false);
     };
 
     const handleCreateCustomer = async (name, documentId, phone) => {
@@ -891,6 +896,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                     customers={customers} selectedCustomerId={selectedCustomerId} setSelectedCustomerId={setSelectedCustomerId}
                     paymentMethods={paymentMethods}
                     onConfirmSale={handleCheckout} onCreateCustomer={handleCreateCustomer}
+                    isProcessingSale={isProcessingSale}
                     triggerHaptic={triggerHaptic}
                     copEnabled={copEnabled}
                     tasaCop={tasaCop}

@@ -23,6 +23,7 @@ export default function CheckoutModal({
     setSelectedCustomerId,
     paymentMethods,
     onConfirmSale,
+    isProcessingSale = false,
     onUseSaldoFavor,
     triggerHaptic,
     onCreateCustomer,
@@ -692,8 +693,10 @@ export default function CheckoutModal({
                             handleConfirm();
                         }
                     }}
-                    disabled={(!selectedCustomerId && remainingUsd > 0.01) || (casheaActive && !isPaid && !casheaConfirmReady)}
-                    className={`w-full py-4 font-black text-base rounded-2xl shadow-lg transition-all tracking-wide flex items-center justify-center gap-2 ${isPaid
+                    disabled={isProcessingSale || (!selectedCustomerId && remainingUsd > 0.01) || (casheaActive && !isPaid && !casheaConfirmReady)}
+                    className={`w-full py-4 font-black text-base rounded-2xl shadow-lg transition-all tracking-wide flex items-center justify-center gap-2 ${isProcessingSale
+                        ? 'bg-slate-300 dark:bg-slate-800 text-slate-500 shadow-none cursor-not-allowed opacity-70'
+                        : isPaid
                         ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/25 active:scale-[0.98] text-white'
                         : selectedCustomerId
                             ? casheaActive
@@ -704,7 +707,9 @@ export default function CheckoutModal({
                             : 'bg-slate-300 dark:bg-slate-800 text-slate-500 shadow-none cursor-not-allowed'
                         }`}
                 >
-                    {isPaid ? (
+                    {isProcessingSale ? (
+                        <><Receipt size={18} className="animate-pulse" /> PROCESANDO...</>
+                    ) : isPaid ? (
                         <><Receipt size={18} /> CONFIRMAR VENTA</>
                     ) : selectedCustomerId ? (
                         casheaActive

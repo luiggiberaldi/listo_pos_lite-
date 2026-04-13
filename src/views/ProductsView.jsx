@@ -754,17 +754,20 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                                                 {!isCajero && <button onClick={() => adjustPending(p.id, -1)} className="w-7 h-7 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors active:scale-90"><Minus size={14} /></button>}
                                                 <span className={`text-sm font-black min-w-[32px] text-center ${pendingDeltas[p.id] ? 'text-blue-500' : isLowStock ? 'text-amber-500' : 'text-slate-700 dark:text-slate-200'}`}>{(p.stock ?? 0) + (pendingDeltas[p.id] || 0)}</span>
                                                 {!isCajero && <button onClick={() => adjustPending(p.id, 1)} className="w-7 h-7 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-emerald-500 transition-colors active:scale-90"><Plus size={14} /></button>}
+                                            </div>
+                                            <div className="hidden sm:flex items-center justify-end gap-1">
                                                 {!isCajero && pendingDeltas[p.id] ? (
                                                     <>
                                                         <button onClick={() => cancelPending(p.id)} className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"><X size={13} /></button>
                                                         <button onClick={() => confirmPending(p.id)} className="w-6 h-6 flex items-center justify-center rounded-lg text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all"><Check size={13} /></button>
                                                     </>
-                                                ) : null}
-                                            </div>
-                                            <div className="hidden sm:flex items-center justify-end gap-1">
-                                                <button onClick={() => handlePrintSingle(p)} className="p-1.5 rounded-lg text-slate-300 hover:text-brand hover:bg-brand/10 transition-all" title="Imprimir Etiqueta"><Printer size={14} /></button>
-                                                {!isCajero && <button onClick={() => handleEdit(p)} className="p-1.5 rounded-lg text-slate-300 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all"><Pencil size={14} /></button>}
-                                                {!isCajero && <button onClick={() => handleDelete(p.id)} className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"><Trash2 size={14} /></button>}
+                                                ) : (
+                                                    <>
+                                                        <button onClick={() => handlePrintSingle(p)} className="p-1.5 rounded-lg text-slate-300 hover:text-brand hover:bg-brand/10 transition-all" title="Imprimir Etiqueta"><Printer size={14} /></button>
+                                                        {!isCajero && <button onClick={() => handleEdit(p)} className="p-1.5 rounded-lg text-slate-300 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all"><Pencil size={14} /></button>}
+                                                        {!isCajero && <button onClick={() => handleDelete(p.id)} className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"><Trash2 size={14} /></button>}
+                                                    </>
+                                                )}
                                             </div>
                                         </div>
                                     );

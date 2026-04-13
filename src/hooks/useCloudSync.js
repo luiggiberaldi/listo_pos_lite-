@@ -99,6 +99,64 @@ const REALTIME_KEYS = [
 // Llaves pesadas — solo polling (evita egreso masivo por Realtime)
 const POLLING_ONLY_KEYS = SYNC_KEYS.filter(k => !REALTIME_KEYS.includes(k));
 
+// ─── Llaves que contienen arrays con campo `id` y requieren merge inteligente ──
+// Cuando llegan datos de la nube, en vez de sobreescribir el array completo,
+// se hace merge por ID: se combinan items locales + nube, y si ambos tienen
+// el mismo ID, gana el que tenga updatedAt/createdAt más reciente.
+const MERGEABLE_KEYS = [
+    'bodega_products_v1',
+    'bodega_customers_v1',
+    'bodega_sales_v1',
+    'bodega_payment_methods_v1',
+    'bodega_accounts_v2',
+    'abasto_audit_log_v1',
+    'my_categories_v1',
+    'bodega_suppliers_v1',
+    'bodega_supplier_invoices_v1',
+];
+
+/**
+ * Merge inteligente de arrays por ID.
+ * Combina localArr + cloudArr sin perder items de ninguno.
+ * Si un item existe en ambos, gana el más reciente (por updatedAt o createdAt).
+ */
+function _mergeArraysById(localArr, cloudArr) {
+    if (!Array.isArray(localArr) || !Array.isArray(cloudArr)) return cloudArr;
+
+    const map = new Map();
+
+    // Primero agregar todos los locales
+    for (const item of localArr) {
+        const id = item?.id;
+        if (id) map.set(id, item);
+    }
+
+    // Luego agregar/sobreescribir con los de la nube si son más recientes
+    for (const item of cloudArr) {
+        const id = item?.id;
+        if (!id) {
+            // Items sin id: agregar directamente
+            map.set(Symbol(), item);
+            continue;
+        }
+
+        const existing = map.get(id);
+        if (!existing) {
+            map.set(id, item);
+        } else {
+            // Comparar timestamps — gana el más reciente
+            const localTime = existing.updatedAt || existing.createdAt || '';
+            const cloudTime = item.updatedAt || item.createdAt || '';
+            if (cloudTime >= localTime) {
+                map.set(id, item);
+            }
+            // Si local es más reciente, se queda el local (ya está en el map)
+        }
+    }
+
+    return Array.from(map.values());
+}
+
 // ─── Estado Global del Motor ───────────────────────────────────────────────
 let pollIntervalId = null;
 let realtimeChannel = null;     // Canal Realtime para tasas/config (payloads pequeños)
@@ -192,18 +250,19 @@ export const pushCloudSync = async (key, value) => {
  * para evitar sobreescribir cambios locales con datos desactualizados de la nube.
  */
 async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
-    // Protección contra sobreescritura: no aplicar si local es más reciente que la nube
-    if (cloudUpdatedAt) {
+    // Para llaves mergeables (arrays con id), NUNCA saltamos — siempre hacemos merge
+    const isMergeable = MERGEABLE_KEYS.includes(docId) && collection === 'store';
+
+    // Protección contra sobreescritura para llaves NO mergeables
+    if (!isMergeable && cloudUpdatedAt) {
         try {
             const localTs = localStorage.getItem('_sync_local_ts_' + docId);
             if (localTs && localTs > cloudUpdatedAt) {
                 console.log(`[CloudSync] Skip ${docId}: local (${localTs}) más reciente que nube (${cloudUpdatedAt}). Resubiendo...`);
-                // Re-subir los datos locales a la nube ya que son más nuevos
                 const { default: lf } = await import('localforage');
                 lf.config({ name: 'BodegaApp', storeName: 'bodega_app_data' });
                 const localData = await lf.getItem(docId);
                 if (localData !== null) {
-                    // Forzar push limpiando el hash para que no sea filtrado por deduplicación
                     delete _lastPushHash[docId];
                     pushCloudSync(docId, localData).catch(() => {});
                 }
@@ -247,10 +306,34 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
                 useAuthStore.persist.rehydrate();
             }
         } else {
-            // Colección 'store' → IndexedDB directo, sin pasar por storageService.setItem
+            // Colección 'store' → IndexedDB
             const { default: localforage } = await import('localforage');
             localforage.config({ name: 'BodegaApp', storeName: 'bodega_app_data' });
-            await localforage.setItem(docId, payload);
+
+            let finalData = payload;
+
+            // Merge inteligente para arrays con ID (ventas, productos, clientes, etc.)
+            if (isMergeable && Array.isArray(payload)) {
+                try {
+                    const localData = await localforage.getItem(docId);
+                    if (Array.isArray(localData)) {
+                        finalData = _mergeArraysById(localData, payload);
+                        console.log(`[CloudSync] Merge ${docId}: local=${localData.length}, nube=${payload.length}, resultado=${finalData.length}`);
+
+                        // Si el merge produjo más items que la nube, re-subir el resultado
+                        if (finalData.length > payload.length) {
+                            setTimeout(() => {
+                                delete _lastPushHash[docId];
+                                pushCloudSync(docId, finalData).catch(() => {});
+                            }, 500);
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`[CloudSync] Merge falló para ${docId}, usando datos de nube:`, e.message);
+                }
+            }
+
+            await localforage.setItem(docId, finalData);
 
             // Notificar a los componentes React que lean este store
             window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId } }));
@@ -313,6 +396,7 @@ export function useCloudSync() {
                     const { data: docs } = await supabaseCloud
                         .from('sync_documents')
                         .select('collection, doc_id, data, updated_at')
+                        .eq('user_id', userId)
                         .in('collection', ['store', 'local']);
 
                     if (docs?.length > 0) {

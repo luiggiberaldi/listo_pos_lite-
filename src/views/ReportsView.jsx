@@ -42,6 +42,7 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
     const [historyFilter, setHistoryFilter] = useState('all'); // all, completed, voided
     const [voidSaleTarget, setVoidSaleTarget] = useState(null);
     const [recycleOffer, setRecycleOffer] = useState(null);
+    const [openPaySections, setOpenPaySections] = useState({});
 
     // ── Void Sale Handler ──
     const confirmVoidSale = async () => {
@@ -325,94 +326,120 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                     );
                 };
 
+                const netBs = bsIncomeMethods.reduce((s, [,d]) => s + d.total, 0) - vueltoMethods.reduce((s, [,d]) => s + d.total, 0);
+                const netUsd = usdIncomeMethods.reduce((s, [,d]) => s + d.total, 0) - vueltoUsdMethods.reduce((s, [,d]) => s + d.total, 0);
+                const totalPorCobrar = fiadoMethods.reduce((s, [,d]) => s + d.total, 0) + casheaMethods.reduce((s, [,d]) => s + d.total, 0);
+                const totalCop = copMethods.reduce((s, [,d]) => s + d.total, 0);
+                const toggleSection = (key) => setOpenPaySections(prev => ({ ...prev, [key]: !prev[key] }));
+
+                const renderSimpleMethod = ([method, data]) => {
+                    const label = data.label || toTitleCase(getPaymentLabel(method, data.label));
+                    const PayIcon = getPaymentIcon(method) || PAYMENT_ICONS[method];
+                    const isChange = data.isChange === true;
+                    let displayAmount = `${formatBs(data.total)} Bs`;
+                    if (data.currency === 'USD' || data.currency === 'FIADO') displayAmount = `$ ${data.total.toFixed(2)}`;
+                    else if (data.currency === 'COP') displayAmount = `${fmtCop(data.total)} COP`;
+                    return (
+                        <div key={method} className="flex justify-between items-center py-1.5">
+                            <span className={`text-xs font-medium flex items-center gap-1.5 ${isChange ? 'text-orange-500 dark:text-orange-400' : 'text-slate-600 dark:text-slate-300'}`}>
+                                {PayIcon && <PayIcon size={13} className={isChange ? 'text-orange-400' : 'text-slate-400'} />}
+                                {label}
+                            </span>
+                            <span className={`text-xs font-bold ${isChange ? 'text-orange-500 dark:text-orange-400' : 'text-slate-700 dark:text-white'}`}>
+                                {isChange ? '− ' : ''}{displayAmount}
+                            </span>
+                        </div>
+                    );
+                };
+
+                const AccordionSection = ({ sectionKey, color, label, netLabel, children }) => {
+                    const isOpen = openPaySections[sectionKey];
+                    const colors = {
+                        blue: { bg: 'bg-blue-50 dark:bg-blue-950/30', border: 'border-blue-200 dark:border-blue-800/40', text: 'text-blue-700 dark:text-blue-300', label: 'text-blue-500' },
+                        emerald: { bg: 'bg-emerald-50 dark:bg-emerald-950/30', border: 'border-emerald-200 dark:border-emerald-800/40', text: 'text-emerald-700 dark:text-emerald-300', label: 'text-emerald-500' },
+                        amber: { bg: 'bg-amber-50 dark:bg-amber-950/30', border: 'border-amber-200 dark:border-amber-800/40', text: 'text-amber-700 dark:text-amber-300', label: 'text-amber-500' },
+                    }[color];
+                    return (
+                        <div className={`rounded-xl border ${colors.border} overflow-hidden`}>
+                            <button onClick={() => toggleSection(sectionKey)} className={`w-full flex items-center justify-between px-3 py-2.5 ${colors.bg} transition-colors`}>
+                                <span className={`text-[10px] font-bold uppercase tracking-wider ${colors.label}`}>{label}</span>
+                                <div className="flex items-center gap-2">
+                                    <span className={`text-sm font-black ${colors.text}`}>{netLabel}</span>
+                                    {isOpen ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
+                                </div>
+                            </button>
+                            {isOpen && <div className="px-3 py-2 divide-y divide-slate-100 dark:divide-slate-800">{children}</div>}
+                        </div>
+                    );
+                };
+
                 return (
                 <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 shadow-sm">
                     <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-1">
-                        <DollarSign size={12} /> Desglose por Metodo de Pago
+                        <DollarSign size={12} /> Desglose por Método de Pago
                     </h3>
-                    
-                    {(fiadoMethods.length > 0 || casheaMethods.length > 0) && (
-                        <div className="mb-4">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Por Cobrar</span>
-                                <span className="text-xs font-black text-amber-600 dark:text-amber-400">
-                                    ${(fiadoMethods.reduce((s, [,d]) => s + d.total, 0) + casheaMethods.reduce((s, [,d]) => s + d.total, 0)).toFixed(2)}
-                                </span>
-                            </div>
-                            <div className="space-y-3 pl-1 border-l-2 border-amber-200 dark:border-amber-800/40">
-                                <div className="pl-3 space-y-3">{fiadoMethods.map(renderMethod)}</div>
-                                {casheaMethods.length > 0 && (
-                                    <div className="pl-3 space-y-3">
-                                        {casheaMethods.map(([method, data]) => {
-                                            const pct = totalBs > 0 ? (data.total * bcvRate / totalBs * 100) : 0;
-                                            return (
-                                                <div key={method}>
-                                                    <div className="flex justify-between text-sm mb-1">
-                                                        <span className="font-medium flex items-center gap-1.5 text-purple-600 dark:text-purple-400">
-                                                            <CasheaIcon size={14} /> Cashea (Por Cobrar)
-                                                        </span>
-                                                        <div className="text-right flex items-center gap-2">
-                                                            <div>
-                                                                <span className="font-bold text-purple-600 dark:text-purple-400">$ {data.total.toFixed(2)}</span>
-                                                                <div className="text-[10px] text-purple-400/70">{formatBs(data.total * bcvRate)} Bs</div>
-                                                            </div>
-                                                            <span className="text-[10px] font-black w-8 text-right text-slate-400">{pct.toFixed(0)}%</span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
 
-                    {bsMethods.length > 0 && (
-                        <div className="mb-3">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">Bolivares</span>
-                                <span className="text-xs font-black text-blue-600 dark:text-blue-400">
-                                    {formatBs(bsIncomeMethods.reduce((s, [,d]) => s + d.total, 0) - vueltoMethods.reduce((s, [,d]) => s + d.total, 0))} Bs neto
-                                </span>
+                    {/* Summary bar */}
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                        {bsMethods.length > 0 && (
+                            <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl px-3 py-2 text-center">
+                                <p className="text-[10px] font-bold text-blue-400 uppercase">Bs Neto</p>
+                                <p className="text-base font-black text-blue-700 dark:text-blue-300">{formatBs(netBs)}</p>
                             </div>
-                            <div className="space-y-3 pl-1 border-l-2 border-blue-200 dark:border-blue-800/40">
-                                <div className="pl-3 space-y-3">{bsIncomeMethods.map(renderMethod)}</div>
-                                {vueltoMethods.length > 0 && (
-                                    <div className="pl-3 space-y-3 pt-1 border-t border-orange-100 dark:border-orange-900/30">
-                                        {vueltoMethods.map(renderMethod)}
+                        )}
+                        {usdMethods.length > 0 && (
+                            <div className="bg-emerald-50 dark:bg-emerald-950/30 rounded-xl px-3 py-2 text-center">
+                                <p className="text-[10px] font-bold text-emerald-400 uppercase">$ Neto</p>
+                                <p className="text-base font-black text-emerald-700 dark:text-emerald-300">${netUsd.toFixed(2)}</p>
+                            </div>
+                        )}
+                        {(fiadoMethods.length > 0 || casheaMethods.length > 0) && (
+                            <div className="bg-amber-50 dark:bg-amber-950/30 rounded-xl px-3 py-2 text-center">
+                                <p className="text-[10px] font-bold text-amber-400 uppercase">Por Cobrar</p>
+                                <p className="text-base font-black text-amber-700 dark:text-amber-300">${totalPorCobrar.toFixed(2)}</p>
+                            </div>
+                        )}
+                        {copEnabled && copMethods.length > 0 && (
+                            <div className="bg-amber-50 dark:bg-amber-950/30 rounded-xl px-3 py-2 text-center">
+                                <p className="text-[10px] font-bold text-amber-400 uppercase">COP</p>
+                                <p className="text-base font-black text-amber-700 dark:text-amber-300">{fmtCop(totalCop)}</p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Accordion sections */}
+                    <div className="space-y-2">
+                        {bsMethods.length > 0 && (
+                            <AccordionSection sectionKey="bs" color="blue" label="Bolívares" netLabel={`${formatBs(netBs)} Bs`}>
+                                {bsIncomeMethods.map(renderSimpleMethod)}
+                                {vueltoMethods.length > 0 && vueltoMethods.map(renderSimpleMethod)}
+                            </AccordionSection>
+                        )}
+                        {usdMethods.length > 0 && (
+                            <AccordionSection sectionKey="usd" color="emerald" label="Dólares" netLabel={`$${netUsd.toFixed(2)}`}>
+                                {usdIncomeMethods.map(renderSimpleMethod)}
+                                {vueltoUsdMethods.length > 0 && vueltoUsdMethods.map(renderSimpleMethod)}
+                            </AccordionSection>
+                        )}
+                        {(fiadoMethods.length > 0 || casheaMethods.length > 0) && (
+                            <AccordionSection sectionKey="cobrar" color="amber" label="Por Cobrar" netLabel={`$${totalPorCobrar.toFixed(2)}`}>
+                                {fiadoMethods.map(renderSimpleMethod)}
+                                {casheaMethods.map(([method, data]) => (
+                                    <div key={method} className="flex justify-between items-center py-1.5">
+                                        <span className="text-xs font-medium flex items-center gap-1.5 text-purple-600 dark:text-purple-400">
+                                            <CasheaIcon size={13} /> Cashea
+                                        </span>
+                                        <span className="text-xs font-bold text-purple-600 dark:text-purple-400">$ {data.total.toFixed(2)}</span>
                                     </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
-                    {usdMethods.length > 0 && (
-                        <div className={copMethods.length > 0 ? 'mb-3' : ''}>
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">Dolares</span>
-                                <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">${(usdIncomeMethods.reduce((s, [,d]) => s + d.total, 0) - vueltoUsdMethods.reduce((s, [,d]) => s + d.total, 0)).toFixed(2)} neto</span>
-                            </div>
-                            <div className="space-y-3 pl-1 border-l-2 border-emerald-200 dark:border-emerald-800/40">
-                                <div className="pl-3 space-y-3">{usdIncomeMethods.map(renderMethod)}</div>
-                                {vueltoUsdMethods.length > 0 && (
-                                    <div className="pl-3 space-y-3 pt-1 border-t border-orange-100 dark:border-orange-900/30">
-                                        {vueltoUsdMethods.map(renderMethod)}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
-                    {copEnabled && copMethods.length > 0 && (
-                        <div>
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Pesos Colombianos</span>
-                                <span className="text-xs font-black text-amber-600 dark:text-amber-400">{fmtCop(copMethods.reduce((s, [,d]) => s + d.total, 0))} COP</span>
-                            </div>
-                            <div className="space-y-3 pl-1 border-l-2 border-amber-200 dark:border-amber-800/40">
-                                <div className="pl-3 space-y-3">{copMethods.map(renderMethod)}</div>
-                            </div>
-                        </div>
-                    )}
+                                ))}
+                            </AccordionSection>
+                        )}
+                        {copEnabled && copMethods.length > 0 && (
+                            <AccordionSection sectionKey="cop" color="amber" label="Pesos Colombianos" netLabel={`${fmtCop(totalCop)} COP`}>
+                                {copMethods.map(renderSimpleMethod)}
+                            </AccordionSection>
+                        )}
+                    </div>
                 </div>
                 );
             })()}

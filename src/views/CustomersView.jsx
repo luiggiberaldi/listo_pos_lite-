@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, Plus, Search, User, X, Trash2, Pencil, Phone, RefreshCw, Save, ArrowDownRight, ArrowUpRight, Clock, CheckCircle2, CreditCard, ShoppingBag, Truck, Check } from 'lucide-react';
+import { Users, Plus, Search, User, X, Trash2, Pencil, Phone, RefreshCw, Save, ArrowDownRight, ArrowUpRight, Clock, CheckCircle2, CreditCard, ShoppingBag, Truck, Check, ArrowRightLeft } from 'lucide-react';
 import CasheaIcon from '../components/CasheaIcon';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
@@ -247,6 +247,34 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         showToast(`Saldo reiniciado a cero para ${customer.name}`, 'success');
         auditLog('CLIENTE', 'DEUDA_CONDONADA', `Saldo reiniciado a $0 para ${customer.name}`);
         setResetBalanceCustomer(null);
+    };
+
+    const convertDeudaToCashea = async (customer) => {
+        if (!customer || customer.deuda <= 0) return;
+        const amount = round2(customer.deuda);
+        const updatedCustomer = {
+            ...customer,
+            deuda: 0,
+            casheaDeuda: round2((customer.casheaDeuda || 0) + amount)
+        };
+        const newCustomers = customers.map(c => c.id === customer.id ? updatedCustomer : c);
+        await saveCustomers(newCustomers);
+        setSelectedCustomer(updatedCustomer);
+        showToast(`$${formatUsd(amount)} convertido de Fiado a Cashea para ${customer.name}`, 'success');
+        auditLog('CLIENTE', 'DEUDA_A_CASHEA', `Deuda $${formatUsd(amount)} convertida a Cashea para ${customer.name}`);
+        triggerHaptic && triggerHaptic();
+    };
+
+    const clearCasheaDeuda = async (customer) => {
+        if (!customer || (customer.casheaDeuda || 0) <= 0) return;
+        const amount = round2(customer.casheaDeuda);
+        const updatedCustomer = { ...customer, casheaDeuda: 0 };
+        const newCustomers = customers.map(c => c.id === customer.id ? updatedCustomer : c);
+        await saveCustomers(newCustomers);
+        setSelectedCustomer(updatedCustomer);
+        showToast(`Deuda Cashea de $${formatUsd(amount)} saldada para ${customer.name}`, 'success');
+        auditLog('CLIENTE', 'CASHEA_SALDADA', `Deuda Cashea $${formatUsd(amount)} puesta en 0 para ${customer.name}`);
+        triggerHaptic && triggerHaptic();
     };
 
     const handleTransaction = async () => {
@@ -560,6 +588,12 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                 tasaCop={tasaCop}
                 copEnabled={copEnabled}
                 sales={historyData}
+                onConvertToCashea={() => {
+                    convertDeudaToCashea(selectedCustomer);
+                }}
+                onClearCashea={() => {
+                    clearCasheaDeuda(selectedCustomer);
+                }}
             />
 
             {/* Modal Confirmación: Reiniciar Saldo */}
@@ -682,7 +716,7 @@ function CustomerCard({ customer, bcvRate, tasaCop, copEnabled, onClick, onDelet
 }
 
 // ─── Sub-componente: Bottom Sheet de Detalle ────────────────
-function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, onReset, onEdit, onDelete, bcvRate, tasaCop, copEnabled, sales }) {
+function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, onReset, onEdit, onDelete, bcvRate, tasaCop, copEnabled, sales, onConvertToCashea, onClearCashea }) {
     if (!isOpen || !customer) return null;
 
     const createdDate = customer.createdAt
@@ -745,11 +779,18 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                         )}
                         <div className="flex gap-2">
                             {customer.deuda > 0 && (
-                                <div className="flex-1 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 rounded-xl px-3 py-2.5 text-center">
+                                <div className="flex-1 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 rounded-xl px-3 py-2.5 text-center relative">
                                     <p className="text-[10px] font-bold text-red-400 uppercase">Fiado</p>
                                     <p className="text-lg font-black text-red-500">-${formatUsd(customer.deuda)}</p>
                                     {bcvRate > 0 && <p className="text-[10px] font-bold text-red-400/70">-{formatBs(customer.deuda * bcvRate)} Bs</p>}
                                     {copEnabled && tasaCop > 0 && <p className="text-[10px] font-bold text-red-500/90">-{(customer.deuda * tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COP</p>}
+                                    <button
+                                        onClick={onConvertToCashea}
+                                        className="mt-1.5 inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 text-[10px] font-bold hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors active:scale-95"
+                                        title="Convertir deuda fiado a Cashea"
+                                    >
+                                        <ArrowRightLeft size={10} /> Pasar a Cashea
+                                    </button>
                                 </div>
                             )}
                             {customer.casheaDeuda > 0 && (
@@ -757,6 +798,10 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                                     <p className="text-[10px] font-bold text-purple-400 uppercase flex items-center gap-1 justify-center"><CasheaIcon size={10} /> Cashea</p>
                                     <p className="text-lg font-black text-purple-500">-${formatUsd(customer.casheaDeuda)}</p>
                                     {bcvRate > 0 && <p className="text-[10px] font-bold text-purple-400/70">-{formatBs(customer.casheaDeuda * bcvRate)} Bs</p>}
+                                    <button onClick={onClearCashea}
+                                        className="mt-1.5 inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 text-[10px] font-bold hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors active:scale-95">
+                                        <CheckCircle2 size={10} /> Saldar Cashea
+                                    </button>
                                 </div>
                             )}
                             {!customer.deuda && !customer.casheaDeuda && customer.favor > 0 && (
