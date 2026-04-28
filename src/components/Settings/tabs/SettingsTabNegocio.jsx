@@ -1,5 +1,5 @@
 import React from 'react';
-import { Store, Printer, Coins, Check } from 'lucide-react';
+import { Store, Printer, Coins, Check, FileText } from 'lucide-react';
 import { SectionCard, Toggle } from '../../SettingsShared';
 import PrinterSerialSection from '../PrinterSerialSection';
 
@@ -7,6 +7,7 @@ export default function SettingsTabNegocio({
     businessName, setBusinessName,
     businessRif, setBusinessRif,
     paperWidth, setPaperWidth,
+    printerMode, setPrinterMode,
     copEnabled, setCopEnabled,
     autoCopEnabled, setAutoCopEnabled,
     tasaCopManual, setTasaCopManual,
@@ -50,22 +51,61 @@ export default function SettingsTabNegocio({
             </SectionCard>
 
             {/* Impresora */}
-            <SectionCard icon={Printer} title="Impresora" subtitle="Configuracion de papel termico" iconColor="text-violet-500">
-                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1.5">Ancho de Papel</label>
-                <div className="grid grid-cols-2 gap-2">
-                    {[{ val: '58', label: '58 mm (Pequena)' }, { val: '80', label: '80 mm (Estandar)' }].map(opt => (
+            <SectionCard icon={Printer} title="Impresora" subtitle="Tipo de impresion y papel" iconColor="text-violet-500">
+                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1.5">Modo de Impresion</label>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                    {[
+                        { val: 'thermal', label: 'Termica', desc: 'Papel rollo 58/80mm' },
+                        { val: 'inkjet_carta', label: 'Tinta Carta', desc: 'Hoja carta normal' },
+                    ].map(opt => (
                         <button
                             key={opt.val}
-                            onClick={() => { setPaperWidth(opt.val); localStorage.setItem('printer_paper_width', opt.val); triggerHaptic?.(); }}
-                            className={`py-2.5 px-3 text-xs font-bold rounded-xl transition-all border ${paperWidth === opt.val
+                            onClick={() => {
+                                setPrinterMode(opt.val);
+                                localStorage.setItem('printer_mode', opt.val);
+                                triggerHaptic?.();
+                            }}
+                            className={`py-2.5 px-3 text-xs font-bold rounded-xl transition-all border ${printerMode === opt.val
                                 ? 'bg-violet-50 dark:bg-violet-900/20 border-violet-400 text-violet-700 dark:text-violet-300 shadow-sm'
                                 : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
                             }`}
                         >
-                            {opt.label}
+                            <div>{opt.label}</div>
+                            <div className={`text-[9px] font-medium mt-0.5 ${printerMode === opt.val ? 'text-violet-500/70' : 'text-slate-400'}`}>{opt.desc}</div>
                         </button>
                     ))}
                 </div>
+
+                {printerMode === 'thermal' && (
+                    <>
+                        <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1.5">Ancho de Papel</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            {[{ val: '58', label: '58 mm (Pequena)' }, { val: '80', label: '80 mm (Estandar)' }].map(opt => (
+                                <button
+                                    key={opt.val}
+                                    onClick={() => { setPaperWidth(opt.val); localStorage.setItem('printer_paper_width', opt.val); triggerHaptic?.(); }}
+                                    className={`py-2.5 px-3 text-xs font-bold rounded-xl transition-all border ${paperWidth === opt.val
+                                        ? 'bg-violet-50 dark:bg-violet-900/20 border-violet-400 text-violet-700 dark:text-violet-300 shadow-sm'
+                                        : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                    }`}
+                                >
+                                    {opt.label}
+                                </button>
+                            ))}
+                        </div>
+                    </>
+                )}
+
+                {printerMode === 'inkjet_carta' && (
+                    <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 rounded-xl p-3">
+                        <div className="flex items-start gap-2">
+                            <FileText size={14} className="text-blue-500 mt-0.5 shrink-0" />
+                            <p className="text-[10px] text-blue-600 dark:text-blue-400 leading-relaxed">
+                                Los tickets se imprimiran en formato carta (216 x 279 mm) optimizado para impresoras de tinta convencionales. El diseno se adapta automaticamente.
+                            </p>
+                        </div>
+                    </div>
+                )}
             </SectionCard>
 
             {/* Impresora USB & Cajón (Web Serial API) */}

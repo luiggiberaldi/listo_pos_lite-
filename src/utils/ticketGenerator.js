@@ -4,19 +4,51 @@ import { formatBs, formatUsd } from './calculatorUtils';
  * Genera el HTML del ticket térmico (fuente única de verdad para print y PDF).
  */
 function _buildThermalHTML(sale, bcvRate, forCapture = false) {
+    const printerMode = localStorage.getItem('printer_mode') || 'thermal';
+    const isCarta = printerMode === 'inkjet_carta';
     const paperWidth = localStorage.getItem('printer_paper_width') || '58';
     const is80 = paperWidth === '80';
 
-    const cssPageSize = is80 ? '80mm auto' : '58mm auto';
-    const cssBodyWidth = is80 ? '76mm' : '48mm';
-    const cssLogoW = is80 ? '60mm' : '44mm';
-    const fDisclaimer = is80 ? '9px' : '7.5px';
-    const fTiny = is80 ? '11px' : '9px';
-    const fSmall = is80 ? '12px' : '10px';
-    const fBase = is80 ? '14px' : '11px';
-    const fTitle = is80 ? '18px' : '14px';
-    const fTotalU = is80 ? '32px' : '24px';
-    const fTotalB = is80 ? '18px' : '14px';
+    // Dimensions & font sizes
+    let cssPageSize, cssBodyWidth, cssLogoW, fDisclaimer, fTiny, fSmall, fBase, fTitle, fTotalU, fTotalB, maxItemLen;
+
+    if (isCarta) {
+        cssPageSize = '216mm 279mm';
+        cssBodyWidth = '190mm';
+        cssLogoW = '60mm';
+        fDisclaimer = '11px';
+        fTiny = '13px';
+        fSmall = '14px';
+        fBase = '15px';
+        fTitle = '22px';
+        fTotalU = '36px';
+        fTotalB = '20px';
+        maxItemLen = 50;
+    } else if (is80) {
+        cssPageSize = '80mm auto';
+        cssBodyWidth = '76mm';
+        cssLogoW = '60mm';
+        fDisclaimer = '9px';
+        fTiny = '11px';
+        fSmall = '12px';
+        fBase = '14px';
+        fTitle = '18px';
+        fTotalU = '32px';
+        fTotalB = '18px';
+        maxItemLen = 32;
+    } else {
+        cssPageSize = '58mm auto';
+        cssBodyWidth = '48mm';
+        cssLogoW = '44mm';
+        fDisclaimer = '7.5px';
+        fTiny = '9px';
+        fSmall = '10px';
+        fBase = '11px';
+        fTitle = '14px';
+        fTotalU = '24px';
+        fTotalB = '14px';
+        maxItemLen = 22;
+    }
 
     const settings = {
         name: localStorage.getItem('business_name') || '',
@@ -40,7 +72,7 @@ function _buildThermalHTML(sale, bcvRate, forCapture = false) {
         const unit = item.isWeight ? 'Kg' : 'u';
         const sub = item.priceUsd * item.qty;
         const subBs = sub * rate;
-        const maxLen = is80 ? 32 : 22;
+        const maxLen = maxItemLen;
         const name = item.name.length > maxLen ? item.name.substring(0, maxLen) + '...' : item.name;
         return `
             <tr>
@@ -94,20 +126,26 @@ function _buildThermalHTML(sale, bcvRate, forCapture = false) {
             </tr>` : ''}</table>
         </div>` : '';
 
+    const fontFamily = isCarta
+        ? "'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+        : "'Courier New', 'Lucida Console', monospace";
+    const bodyPadding = isCarta ? '12mm 13mm' : '4mm 2mm';
+    const dashMargin = isCarta ? '12px 0' : (is80 ? '8px 0' : '6px 0');
+
     return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
 <title>Ticket #${saleNum}</title>
 <style>
-    @page { size: ${cssPageSize}; margin: 0; }
+    @page { size: ${cssPageSize}; margin: ${isCarta ? '0' : '0'}; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-        font-family: 'Courier New', 'Lucida Console', monospace;
+        font-family: ${fontFamily};
         width: ${cssBodyWidth};
         max-width: ${cssBodyWidth};
         margin: 0 auto;
-        padding: 4mm 2mm;
+        padding: ${bodyPadding};
         color: #000;
         background: #fff;
         -webkit-print-color-adjust: exact;
@@ -115,10 +153,14 @@ function _buildThermalHTML(sale, bcvRate, forCapture = false) {
     }
     .center { text-align: center; }
     .bold { font-weight: bold; }
-    .dash { border: none; border-top: 1px dashed #555; margin: ${is80 ? '8px 0' : '6px 0'}; }
-    .total-usd { font-size: ${fTotalU}; font-weight: 900; color: #107c41; text-align: center; margin: 4px 0; }
-    .total-bs { font-size: ${fTotalB}; font-weight: bold; text-align: center; margin-bottom: 4px; }
+    .dash { border: none; border-top: 1px ${isCarta ? 'solid #ccc' : 'dashed #555'}; margin: ${dashMargin}; }
+    .total-usd { font-size: ${fTotalU}; font-weight: 900; color: #107c41; text-align: center; margin: ${isCarta ? '8px 0' : '4px 0'}; }
+    .total-bs { font-size: ${fTotalB}; font-weight: bold; text-align: center; margin-bottom: ${isCarta ? '8px' : '4px'}; }
     table { width: 100%; border-collapse: collapse; }
+    ${isCarta ? `
+    .items-table td { padding: 4px 0; }
+    .items-table tr:nth-child(odd) td { background: #f8f9fa; }
+    ` : ''}
     @media print { body { width: ${cssBodyWidth}; max-width: ${cssBodyWidth}; } }
     ${!forCapture ? `@media screen { body { border: 1px solid #ccc; margin-top: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); } }` : ''}
 </style>
@@ -153,7 +195,7 @@ function _buildThermalHTML(sale, bcvRate, forCapture = false) {
             <td style="text-align:right;">IMPORTE</td>
         </tr>
     </table>
-    <table>${itemsHtml}</table>
+    <table class="${isCarta ? 'items-table' : ''}">${itemsHtml}</table>
     <hr class="dash">
     <div class="center" style="font-size:${fTiny};color:#555;margin:4px 0;">
         <div style="margin-bottom:2px;">Tasa BCV: Bs ${formatBs(rate)} por $1</div>
@@ -174,7 +216,7 @@ function _buildThermalHTML(sale, bcvRate, forCapture = false) {
         <div class="center bold" style="font-size:${fSmall};color:#555;margin-bottom:4px;">TOTAL A PAGAR</div>
         <div class="total-usd">$${parseFloat(sale.totalUsd || 0).toFixed(2)}</div>
         <div class="total-bs" style="margin-bottom:${sale.copEnabled && sale.tasaCop > 0 ? '2px' : '4px'}">Bs ${formatBs(sale.totalBs || 0)}</div>
-        ${sale.copEnabled && sale.tasaCop > 0 ? `<div class="total-bs" style="font-size:${is80 ? '16px' : '13px'};">COP ${(sale.totalCop || (sale.totalUsd * sale.tasaCop)).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>` : ''}
+        ${sale.copEnabled && sale.tasaCop > 0 ? `<div class="total-bs" style="font-size:${isCarta ? '18px' : is80 ? '16px' : '13px'};">COP ${(sale.totalCop || (sale.totalUsd * sale.tasaCop)).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>` : ''}
     </div>
     <hr class="dash">
     ${(sale.payments && sale.payments.length > 0) || hasFiado || changeUsd > 0 || changeBs > 0 ? `
@@ -200,10 +242,11 @@ export async function generateTicketPDF(sale, bcvRate) {
     const saleNum = String(sale.saleNumber || 0).padStart(7, '0');
     const filename = 'ticket_' + saleNum + '.pdf';
     const html = _buildThermalHTML(sale, bcvRate, true);
+    const isCarta = (localStorage.getItem('printer_mode') || 'thermal') === 'inkjet_carta';
 
     // Renderizar en iframe oculto
     const iframe = document.createElement('iframe');
-    iframe.style.cssText = 'position:fixed;left:-9999px;top:0;width:300px;border:none;visibility:hidden;';
+    iframe.style.cssText = `position:fixed;left:-9999px;top:0;width:${isCarta ? '800px' : '300px'};border:none;visibility:hidden;`;
     document.body.appendChild(iframe);
     iframe.contentDocument.open();
     iframe.contentDocument.write(html);
@@ -225,11 +268,17 @@ export async function generateTicketPDF(sale, bcvRate) {
         document.body.removeChild(iframe);
 
         const imgData = canvas.toDataURL('image/png');
-        const paperMm = parseFloat(localStorage.getItem('printer_paper_width') || '58');
-        const pxPerMm = canvas.width / (body.offsetWidth || 220);
-        const pdfH = (canvas.height / pxPerMm) * (paperMm / (body.offsetWidth || 220)) * (96 / 25.4);
-        const pdfW = paperMm;
-        const heightMm = canvas.height / canvas.width * pdfW;
+
+        let pdfW, heightMm;
+        if (isCarta) {
+            // Letter size: 216 x 279 mm
+            pdfW = 216;
+            heightMm = 279;
+        } else {
+            const paperMm = parseFloat(localStorage.getItem('printer_paper_width') || '58');
+            pdfW = paperMm;
+            heightMm = canvas.height / canvas.width * pdfW;
+        }
 
         const { jsPDF } = await import('jspdf');
         const doc = new jsPDF({ unit: 'mm', format: [pdfW, heightMm], orientation: 'portrait' });
@@ -257,13 +306,16 @@ export async function generateTicketPDF(sale, bcvRate) {
 export function printThermalTicket(sale, bcvRate) {
     const saleNum = String(sale.saleNumber || 0).padStart(7, '0');
     const html = _buildThermalHTML(sale, bcvRate, false);
+    const isCarta = (localStorage.getItem('printer_mode') || 'thermal') === 'inkjet_carta';
 
     // Abrir ventana de impresion
-    const printWindow = window.open('', '_blank', 'width=350,height=600');
+    const winW = isCarta ? 800 : 350;
+    const winH = isCarta ? 900 : 600;
+    const printWindow = window.open('', '_blank', `width=${winW},height=${winH}`);
     if (!printWindow) {
         // Fallback: iframe oculto
         const iframe = document.createElement('iframe');
-        iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:80mm;height:auto;';
+        iframe.style.cssText = `position:fixed;top:-9999px;left:-9999px;width:${isCarta ? '216mm' : '80mm'};height:auto;`;
         document.body.appendChild(iframe);
         iframe.contentDocument.open();
         iframe.contentDocument.write(html);

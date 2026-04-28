@@ -124,7 +124,8 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                 <div className="p-4 sm:p-5 bg-white flex gap-2.5 relative z-20 shrink-0 border-t border-slate-100">
                     {/* Imprimir */}
                     <button onClick={async () => {
-                        if (PrinterSerial.isConnected()) {
+                        const isCarta = (localStorage.getItem('printer_mode') || 'thermal') === 'inkjet_carta';
+                        if (!isCarta && PrinterSerial.isConnected()) {
                             await PrinterSerial.printTicket(receipt, currentRate || receipt.rate);
                         } else {
                             printThermalTicket(receipt, currentRate || receipt.rate);
