@@ -108,8 +108,7 @@ export default function SettingsTabNegocio({
                 )}
             </SectionCard>
 
-            {/* Impresora USB & Cajón (Web Serial API) */}
-            <PrinterSerialSection showToast={showToast} triggerHaptic={triggerHaptic} />
+            {/* Impresora USB & Cajón — oculta */}
 
             {/* Monedas COP */}
             <SectionCard icon={Coins} title="Peso Colombiano (COP)" subtitle="Habilitar pagos y calculos en COP" iconColor="text-amber-500">
