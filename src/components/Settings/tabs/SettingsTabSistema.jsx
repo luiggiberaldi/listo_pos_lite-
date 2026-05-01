@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     Database, Palette, Fingerprint, Upload, Download, Share2,
-    Check, Sun, Moon, ChevronRight, RotateCcw, AlertTriangle, FileText
+    Check, Sun, Moon, ChevronRight, RotateCcw, AlertTriangle, FileText, ZoomIn, ZoomOut, Monitor
 } from 'lucide-react';
 import { SectionCard, Toggle } from '../../SettingsShared';
 import AuditLogViewer from '../AuditLogViewer';
@@ -16,6 +16,21 @@ export default function SettingsTabSistema({
     setShowFactoryReset,
     triggerHaptic,
 }) {
+    const [screenScale, setScreenScale] = useState(() => {
+        return parseInt(localStorage.getItem('app_screen_scale') || '100');
+    });
+
+    const applyScale = (newScale) => {
+        const clamped = Math.max(70, Math.min(130, newScale));
+        setScreenScale(clamped);
+        localStorage.setItem('app_screen_scale', clamped.toString());
+        document.documentElement.style.zoom = `${clamped}%`;
+        triggerHaptic?.();
+    };
+
+    const resetScale = () => {
+        applyScale(100);
+    };
     return (
         <>
             {/* Datos y Respaldo */}
@@ -79,6 +94,53 @@ export default function SettingsTabSistema({
                         color="indigo"
                         onChange={() => { toggleTheme(); triggerHaptic?.(); }}
                     />
+                </div>
+
+                {/* Screen Scale */}
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-3 mb-3">
+                        <Monitor size={18} className="text-violet-500" />
+                        <div>
+                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Escala de Pantalla</p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">Ajusta el tamaño de la interfaz</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => applyScale(screenScale - 5)}
+                            disabled={screenScale <= 70}
+                            className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            <ZoomOut size={18} />
+                        </button>
+                        <div className="flex-1 text-center">
+                            <p className="text-lg font-black text-slate-800 dark:text-white">{screenScale}%</p>
+                            <input
+                                type="range"
+                                min="70"
+                                max="130"
+                                step="5"
+                                value={screenScale}
+                                onChange={e => applyScale(parseInt(e.target.value))}
+                                className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full appearance-none cursor-pointer accent-violet-500 mt-1"
+                            />
+                        </div>
+                        <button
+                            onClick={() => applyScale(screenScale + 5)}
+                            disabled={screenScale >= 130}
+                            className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            <ZoomIn size={18} />
+                        </button>
+                    </div>
+                    {screenScale !== 100 && (
+                        <button
+                            onClick={resetScale}
+                            className="mt-2 w-full py-2 text-xs font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50 rounded-xl hover:bg-violet-100 dark:hover:bg-violet-900/30 transition-colors active:scale-[0.98]"
+                        >
+                            Restaurar a 100%
+                        </button>
+                    )}
                 </div>
             </SectionCard>
 

@@ -41,6 +41,14 @@ export default function App() {
   // Inicializar Sincronización Realtime con Supabase
   useCloudSync();
 
+  // Apply saved screen scale on mount
+  useEffect(() => {
+    const scale = localStorage.getItem('app_screen_scale');
+    if (scale && scale !== '100') {
+      document.documentElement.style.zoom = `${scale}%`;
+    }
+  }, []);
+
   // Detectar iOS Safari (no standalone) para mostrar instrucciones manuales
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;

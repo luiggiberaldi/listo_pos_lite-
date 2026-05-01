@@ -93,11 +93,11 @@ export default function CierreCajaWizard({
     return (
         <div className="fixed inset-0 z-[200] bg-slate-950/90 backdrop-blur-md flex items-end sm:items-center justify-center animate-in fade-in duration-200" onClick={handleClose}>
             <div
-                className="bg-white dark:bg-slate-900 w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl max-h-[92vh] flex flex-col shadow-2xl border-t border-slate-200 dark:border-slate-700 animate-in slide-in-from-bottom duration-300"
+                className="bg-white dark:bg-slate-900 w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl max-h-[85vh] sm:max-h-[88vh] flex flex-col shadow-2xl border-t border-slate-200 dark:border-slate-700 animate-in slide-in-from-bottom duration-300"
                 onClick={e => e.stopPropagation()}
             >
                 {/* Progress Bar */}
-                <div className="px-6 pt-5 pb-3">
+                <div className="shrink-0 px-4 sm:px-6 pt-3 sm:pt-5 pb-2 sm:pb-3">
                     <div className="flex items-center justify-between mb-4">
                         <div>
                             <h2 className="text-lg font-black text-slate-800 dark:text-white">Cierre de Caja</h2>
@@ -141,7 +141,7 @@ export default function CierreCajaWizard({
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto px-6 pb-6 scrollbar-hide">
+                <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 pb-4 sm:pb-6 scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
 
                     {/* ═══ STEP 1: Resumen del Dia (solo admin) ═══ */}
                     {step === 1 && !blindClose && (
