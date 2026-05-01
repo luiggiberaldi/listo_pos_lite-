@@ -47,7 +47,7 @@ export default function CartPanel({
         <div className="md:flex-1 md:min-h-0 flex flex-col bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
 
             {/* Header */}
-            <div className="shrink-0 px-4 pb-2 pt-3 sm:py-3 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950/50 rounded-t-2xl sm:rounded-t-3xl">
+            <div className="shrink-0 px-4 pb-2 pt-3 sm:py-3 lg:py-2 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950/50 rounded-t-2xl sm:rounded-t-3xl">
                 <span className="text-[10px] sm:text-xs font-black text-slate-400 uppercase tracking-wider">Cesta de Compra</span>
                 <div className="flex items-center gap-3">
                     {cart.length > 0 && (
@@ -143,7 +143,7 @@ export default function CartPanel({
             </div>
 
             {/* Footer — shrink-0, always visible at bottom of flex container */}
-            <div className="shrink-0 p-3 sm:p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-b-2xl sm:rounded-b-3xl space-y-2 sm:space-y-3">
+            <div className="shrink-0 p-3 sm:p-4 lg:p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-b-2xl sm:rounded-b-3xl space-y-2 sm:space-y-3 lg:space-y-1.5">
                 
                 {/* Botón de Descuento */}
                 <button
@@ -183,7 +183,7 @@ export default function CartPanel({
                             <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-500 tracking-widest uppercase sm:hidden">Total (Ref)</span>
                             <span className="text-[11px] font-bold text-slate-500 sm:hidden">{formatBs(cartTotalBs)} Bs</span>
                         </div>
-                        <p className={`text-2xl sm:text-3xl font-black leading-none tracking-tight transition-colors ${discountData?.active ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-800 dark:text-white'}`}>
+                        <p className={`text-2xl sm:text-3xl lg:text-2xl font-black leading-none tracking-tight transition-colors ${discountData?.active ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-800 dark:text-white'}`}>
                             ${cartTotalUsd.toFixed(2)}
                         </p>
                     </div>
@@ -206,7 +206,7 @@ export default function CartPanel({
                     onClick={onCheckout}
                     className="w-full relative group disabled:opacity-50 disabled:cursor-not-allowed">
                     <div className="absolute inset-0 bg-emerald-500 rounded-xl sm:rounded-2xl shadow-emerald-500/30 shadow-lg blur-[2px] opacity-70 group-active:opacity-100 group-hover:blur-[4px] transition-all"></div>
-                    <div className="relative w-full py-3 sm:py-4 bg-emerald-500 text-white font-black text-sm sm:text-lg rounded-xl sm:rounded-2xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 tracking-wide">
+                    <div className="relative w-full py-3 sm:py-4 lg:py-3 bg-emerald-500 text-white font-black text-sm sm:text-lg lg:text-base rounded-xl sm:rounded-2xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 tracking-wide">
                         <CheckCircle size={18} className="sm:w-[22px] sm:h-[22px] opacity-80" />
                         PROCESAR COBRO
                     </div>
