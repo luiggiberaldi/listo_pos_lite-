@@ -24,8 +24,8 @@ export default function SalesHeader({
     };
 
     return (
-        <div className="shrink-0 mb-3 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-sm border border-slate-100 dark:border-slate-800">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-3">
+        <div className="shrink-0 mb-2 lg:mb-1.5 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 lg:p-3 shadow-sm border border-slate-100 dark:border-slate-800">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-2 lg:mb-1">
                 <div className="flex justify-between items-center">
                     <h2 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-white tracking-tight flex items-center gap-2">
                         <div className="bg-emerald-500 text-white p-1.5 sm:p-2 rounded-xl shadow-lg shadow-emerald-500/30">

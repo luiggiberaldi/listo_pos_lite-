@@ -476,7 +476,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             )}
 
             {/* ── HEADER ── */}
-            <div className="flex items-center justify-between px-3 sm:px-5 pt-3 sm:pt-4 pb-2 sm:pb-4 transition-all z-10 relative min-h-[85px] sm:min-h-[120px]">
+            <div className="flex items-center justify-between px-3 sm:px-5 pt-2 sm:pt-3 lg:pt-2 pb-1 sm:pb-3 lg:pb-1 transition-all z-10 relative min-h-[70px] sm:min-h-[100px] lg:min-h-[70px]">
                 
                 {/* ====== LATERAL IZQUIERDO: Píldoras (PC/Móvil) ====== */}
                 <div className="flex items-center justify-start gap-2 sm:gap-3 z-20">
@@ -502,7 +502,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
 
                 {/* ====== LOGO CENTRADO ====== */}
                 <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 flex items-center pointer-events-none z-0">
-                    <img src="/logo.png" alt="Listo POS Lite" style={{ height: '65px' }} className="sm:h-[99px] w-auto object-contain select-none drop-shadow-sm pointer-events-auto transition-transform hover:scale-105 duration-200" draggable={false} />
+                    <img src="/logo.png" alt="Listo POS Lite" style={{ height: '65px' }} className="sm:h-[99px] lg:h-[65px] w-auto object-contain select-none drop-shadow-sm pointer-events-auto transition-transform hover:scale-105 duration-200" draggable={false} />
                 </div>
 
                 {/* ====== LATERAL DERECHO: Notificaciones + Botones de Salir ====== */}
@@ -570,7 +570,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             </div>
 
             {/* ── SCROLL CONTENT ── */}
-            <div className="flex flex-col gap-3 px-4 sm:px-6 pt-2 pb-28">
+            <div className="flex flex-col gap-3 px-4 sm:px-6 pt-2 pb-20 lg:pb-14">
 
             {/* Demo Banner */}
             {isDemo && demoTimeLeft && (
@@ -596,8 +596,8 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             <div className="relative rounded-[1.5rem] overflow-hidden" style={{ background: 'linear-gradient(135deg, #0EA5E9 0%, #06B6D4 50%, #5EEAD4 100%)' }}>
                 <div className="absolute -right-10 -top-10 w-48 h-48 rounded-full bg-white/10" />
                 <div className="absolute -left-8 -bottom-8 w-36 h-36 rounded-full bg-white/5" />
-                <div className="relative z-10 p-5">
-                    <div className="flex items-start justify-between mb-4">
+                <div className="relative z-10 p-5 lg:p-4">
+                    <div className="flex items-start justify-between mb-3 lg:mb-2">
                         <span className="text-white/70 text-[10px] font-bold uppercase tracking-widest">Ingresos del día</span>
                         <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 text-white px-2.5 py-1 rounded-full backdrop-blur-sm">
                             {(() => { const d = new Date(); const days = ['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB']; const months = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC']; return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}`; })()}

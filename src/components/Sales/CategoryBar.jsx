@@ -66,7 +66,7 @@ export default function CategoryBar({
             {/* Product Grid */}
             {searchTerm.length === 0 && (
                 <div className="flex-1 overflow-y-auto min-h-0 pb-2">
-                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
                         {visibleProducts.map(p => {
                             const isOut = (p.stock ?? 0) <= 0;
                             const isDisabled = isOut && !allowNegativeStock;

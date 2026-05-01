@@ -727,7 +727,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
 
     // ── Render ─────────────────────────────────────
     return (
-        <div className="flex-1 min-h-0 flex flex-col dark:bg-slate-950 p-2 sm:p-4 sm:pb-4 overflow-hidden relative">
+        <div className="flex-1 min-h-0 flex flex-col dark:bg-slate-950 p-2 sm:p-4 lg:p-3 sm:pb-4 lg:pb-2 overflow-hidden relative">
 
             {/* Header + Rate Config */}
             <SalesHeader
@@ -752,8 +752,8 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
             ) : (
                 <>
                     {/* ── APERTURA DE CAJA BANNER ── */}
-                    <div className="shrink-0 mb-3">
-                        <div className="w-full bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/30 rounded-2xl sm:rounded-3xl p-3 sm:p-4 flex items-center justify-between">
+                    <div className="shrink-0 mb-2 lg:mb-1">
+                        <div className="w-full bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/30 rounded-2xl sm:rounded-3xl p-3 sm:p-4 lg:p-2.5 flex items-center justify-between">
                             <div className="flex items-center gap-3">
                                 <div className="w-9 h-9 sm:w-10 sm:h-10 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center">
                                     <CheckCircle2 size={18} className="text-emerald-500" />
@@ -772,7 +772,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                         {/* ── Left Column: Search + Categories ── */}
                         <div className="flex-1 min-h-0 flex flex-col md:min-w-0 overflow-y-auto md:overflow-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
                             {/* Search + Popups */}
-                            <div className="shrink-0 mb-3 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-sm border border-slate-100 dark:border-slate-800">
+                            <div className="shrink-0 mb-2 lg:mb-1.5 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 lg:p-3 shadow-sm border border-slate-100 dark:border-slate-800">
                                 <SearchBar
                                     ref={searchInputRef}
                                     searchTerm={searchTerm}
@@ -805,7 +805,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                 </div>
 
                 {/* ── Right Column: Cart Sidebar — tablet+ ── */}
-                <div className="hidden md:flex md:w-[300px] md:shrink-0 md:flex-col lg:w-[380px]">
+                <div className="hidden md:flex md:w-[300px] md:shrink-0 md:flex-col lg:w-[340px] xl:w-[380px]">
                     <CartPanel
                         cart={cart} effectiveRate={effectiveRate}
                         cartSubtotalUsd={cartSubtotalUsd} cartSubtotalBs={cartSubtotalBs}

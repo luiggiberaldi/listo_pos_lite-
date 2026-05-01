@@ -152,7 +152,7 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
     }
 
     return (
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 space-y-4 md:space-y-5 pb-32">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-5 space-y-4 md:space-y-4 pb-20 lg:pb-14">
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <h2 className="text-xl md:text-2xl font-black text-slate-800 dark:text-white flex items-center gap-2">

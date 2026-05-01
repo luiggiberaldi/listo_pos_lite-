@@ -462,7 +462,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     // ─── RENDER ─────────────────────────────────────────────
 
     return (
-        <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-950 p-3 sm:p-6 overflow-y-auto">
+        <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-950 p-3 sm:p-4 lg:p-4 overflow-y-auto">
 
             {/* Header — Fila 1: Título + Acciones */}
             <div className="shrink-0 mb-3 space-y-2">
@@ -595,7 +595,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
             {/* Product Grid */}
             {isLoadingProducts ? (
                 <div className="flex-1 overflow-y-auto pb-4 scrollbar-hide">
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2 sm:gap-3">
                         {[1,2,3,4,5,6,7,8,9,10].map(i => (
                             <div key={i} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-3 h-56 flex flex-col justify-between">
                                 <div>
@@ -655,7 +655,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                     )}
                     <div className="flex-1 overflow-y-auto pb-4 scrollbar-hide">
                         {viewMode === 'grid' ? (
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2 sm:gap-3">
                             {paginatedProducts.map(p => (
                                 <SwipeableItem 
                                     key={p.id}

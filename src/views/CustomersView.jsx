@@ -307,7 +307,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         return (
             <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-950 overflow-hidden relative">
                 {/* Segmented Control Premium */}
-                <div className="px-3 sm:px-6 pt-3 sm:pt-6 shrink-0 z-10 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-xl">
+                <div className="px-3 sm:px-4 lg:px-6 pt-3 sm:pt-4 lg:pt-3 shrink-0 z-10 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-xl">
                     <div className="flex bg-slate-200/50 dark:bg-slate-800/80 p-1.5 rounded-2xl shadow-inner">
                         <button
                             onClick={() => { setActiveTab('clientes'); triggerHaptic && triggerHaptic(); }}
@@ -400,7 +400,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
     return (
         <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-950 overflow-hidden relative">
             {/* Segmented Control Premium */}
-            <div className="px-3 sm:px-6 pt-3 sm:pt-6 shrink-0 z-10 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-xl">
+            <div className="px-3 sm:px-4 lg:px-6 pt-3 sm:pt-4 lg:pt-3 shrink-0 z-10 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-xl">
                 <div className="flex bg-slate-200/50 dark:bg-slate-800/80 p-1.5 rounded-2xl shadow-inner">
                     <button
                         onClick={() => { setActiveTab('clientes'); triggerHaptic && triggerHaptic(); }}
