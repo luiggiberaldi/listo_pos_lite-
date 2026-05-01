@@ -414,6 +414,9 @@ export function useCloudSync() {
                 // config) queden en Supabase aunque nunca hayan sido modificadas en este
                 // dispositivo desde que se activó el sync.
                 // El hash deduplication evita resubir lo que ya está igual en la nube.
+                // Set de doc_ids que la nube ya tiene (del pull inicial)
+                const cloudDocIds = new Set(docs?.map(d => d.doc_id) || []);
+
                 (async () => {
                     const { default: lf } = await import('localforage');
                     lf.config({ name: 'BodegaApp', storeName: 'bodega_app_data' });
@@ -423,7 +426,15 @@ export function useCloudSync() {
                             if (val != null) pushCloudSync(key, val).catch(() => {});
                         } else {
                             const val = await lf.getItem(key);
-                            if (val != null) pushCloudSync(key, val).catch(() => {});
+                            // No subir arrays vacíos si la nube ya tiene datos para esta llave.
+                            // Esto previene que un dispositivo nuevo borre el inventario de la nube.
+                            if (val != null) {
+                                if (Array.isArray(val) && val.length === 0 && cloudDocIds.has(key)) {
+                                    console.log(`[CloudSync] Skip push ${key}: local vacío, nube ya tiene datos`);
+                                    continue;
+                                }
+                                pushCloudSync(key, val).catch(() => {});
+                            }
                         }
                         // Pausa entre keys para no saturar Supabase con burst
                         await new Promise(r => setTimeout(r, 120));
