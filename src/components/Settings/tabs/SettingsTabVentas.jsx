@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Package, CreditCard, ShieldAlert, EyeOff, Percent } from 'lucide-react';
+import { Package, CreditCard, ShieldAlert, EyeOff, Percent, ShieldOff, RotateCcw, DollarSign } from 'lucide-react';
 import { SectionCard, Toggle } from '../../SettingsShared';
 import PaymentMethodsManager from '../PaymentMethodsManager';
 import CasheaIcon from '../../CasheaIcon';
@@ -28,6 +28,17 @@ export default function SettingsTabVentas({
     );
     const [descuentoInput, setDescuentoInput] = useState(
         localStorage.getItem('cajero_max_descuento') ?? '100'
+    );
+
+    // Anulación post-cierre
+    const [allowVoidAfterCierre, setAllowVoidAfterCierre] = useState(
+        localStorage.getItem('allow_void_after_cierre') === 'true'
+    );
+    const [voidCierreRestock, setVoidCierreRestock] = useState(
+        localStorage.getItem('void_cierre_restock') === 'true'
+    );
+    const [voidCierreRevertMoney, setVoidCierreRevertMoney] = useState(
+        localStorage.getItem('void_cierre_revert_money') === 'true'
     );
 
     return (
@@ -225,6 +236,85 @@ export default function SettingsTabVentas({
                         )}
                     </div>
                 </div>
+            </SectionCard>
+
+            <SectionCard icon={ShieldOff} title="Anulación Post-Cierre" subtitle="Controla anulaciones después del cierre de caja" iconColor="text-rose-500">
+                <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                        <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Permitir anular ventas cerradas</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Habilita el botón Anular en ventas que ya pasaron por un cierre de caja</p>
+                    </div>
+                    <Toggle
+                        enabled={allowVoidAfterCierre}
+                        color="rose"
+                        onChange={() => {
+                            const newVal = !allowVoidAfterCierre;
+                            setAllowVoidAfterCierre(newVal);
+                            localStorage.setItem('allow_void_after_cierre', newVal.toString());
+                            if (!newVal) {
+                                setVoidCierreRestock(false);
+                                setVoidCierreRevertMoney(false);
+                                localStorage.setItem('void_cierre_restock', 'false');
+                                localStorage.setItem('void_cierre_revert_money', 'false');
+                            }
+                            forceHeartbeat();
+                            showToast(newVal ? 'Se permite anular ventas post-cierre' : 'Ventas cerradas protegidas', 'success');
+                            triggerHaptic?.();
+                        }}
+                    />
+                </div>
+
+                {allowVoidAfterCierre && (
+                    <div className="mt-3 space-y-3">
+                        <div className="p-3 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800/40 rounded-xl">
+                            <p className="text-[10px] font-bold text-rose-700 dark:text-rose-400 leading-relaxed">
+                                Al anular una venta después del cierre, <strong>los totales del cierre ya generado no se modifican</strong>. Elige abajo qué se revierte al anular.
+                            </p>
+                        </div>
+
+                        <div className="flex items-start justify-between gap-3 pt-2">
+                            <div className="flex-1 flex items-start gap-2">
+                                <RotateCcw size={14} className="text-slate-400 mt-0.5 shrink-0" />
+                                <div>
+                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Reintegrar inventario</p>
+                                    <p className="text-[10px] text-slate-400 mt-0.5">Devolver el stock de los productos al anular</p>
+                                </div>
+                            </div>
+                            <Toggle
+                                enabled={voidCierreRestock}
+                                color="amber"
+                                onChange={() => {
+                                    const newVal = !voidCierreRestock;
+                                    setVoidCierreRestock(newVal);
+                                    localStorage.setItem('void_cierre_restock', newVal.toString());
+                                    showToast(newVal ? 'Se reintegra inventario al anular post-cierre' : 'Inventario no se toca al anular post-cierre', 'success');
+                                    triggerHaptic?.();
+                                }}
+                            />
+                        </div>
+
+                        <div className="flex items-start justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                            <div className="flex-1 flex items-start gap-2">
+                                <DollarSign size={14} className="text-slate-400 mt-0.5 shrink-0" />
+                                <div>
+                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Revertir dinero</p>
+                                    <p className="text-[10px] text-slate-400 mt-0.5">Revertir deudas y saldos a favor del cliente al anular</p>
+                                </div>
+                            </div>
+                            <Toggle
+                                enabled={voidCierreRevertMoney}
+                                color="amber"
+                                onChange={() => {
+                                    const newVal = !voidCierreRevertMoney;
+                                    setVoidCierreRevertMoney(newVal);
+                                    localStorage.setItem('void_cierre_revert_money', newVal.toString());
+                                    showToast(newVal ? 'Se revierte dinero al anular post-cierre' : 'Dinero no se toca al anular post-cierre', 'success');
+                                    triggerHaptic?.();
+                                }}
+                            />
+                        </div>
+                    </div>
+                )}
             </SectionCard>
         </>
     );

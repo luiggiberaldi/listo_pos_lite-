@@ -117,7 +117,12 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         setVoidSaleTarget(null);
 
         try {
-            const { updatedSales, updatedProducts, updatedCustomers } = await processVoidSale(sale, sales, products);
+            const isPostCierre = sale.cajaCerrada;
+            const voidOptions = isPostCierre ? {
+                skipRestock: localStorage.getItem('void_cierre_restock') !== 'true',
+                skipRevertMoney: localStorage.getItem('void_cierre_revert_money') !== 'true',
+            } : {};
+            const { updatedSales, updatedProducts, updatedCustomers } = await processVoidSale(sale, sales, products, voidOptions);
 
             setSales(updatedSales);
             setProducts(updatedProducts); // actualizar kpi

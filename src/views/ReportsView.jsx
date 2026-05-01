@@ -50,7 +50,12 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
         if (!sale) return;
         setVoidSaleTarget(null);
         try {
-            const { updatedSales, updatedProducts } = await processVoidSale(sale, allSales, products);
+            const isPostCierre = sale.cajaCerrada;
+            const voidOptions = isPostCierre ? {
+                skipRestock: localStorage.getItem('void_cierre_restock') !== 'true',
+                skipRevertMoney: localStorage.getItem('void_cierre_revert_money') !== 'true',
+            } : {};
+            const { updatedSales, updatedProducts } = await processVoidSale(sale, allSales, products, voidOptions);
             setProducts(updatedProducts);
             setAllSales(updatedSales);
             setRecycleOffer(sale);
