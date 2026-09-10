@@ -14,6 +14,7 @@ import CierreCajaWizard from '../components/Dashboard/CierreCajaWizard';
 import { generateTicketPDF, printThermalTicket } from '../utils/ticketGenerator';
 import { generateDailyClosePDF, generateDailyCloseLetterPDF } from '../utils/dailyCloseGenerator';
 import { processVoidSale } from '../utils/voidSaleProcessor';
+import { buildVoidModalMessage, buildVoidModalTitle, getVoidOptionsForSale, isPostClosureReversal } from '../utils/voidPermissions';
 import { shareSaleWhatsApp } from '../utils/dashboardActions';
 import { useNotifications } from '../hooks/useNotifications';
 import { createNotification, NOTIF_TYPES } from '../services/notificationService';
@@ -129,11 +130,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         setVoidSaleTarget(null);
 
         try {
-            const isPostCierre = sale.cajaCerrada;
-            const voidOptions = isPostCierre ? {
-                skipRestock: localStorage.getItem('void_cierre_restock') !== 'true',
-                skipRevertMoney: localStorage.getItem('void_cierre_revert_money') !== 'true',
-            } : {};
+            const voidOptions = getVoidOptionsForSale(sale);
             const { updatedSales, updatedProducts, updatedCustomers } = await processVoidSale(sale, sales, products, voidOptions);
 
             setSales(updatedSales);
@@ -253,6 +250,27 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const todayTotalUsd = useMemo(() => todaySales.reduce((sum, s) => sum + (s.totalUsd || 0), 0), [todaySales]);
     const todayItemsSold = useMemo(() => todaySales.reduce((sum, s) => sum + (s.items ? s.items.reduce((is, i) => is + i.qty, 0) : 0), 0), [todaySales]);
 
+    // ── Negocio vs. Cuadre de caja ──
+    // Los reversos de ventas que ya pasaron por cierre quedan pendientes en la
+    // sesión: no son negocio del día sino ajustes del cierre anterior. El KPI
+    // de ingresos los excluye (evita el "día en rojo" fantasma), pero siguen
+    // en todayCashFlow porque el efectivo realmente salió del cajón.
+    const pendingPostClosureReversals = useMemo(() =>
+        todaySales.filter(s => isPostClosureReversal(s, sales)),
+        [todaySales, sales]
+    );
+    const postClosureReversalTotalUsd = useMemo(() =>
+        pendingPostClosureReversals.reduce((sum, s) => sum + (s.totalUsd || 0), 0),
+        [pendingPostClosureReversals]
+    );
+    const businessSales = useMemo(() =>
+        todaySales.filter(s => !isPostClosureReversal(s, sales)),
+        [todaySales, sales]
+    );
+    const businessTotalBs = useMemo(() => businessSales.reduce((sum, s) => sum + (s.totalBs || 0), 0), [businessSales]);
+    const businessTotalUsd = useMemo(() => businessSales.reduce((sum, s) => sum + (s.totalUsd || 0), 0), [businessSales]);
+    const businessItemsSold = useMemo(() => businessSales.reduce((sum, s) => sum + (s.items ? s.items.reduce((is, i) => is + i.qty, 0) : 0), 0), [businessSales]);
+
     // Notificar cierre de caja pendiente (>7pm con ventas o cobros sin cerrar)
     useEffect(() => {
         if (todayCashFlow.length > 0) notifyCierrePendiente(todayCashFlow.length);
@@ -267,6 +285,12 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     }, [pendingSessionMovements]);
     const todayExpensesUsd = useMemo(() => todayExpenses.reduce((sum, s) => sum + Math.abs(s.totalUsd || 0), 0), [todayExpenses]);
 
+    const businessProfit = useMemo(() =>
+        FinancialEngine.calculateAggregateProfit(businessSales, bcvRate, products),
+        [businessSales, bcvRate, products]
+    );
+    // Ganancia de la sesión completa (incluye reversos: venta anulada + reverso
+    // netean ~0). Es la que el cierre registrará; la usa el wizard y los PDFs.
     const todayProfit = useMemo(() =>
         FinancialEngine.calculateAggregateProfit(todaySales, bcvRate, products),
         [todaySales, bcvRate, products]
@@ -340,10 +364,12 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         return FinancialEngine.calculatePaymentBreakdown(todayCashFlow);
     }, [todayCashFlow]);
 
-    // Top productos vendidos HOY (para cierre del día)
+    // Top productos vendidos HOY (para cierre del día).
+    // Excluye reversos ANULACION_VENTA para reflejar exactamente lo que
+    // registrará el cierre (getClosureSummary también los excluye).
     const todayTopProducts = useMemo(() => {
         const todayProductMap = {};
-        todaySales.forEach(s => {
+        todaySales.filter(s => s.tipo !== 'ANULACION_VENTA').forEach(s => {
             if (s.items) {
                 s.items.forEach(item => {
                     if (!todayProductMap[item.name]) todayProductMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
@@ -680,16 +706,22 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         <div>
                             <div className="flex items-baseline gap-0.5">
                                 <span className="text-white/80 text-xl font-black">$</span>
-                                <span className="text-[2.6rem] font-black text-white tracking-tight leading-none"><AnimatedCounter value={todayTotalUsd} /></span>
+                                <span className="text-[2.6rem] font-black text-white tracking-tight leading-none"><AnimatedCounter value={businessTotalUsd} /></span>
                             </div>
-                            <p className="text-white/60 text-xs font-semibold mt-1.5">{formatBs(todayTotalBs)} Bs</p>
+                            <p className="text-white/60 text-xs font-semibold mt-1.5">{formatBs(businessTotalBs)} Bs</p>
+                            {postClosureReversalTotalUsd !== 0 && (
+                                <p className="text-white/70 text-[10px] font-bold mt-1 flex items-center gap-1">
+                                    <Ban size={10} className="shrink-0" />
+                                    Reverso post-cierre pendiente: {postClosureReversalTotalUsd > 0 ? '+' : '-'}${Math.abs(postClosureReversalTotalUsd).toFixed(2)}
+                                </p>
+                            )}
                         </div>
                         <div className="text-right">
                             <div className="bg-white/20 backdrop-blur-sm rounded-2xl px-4 py-2.5 mb-1.5">
-                                <p className="text-2xl font-black text-white leading-none"><AnimatedCounter value={todaySales.length} /></p>
-                                <p className="text-white/70 text-[10px] font-bold mt-0.5">{todaySales.length === 1 ? 'VENTA' : 'VENTAS'}</p>
+                                <p className="text-2xl font-black text-white leading-none"><AnimatedCounter value={businessSales.length} /></p>
+                                <p className="text-white/70 text-[10px] font-bold mt-0.5">{businessSales.length === 1 ? 'VENTA' : 'VENTAS'}</p>
                             </div>
-                            <p className="text-white/60 text-[10px] font-semibold"><AnimatedCounter value={todayItemsSold} /> artículos</p>
+                            <p className="text-white/60 text-[10px] font-semibold"><AnimatedCounter value={businessItemsSold} /> artículos</p>
                         </div>
                     </div>
                 </div>
@@ -704,10 +736,10 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         <div className="w-9 h-9 bg-emerald-100 rounded-xl flex items-center justify-center mb-2.5">
                             <TrendingUp size={18} className="text-emerald-600" strokeWidth={2.5} />
                         </div>
-                        <p className={`text-xl font-black leading-none ${todayProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                            {todayProfit >= 0 ? '+' : ''}${bcvRate > 0 ? (todayProfit / bcvRate).toFixed(2) : '0.00'}
+                        <p className={`text-xl font-black leading-none ${businessProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                            {businessProfit >= 0 ? '+' : ''}${bcvRate > 0 ? (businessProfit / bcvRate).toFixed(2) : '0.00'}
                         </p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">{formatBs(todayProfit)} Bs</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">{formatBs(businessProfit)} Bs</p>
                         <p className="text-[10px] text-slate-400 mt-1.5 font-medium">Ganancia est.</p>
                     </div>
                 </div>
@@ -795,7 +827,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         </div>
                         <div className="text-left">
                             <p className="text-sm font-black text-white">Cerrar Caja</p>
-                            <p className="text-[11px] text-white/70 font-medium">${todayTotalUsd.toFixed(2)} · {todaySales.length} {todaySales.length === 1 ? 'venta' : 'ventas'}</p>
+                            <p className="text-[11px] text-white/70 font-medium">${todayTotalUsd.toFixed(2)} · {todaySales.length} {todaySales.length === 1 ? 'venta' : 'ventas'}{postClosureReversalTotalUsd !== 0 ? ' · incl. reverso' : ''}</p>
                         </div>
                     </div>
                     <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center group-hover:translate-x-0.5 transition-transform">
@@ -1350,8 +1382,11 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 isOpen={!!voidSaleTarget}
                 onClose={() => setVoidSaleTarget(null)}
                 onConfirm={confirmVoidSale}
-                title={`Anular venta #${voidSaleTarget?.id?.substring(0, 6).toUpperCase() || ''}`}
-                message={`Esta acción:\n• Marcará la venta como ANULADA\n• Devolverá el stock a la bodega\n• Revertirá deudas o saldos a favor\n\nEsta acción no se puede deshacer.`}
+                title={buildVoidModalTitle(voidSaleTarget)}
+                message={buildVoidModalMessage(voidSaleTarget, {
+                    restock: !getVoidOptionsForSale(voidSaleTarget).skipRestock,
+                    revertMoney: !getVoidOptionsForSale(voidSaleTarget).skipRevertMoney,
+                })}
                 confirmText="Sí, anular"
                 variant="danger"
             />

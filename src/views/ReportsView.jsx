@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { FinancialEngine } from '../core/FinancialEngine';
 import { BarChart3, Calendar, Download, TrendingUp, ShoppingBag, DollarSign, Package, ChevronDown, ChevronUp, Clock, Send, Ban, Shuffle, Receipt, Search, X, Filter, Recycle, LockIcon } from 'lucide-react';
 import { storageService } from '../utils/storageService';
@@ -13,6 +13,8 @@ import ConfirmModal from '../components/ConfirmModal';
 import { getLocalISODate, getDateRange } from '../utils/dateHelpers';
 import { calculateReportsData, groupSalesByCierreId } from '../utils/reportsProcessor';
 import { processVoidSale } from '../utils/voidSaleProcessor';
+import { buildVoidModalMessage, buildVoidModalTitle, canVoidSale, getVoidOptionsForSale, isVoidBlockedByClosure, ALLOW_VOID_AFTER_CIERRE_KEY, VOID_CIERRE_RESTOCK_KEY, VOID_CIERRE_REVERT_MONEY_KEY } from '../utils/voidPermissions';
+import { useAuthStore } from '../hooks/store/useAuthStore';
 import { loadClosures } from '../utils/closureService';
 import CierreHistoryCard from '../components/Reports/CierreHistoryCard';
 import CasheaIcon from '../components/CasheaIcon';
@@ -27,6 +29,25 @@ const RANGE_OPTIONS = [
     { id: 'lastMonth', label: 'Mes Anterior' },
     { id: 'custom', label: 'Personalizado' },
 ];
+
+/**
+ * Lee el toggle maestro de anulación post-cierre de forma reactiva: se
+ * re-renderiza cuando la clave cambia (otra pestaña, Settings, heartbeat).
+ */
+function useIsAllowedAfterCierre() {
+    return useSyncExternalStore(
+        (onStoreChange) => {
+            window.addEventListener('storage', onStoreChange);
+            window.addEventListener('app_storage_update', onStoreChange);
+            return () => {
+                window.removeEventListener('storage', onStoreChange);
+                window.removeEventListener('app_storage_update', onStoreChange);
+            };
+        },
+        () => localStorage.getItem(ALLOW_VOID_AFTER_CIERRE_KEY) === 'true',
+        () => false,
+    );
+}
 
 
 export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive }) {
@@ -48,17 +69,17 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
     const [recycleOffer, setRecycleOffer] = useState(null);
     const [openPaySections, setOpenPaySections] = useState({});
 
+    // Reglas de anulación: fuente única de verdad en voidPermissions.js
+    const isAdmin = useAuthStore(state => state.usuarioActivo?.rol) === 'ADMIN';
+    const allowAfterCierre = useIsAllowedAfterCierre();
+
     // ── Void Sale Handler ──
     const confirmVoidSale = async () => {
         const sale = voidSaleTarget;
         if (!sale) return;
         setVoidSaleTarget(null);
         try {
-            const isPostCierre = sale.cajaCerrada;
-            const voidOptions = isPostCierre ? {
-                skipRestock: localStorage.getItem('void_cierre_restock') !== 'true',
-                skipRevertMoney: localStorage.getItem('void_cierre_revert_money') !== 'true',
-            } : {};
+            const voidOptions = getVoidOptionsForSale(sale);
             const { updatedSales, updatedProducts } = await processVoidSale(sale, allSales, products, voidOptions);
             setProducts(updatedProducts);
             setAllSales(updatedSales);
@@ -580,6 +601,8 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                                         onToggle={() => setExpandedSaleId(prev => prev === s.id ? null : s.id)}
                                         onVoidSale={setVoidSaleTarget}
                                         onRecycleSale={setRecycleOffer}
+                                        isAdmin={isAdmin}
+                                        allowAfterCierre={allowAfterCierre}
                                     />
                                 ))}
 
@@ -668,9 +691,13 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                 isOpen={!!voidSaleTarget}
                 onClose={() => setVoidSaleTarget(null)}
                 onConfirm={confirmVoidSale}
-                title={`Anular venta #${voidSaleTarget?.id?.substring(0, 6).toUpperCase() || ''}`}
-                message={'Esta accion:\n- Marcara la venta como ANULADA\n- Devolvera el stock a la bodega\n- Revertira deudas o saldos a favor\n\nEsta accion no se puede deshacer.'}
+                title={buildVoidModalTitle(voidSaleTarget)}
+                message={buildVoidModalMessage(voidSaleTarget, {
+                    restock: !getVoidOptionsForSale(voidSaleTarget).skipRestock,
+                    revertMoney: !getVoidOptionsForSale(voidSaleTarget).skipRevertMoney,
+                })}
                 confirmText="Si, anular"
+                variant="danger"
             />
 
 
@@ -697,7 +724,7 @@ function StatCard({ icon: Icon, label, value, sub, color }) {
     );
 }
 
-function TransactionRow({ sale: s, bcvRate, isExpanded, onToggle, onVoidSale, onRecycleSale }) {
+function TransactionRow({ sale: s, bcvRate, isExpanded, onToggle, onVoidSale, onRecycleSale, isAdmin, allowAfterCierre }) {
     const d = new Date(s.timestamp);
     let methodLabel = 'Efectivo';
     let PayMethodIcon = PAYMENT_ICONS['efectivo_bs'];
@@ -900,7 +927,7 @@ function TransactionRow({ sale: s, bcvRate, isExpanded, onToggle, onVoidSale, on
                         >
                             PDF
                         </button>
-                        {!isCanceled && onVoidSale && !s.cajaCerrada && s.tipo !== 'ANULACION_VENTA' && (
+                        {!isCanceled && onVoidSale && canVoidSale(s, { isAdmin, allowAfterCierre }) && (
                             <button
                                 onClick={(e) => { e.stopPropagation(); onVoidSale(s); }}
                                 className="py-2 px-3 bg-slate-100 dark:bg-slate-900 text-red-600 dark:text-red-400 hover:bg-red-50 hover:dark:bg-red-900/30 font-bold rounded-lg transition-colors flex justify-center items-center gap-1.5 text-xs border border-slate-200 dark:border-slate-800 shadow-sm active:scale-95"
@@ -908,7 +935,7 @@ function TransactionRow({ sale: s, bcvRate, isExpanded, onToggle, onVoidSale, on
                                 <Ban size={14} /> Anular
                             </button>
                         )}
-                        {!isCanceled && s.cajaCerrada && s.tipo !== 'ANULACION_VENTA' && (
+                        {!isCanceled && isVoidBlockedByClosure(s) && !allowAfterCierre && s.tipo !== 'ANULACION_VENTA' && (
                             <div title="Venta protegida por Cierre de Caja" className="py-2 px-3 bg-slate-50 dark:bg-slate-900 text-slate-400 font-bold rounded-lg flex justify-center items-center gap-1.5 text-[10px] uppercase border border-slate-100 dark:border-slate-800 tracking-wider cursor-not-allowed">
                                 <LockIcon size={12} /> Cerrada
                             </div>

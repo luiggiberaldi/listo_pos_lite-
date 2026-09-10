@@ -117,7 +117,7 @@ test('excludes an accidental reopening and identifies orphaned historical moveme
 
   const result = getHistoricalCorrectionCandidates(sales, [
     { cierreId: 222, saleIds: ['valid-closed'] },
-  ]);
+  ], { now: new Date('2026-08-13T15:30:00.000Z') });
 
   assert.equal(result.activeSession.apertura.id, 'accidental-opening');
   assert.deepEqual(result.candidates.map(sale => sale.id), ['old-pending', 'orphaned-closed']);
@@ -191,6 +191,7 @@ test('does not mark movements closed until explicit closure', () => {
     fechaComercial: session.businessDate,
     tasaBcv: 764.3486,
     closedAt: '2026-08-13T05:01:00.000Z',
+    now: new Date('2026-08-13T05:01:00.000Z'),
   });
 
   assert.deepEqual(result.closure.saleIds, ['opening-1', 'sale-after-midnight']);

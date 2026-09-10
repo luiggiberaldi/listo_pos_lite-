@@ -3,6 +3,7 @@ import { Package, CreditCard, ShieldAlert, EyeOff, Percent, ShieldOff, RotateCcw
 import { SectionCard, Toggle } from '../../SettingsShared';
 import PaymentMethodsManager from '../PaymentMethodsManager';
 import CasheaIcon from '../../CasheaIcon';
+import { ALLOW_VOID_AFTER_CIERRE_KEY, VOID_CIERRE_RESTOCK_KEY, VOID_CIERRE_REVERT_MONEY_KEY } from '../../../utils/voidPermissions';
 
 export default function SettingsTabVentas({
     allowNegativeStock, setAllowNegativeStock,
@@ -32,13 +33,13 @@ export default function SettingsTabVentas({
 
     // Anulación post-cierre
     const [allowVoidAfterCierre, setAllowVoidAfterCierre] = useState(
-        localStorage.getItem('allow_void_after_cierre') === 'true'
+        localStorage.getItem(ALLOW_VOID_AFTER_CIERRE_KEY) === 'true'
     );
     const [voidCierreRestock, setVoidCierreRestock] = useState(
-        localStorage.getItem('void_cierre_restock') === 'true'
+        localStorage.getItem(VOID_CIERRE_RESTOCK_KEY) === 'true'
     );
     const [voidCierreRevertMoney, setVoidCierreRevertMoney] = useState(
-        localStorage.getItem('void_cierre_revert_money') === 'true'
+        localStorage.getItem(VOID_CIERRE_REVERT_MONEY_KEY) === 'true'
     );
 
     return (
@@ -250,12 +251,12 @@ export default function SettingsTabVentas({
                         onChange={() => {
                             const newVal = !allowVoidAfterCierre;
                             setAllowVoidAfterCierre(newVal);
-                            localStorage.setItem('allow_void_after_cierre', newVal.toString());
+                            localStorage.setItem(ALLOW_VOID_AFTER_CIERRE_KEY, newVal.toString());
                             if (!newVal) {
                                 setVoidCierreRestock(false);
                                 setVoidCierreRevertMoney(false);
-                                localStorage.setItem('void_cierre_restock', 'false');
-                                localStorage.setItem('void_cierre_revert_money', 'false');
+                                localStorage.setItem(VOID_CIERRE_RESTOCK_KEY, 'false');
+                                localStorage.setItem(VOID_CIERRE_REVERT_MONEY_KEY, 'false');
                             }
                             forceHeartbeat();
                             showToast(newVal ? 'Se permite anular ventas post-cierre' : 'Ventas cerradas protegidas', 'success');
@@ -286,7 +287,7 @@ export default function SettingsTabVentas({
                                 onChange={() => {
                                     const newVal = !voidCierreRestock;
                                     setVoidCierreRestock(newVal);
-                                    localStorage.setItem('void_cierre_restock', newVal.toString());
+                                    localStorage.setItem(VOID_CIERRE_RESTOCK_KEY, newVal.toString());
                                     showToast(newVal ? 'Se reintegra inventario al anular post-cierre' : 'Inventario no se toca al anular post-cierre', 'success');
                                     triggerHaptic?.();
                                 }}
@@ -307,7 +308,7 @@ export default function SettingsTabVentas({
                                 onChange={() => {
                                     const newVal = !voidCierreRevertMoney;
                                     setVoidCierreRevertMoney(newVal);
-                                    localStorage.setItem('void_cierre_revert_money', newVal.toString());
+                                    localStorage.setItem(VOID_CIERRE_REVERT_MONEY_KEY, newVal.toString());
                                     showToast(newVal ? 'Se revierte dinero al anular post-cierre' : 'Dinero no se toca al anular post-cierre', 'success');
                                     triggerHaptic?.();
                                 }}

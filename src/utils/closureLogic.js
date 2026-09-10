@@ -155,14 +155,14 @@ export function getCashSessionMovements(allSales, session) {
  * that was accidentally opened again. A movement marked as closed is only
  * considered already reconciled when its closure record also references it.
  */
-export function getHistoricalCorrectionCandidates(allSales, closures = []) {
+export function getHistoricalCorrectionCandidates(allSales, closures = [], { now = new Date() } = {}) {
     const sales = Array.isArray(allSales) ? allSales : [];
     const closureById = new Map(
         (Array.isArray(closures) ? closures : [])
             .filter(closure => closure?.cierreId !== null && closure?.cierreId !== undefined)
             .map(closure => [String(closure.cierreId), closure])
     );
-    const activeSession = getOpenCashSession(sales);
+    const activeSession = getOpenCashSession(sales, now);
     const repairableIds = [];
 
     const candidates = sales.filter(sale => {
@@ -437,8 +437,9 @@ export function closeBusinessDate({
     session = null,
     repairSaleIds = [],
     candidateSaleIds = null,
+    now = new Date(),
 }) {
-    const openSession = session || (tipo === 'NORMAL' ? getOpenCashSession(sales) : null);
+    const openSession = session || (tipo === 'NORMAL' ? getOpenCashSession(sales, now) : null);
     const closureSession = openSession?.businessDate === fechaComercial ? openSession : null;
     const repairIds = new Set(repairSaleIds || []);
     // A historical correction may intentionally cover only the movements
