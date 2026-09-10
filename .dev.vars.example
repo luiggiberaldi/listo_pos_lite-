@@ -1,0 +1,4 @@
+# Plantilla para desarrollo local con `wrangler dev` (puerto 8787).
+# Copia este archivo a `.dev.vars` y pega el valor real del secreto.
+# Nunca hagas commit de `.dev.vars` (ya está en .gitignore).
+SUPABASE_SERVICE_KEY=pega_aqui_el_service_role_key

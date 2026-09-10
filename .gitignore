@@ -95,3 +95,4 @@ capacitor.config.json
 # Android signing keys
 *.jks
 *.keystore
+.dev.vars
