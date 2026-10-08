@@ -208,6 +208,25 @@ export function ProductProvider({ children, rates }) {
         });
     };
 
+    const setProductStock = (productId, exactStock) => {
+        setProducts(prevProducts => {
+            const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
+            const updated = prevProducts.map(p => {
+                if (p.id === productId) {
+                    const parsed = typeof exactStock === 'number' ? exactStock : parseFloat(exactStock) || 0;
+                    const cleanStock = ['kg', 'litro'].includes(p.unit)
+                        ? Math.round(parsed * 1000) / 1000
+                        : Math.round(parsed);
+                    const finalStock = allowNeg ? cleanStock : Math.max(0, cleanStock);
+                    return { ...p, stock: finalStock };
+                }
+                return p;
+            });
+            storageService.setItem('bodega_products_v1', updated).catch(() => {});
+            return updated;
+        });
+    };
+
     return (
         <ProductContext.Provider value={{
             products,
@@ -230,6 +249,7 @@ export function ProductProvider({ children, rates }) {
             setTasaCopManual,
             tasaCop,
             adjustStock,
+            setProductStock,
             rateMode,
             setRateMode
         }}>

@@ -1,15 +1,18 @@
 import { useState, useEffect, useRef } from 'react';
 import { Search, ChevronRight, Package, Users, FileText, Settings, X } from 'lucide-react';
+import { useAuthStore } from '../hooks/store/useAuthStore';
 
 export default function CommandPalette({ isOpen, onClose, onToggle, navigateTo }) {
     const [query, setQuery] = useState('');
     const inputRef = useRef(null);
+    const usuarioActivo = useAuthStore(s => s.usuarioActivo);
+    const isAdmin = !usuarioActivo || usuarioActivo.rol === 'ADMIN';
 
     const commands = [
         { id: 'nav-sales', title: 'Ir a Ventas', icon: Package, action: () => navigateTo('ventas') },
         { id: 'nav-inventory', title: 'Ir a Inventario', icon: Package, action: () => navigateTo('catalogo') },
         { id: 'nav-customers', title: 'Ir a Clientes', icon: Users, action: () => navigateTo('clientes') },
-        { id: 'nav-reports', title: 'Ir a Reportes', icon: FileText, action: () => navigateTo('reportes') },
+        ...(isAdmin ? [{ id: 'nav-reports', title: 'Ir a Reportes', icon: FileText, action: () => navigateTo('reportes') }] : []),
         { id: 'nav-dashboard', title: 'Ir a Inicio', icon: Package, action: () => navigateTo('inicio') },
     ];
 

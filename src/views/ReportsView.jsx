@@ -181,6 +181,18 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
         );
     }
 
+    if (!isAdmin) {
+        return (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-400 space-y-3 pb-20 lg:pb-14">
+                <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
+                    <LockIcon size={32} />
+                </div>
+                <h3 className="text-base font-bold text-slate-700 dark:text-slate-200">Acceso restringido</h3>
+                <p className="text-xs text-slate-400 max-w-xs">Los reportes e historial de ventas están reservados para administradores.</p>
+            </div>
+        );
+    }
+
     return (
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-5 space-y-4 md:space-y-4 pb-20 lg:pb-14">
             {/* Header */}

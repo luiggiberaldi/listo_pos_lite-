@@ -18,7 +18,8 @@ export default function ProductCard({
     readOnly = false,
 
     onEdit,
-    onDelete
+    onDelete,
+    onOpenQuickStock
 }) {
     const valBs = p.priceUsdt * effectiveRate;
     const valCop = p.priceUsdt * tasaCop;
@@ -101,11 +102,33 @@ export default function ProductCard({
                             <Minus size={18} strokeWidth={2.5} />
                         </button>
                         )}
-                        <div className="flex flex-col items-center justify-center px-2 text-center min-w-[50px]">
+                        <div
+                            role={readOnly ? undefined : "button"}
+                            onClick={() => {
+                                if (!readOnly && onOpenQuickStock) {
+                                    onOpenQuickStock(p);
+                                }
+                            }}
+                            tabIndex={readOnly ? undefined : 0}
+                            onKeyDown={(e) => {
+                                if (!readOnly && onOpenQuickStock && (e.key === 'Enter' || e.key === ' ')) {
+                                    e.preventDefault();
+                                    onOpenQuickStock(p);
+                                }
+                            }}
+                            className={`flex flex-col items-center justify-center px-2 py-1 text-center min-w-[50px] rounded-lg transition-all ${
+                                !readOnly
+                                    ? 'cursor-pointer hover:bg-slate-200/70 dark:hover:bg-slate-700/60 active:scale-95 group/stock'
+                                    : ''
+                            }`}
+                            title={!readOnly ? "Clic para ingresar cantidad directa o fijar conteo" : undefined}
+                        >
                             <span className={`text-base font-black leading-none mb-0.5 ${pendingDelta !== 0 ? 'text-blue-500' : isLowStock ? 'text-amber-500' : 'text-slate-700 dark:text-slate-200'}`}>
                                 {pendingStock}
                             </span>
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none">{(p.unit === 'kg' || p.unit === 'litro') ? unitInfo?.short : 'UND'}</span>
+                            <span className="text-[9px] font-bold text-slate-400 group-hover/stock:text-brand uppercase tracking-wider leading-none">
+                                {(p.unit === 'kg' || p.unit === 'litro') ? unitInfo?.short : 'UND'}
+                            </span>
                             {p.unit === 'paquete' && p.unitsPerPackage > 0 && Math.floor(pendingStock / p.unitsPerPackage) > 0 && (
                                 <span className="text-[8px] text-slate-400 leading-none">= {Math.floor(pendingStock / p.unitsPerPackage)} lotes</span>
                             )}

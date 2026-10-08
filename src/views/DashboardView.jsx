@@ -827,7 +827,11 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         </div>
                         <div className="text-left">
                             <p className="text-sm font-black text-white">Cerrar Caja</p>
-                            <p className="text-[11px] text-white/70 font-medium">${todayTotalUsd.toFixed(2)} · {todaySales.length} {todaySales.length === 1 ? 'venta' : 'ventas'}{postClosureReversalTotalUsd !== 0 ? ' · incl. reverso' : ''}</p>
+                            {isCashierBlindClose ? (
+                                <p className="text-[11px] text-white/70 font-medium">{todaySales.length} {todaySales.length === 1 ? 'venta' : 'ventas'} · Cierre ciego</p>
+                            ) : (
+                                <p className="text-[11px] text-white/70 font-medium">${todayTotalUsd.toFixed(2)} · {todaySales.length} {todaySales.length === 1 ? 'venta' : 'ventas'}{postClosureReversalTotalUsd !== 0 ? ' · incl. reverso' : ''}</p>
+                            )}
                         </div>
                     </div>
                     <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center group-hover:translate-x-0.5 transition-transform">
@@ -1104,16 +1108,18 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 );
             })()}
 
-            {/* Gráfica semanal */}
-            <SalesChart
-                weekData={weekData} 
-                selectedDate={selectedChartDate}
-                onDayClick={(date) => {
-                    triggerHaptic();
-                    setSelectedChartDate(prev => prev === date ? null : date);
-                    setTimeout(() => { window.scrollBy({ top: 150, behavior: 'smooth' }); }, 50);
-                }}
-            />
+            {/* Gráfica semanal — solo admin para proteger el histórico de ventas */}
+            {isAdmin && (
+                <SalesChart
+                    weekData={weekData} 
+                    selectedDate={selectedChartDate}
+                    onDayClick={(date) => {
+                        triggerHaptic();
+                        setSelectedChartDate(prev => prev === date ? null : date);
+                        setTimeout(() => { window.scrollBy({ top: 150, behavior: 'smooth' }); }, 50);
+                    }}
+                />
+            )}
 
             {/* Bajo Stock */}
             {lowStockProducts.length > 0 && (

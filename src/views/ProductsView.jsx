@@ -12,6 +12,7 @@ import { useWallet } from '../hooks/useWallet';
 import { BODEGA_CATEGORIES, UNITS, CATEGORY_COLORS } from '../config/categories';
 import ProductCard from '../components/Products/ProductCard';
 import ProductFormModal from '../components/Products/ProductFormModal';
+import QuickStockModal from '../components/Products/QuickStockModal';
 import ConfirmModal from '../components/ConfirmModal';
 import CategoryManagerModal from '../components/Products/CategoryManagerModal';
 import BulkPriceAdjustModal from '../components/Products/BulkPriceAdjustModal';
@@ -38,10 +39,58 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         effectiveRate,
         copEnabled,
         tasaCop,
-        adjustStock: baseAdjustStock
+        adjustStock: baseAdjustStock,
+        setProductStock
     } = useProductContext();
     const isCajero = useAuthStore(s => s.usuarioActivo)?.rol === 'CAJERO';
     const { log: auditLog } = useAudit();
+
+    // Modal para ajuste rápido numérico de stock
+    const [quickStockProduct, setQuickStockProduct] = useState(null);
+
+    const handleQuickStockSave = async (productId, newStock, mode, delta) => {
+        setProductStock(productId, newStock);
+        triggerHaptic && triggerHaptic();
+
+        const product = products.find(p => p.id === productId);
+        const prodName = product?.name || 'Producto';
+
+        // Registro de movimiento si hubo cambio real
+        if (delta !== 0) {
+            try {
+                const record = {
+                    id: `adj_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                    timestamp: new Date().toISOString(),
+                    tipo: delta > 0 ? 'AJUSTE_ENTRADA' : 'AJUSTE_SALIDA',
+                    items: [{ id: productId, name: prodName, qty: Math.abs(delta) }],
+                    totalUsd: 0,
+                    totalBs: 0,
+                    status: 'COMPLETADA',
+                };
+                const sales = await storageService.getItem('bodega_sales_v1', []);
+                sales.push(record);
+                await storageService.setItem('bodega_sales_v1', sales);
+            } catch (e) { /* silencioso */ }
+        }
+
+        const descAction = mode === 'add'
+            ? `+${delta} ${product?.unit || 'uds'}`
+            : `Fijado en ${newStock} ${product?.unit || 'uds'} (Δ ${delta >= 0 ? '+' : ''}${delta})`;
+        auditLog('INVENTARIO', 'AJUSTE_DIRECTO', `Stock de "${prodName}": ${descAction}`);
+
+        const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
+        const updated = products.map(p => {
+            if (p.id === productId) {
+                const cleanStock = ['kg', 'litro'].includes(p.unit)
+                    ? Math.round(newStock * 1000) / 1000
+                    : Math.round(newStock);
+                return { ...p, stock: allowNeg ? cleanStock : Math.max(0, cleanStock) };
+            }
+            return p;
+        });
+        pushCloudSync('bodega_products_v1', updated).catch(() => {});
+        showToast(`Stock de "${prodName}" actualizado`, 'success');
+    };
 
     // Envolver adjustStock para incluir registro de movimiento + haptic
     const adjustStock = async (productId, delta) => {
@@ -674,6 +723,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                                         onShare={setShareProduct}
                                         onEdit={handleEdit}
                                         onDelete={handleDelete}
+                                        onOpenQuickStock={setQuickStockProduct}
                                         readOnly={isCajero}
                                         daysRemaining={
                                             salesVelocityMap[p.id] > 0 && (p.stock ?? 0) > 0
@@ -748,7 +798,14 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                                                 {!isCajero && (
                                                 <div className="flex items-center bg-slate-50 dark:bg-slate-800 rounded-lg">
                                                     <button onClick={() => adjustPending(p.id, -1)} className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"><Minus size={14} /></button>
-                                                    <span className={`text-xs font-black min-w-[28px] text-center ${pendingDeltas[p.id] ? 'text-blue-500' : isLowStock ? 'text-amber-500' : 'text-slate-700 dark:text-slate-200'}`}>{(p.stock ?? 0) + (pendingDeltas[p.id] || 0)}</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setQuickStockProduct(p)}
+                                                        className={`text-xs font-black min-w-[28px] text-center px-1 py-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer ${pendingDeltas[p.id] ? 'text-blue-500' : isLowStock ? 'text-amber-500' : 'text-slate-700 dark:text-slate-200'}`}
+                                                        title="Clic para ingresar cifra directa o conteo"
+                                                    >
+                                                        {(p.stock ?? 0) + (pendingDeltas[p.id] || 0)}
+                                                    </button>
                                                     <button onClick={() => adjustPending(p.id, 1)} className="p-1.5 text-slate-400 hover:text-emerald-500 transition-colors"><Plus size={14} /></button>
                                                     {pendingDeltas[p.id] ? (
                                                         <>
@@ -782,7 +839,17 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                                             </div>
                                             <div className="hidden sm:flex items-center gap-1">
                                                 {!isCajero && <button onClick={() => adjustPending(p.id, -1)} className="w-7 h-7 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors active:scale-90"><Minus size={14} /></button>}
-                                                <span className={`text-sm font-black min-w-[32px] text-center ${pendingDeltas[p.id] ? 'text-blue-500' : isLowStock ? 'text-amber-500' : 'text-slate-700 dark:text-slate-200'}`}>{(p.stock ?? 0) + (pendingDeltas[p.id] || 0)}</span>
+                                                <button
+                                                    type="button"
+                                                    disabled={isCajero}
+                                                    onClick={() => !isCajero && setQuickStockProduct(p)}
+                                                    className={`text-sm font-black min-w-[32px] text-center px-1.5 py-1 rounded-lg transition-colors ${
+                                                        !isCajero ? 'hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer active:scale-95' : ''
+                                                    } ${pendingDeltas[p.id] ? 'text-blue-500' : isLowStock ? 'text-amber-500' : 'text-slate-700 dark:text-slate-200'}`}
+                                                    title={!isCajero ? "Clic para ingresar cifra directa o conteo" : undefined}
+                                                >
+                                                    {(p.stock ?? 0) + (pendingDeltas[p.id] || 0)}
+                                                </button>
                                                 {!isCajero && <button onClick={() => adjustPending(p.id, 1)} className="w-7 h-7 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-emerald-500 transition-colors active:scale-90"><Plus size={14} /></button>}
                                             </div>
                                             <div className="hidden sm:flex items-center justify-end gap-1">
@@ -947,6 +1014,14 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 effectiveRate={effectiveRate}
                 triggerHaptic={triggerHaptic}
                 showToast={showToast}
+            />
+
+            <QuickStockModal
+                isOpen={Boolean(quickStockProduct)}
+                onClose={() => setQuickStockProduct(null)}
+                product={quickStockProduct}
+                onSave={handleQuickStockSave}
+                triggerHaptic={triggerHaptic}
             />
 
             <CategoryManagerModal
