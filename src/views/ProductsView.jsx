@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
-import { Package, Plus, Trash2, X, Store, Tag, Pencil, Banknote, Search, ChevronLeft, ChevronRight, AlertTriangle, Box, LayoutGrid, List, Minus, ArrowUpDown, Clock, Percent, Printer, CheckSquare, Check } from 'lucide-react';
+import { Package, Plus, Trash2, X, Store, Tag, Pencil, Banknote, Search, ChevronLeft, ChevronRight, AlertTriangle, Box, LayoutGrid, List, Minus, ArrowUpDown, Clock, Percent, Printer, CheckSquare, Check, RotateCcw } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { ProductShareModal } from '../components/ProductShareModal';
 
@@ -16,6 +16,8 @@ import QuickStockModal from '../components/Products/QuickStockModal';
 import ConfirmModal from '../components/ConfirmModal';
 import CategoryManagerModal from '../components/Products/CategoryManagerModal';
 import BulkPriceAdjustModal from '../components/Products/BulkPriceAdjustModal';
+import ZeroStockModal from '../components/Products/ZeroStockModal';
+import { bulkZeroProductStock } from '../utils/stockUtils';
 import { useProductContext } from '../context/ProductContext';
 import EmptyState from '../components/EmptyState';
 import Skeleton from '../components/Skeleton';
@@ -92,6 +94,39 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         showToast(`Stock de "${prodName}" actualizado`, 'success');
     };
 
+    const handleExecuteZeroStock = async ({ scope, category, selectedIds: targetSelectedIds }) => {
+        triggerHaptic && triggerHaptic();
+        const { updatedProducts, affectedCount } = bulkZeroProductStock(products, {
+            scope,
+            category,
+            selectedIds: targetSelectedIds,
+        });
+
+        if (affectedCount === 0) {
+            showToast('No se encontraron productos para actualizar', 'info');
+            return;
+        }
+
+        // 1. Persistir inmediatamente en local
+        await storageService.setItem('bodega_products_v1', updatedProducts);
+        // 2. Actualizar estado react
+        setProducts(updatedProducts);
+        // 3. Sincronizar en la nube
+        pushCloudSync('bodega_products_v1', updatedProducts).catch(() => {});
+        // 4. Bitácora de auditoría
+        const scopeDesc = scope === 'all'
+            ? 'todo el inventario'
+            : scope === 'category'
+            ? `categoría "${category}"`
+            : `${targetSelectedIds instanceof Set ? targetSelectedIds.size : (targetSelectedIds?.length || 0)} seleccionados`;
+        auditLog('INVENTARIO', 'STOCK_CERO_MASIVO', `Stock puesto en 0 para ${affectedCount} productos (${scopeDesc})`);
+        // 5. Limpiar selección y resetear página
+        setSelectedIds(new Set());
+        setCurrentPage(1);
+        // 6. Notificación al usuario
+        showToast(`Stock puesto en 0 para ${affectedCount} ${affectedCount === 1 ? 'producto' : 'productos'}`, 'success');
+    };
+
     // Envolver adjustStock para incluir registro de movimiento + haptic
     const adjustStock = async (productId, delta) => {
         baseAdjustStock(productId, delta);
@@ -121,6 +156,8 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
     const [isShareOpen, setIsShareOpen] = useState(false);
     const [isBulkPriceOpen, setIsBulkPriceOpen] = useState(false);
+    const [isZeroStockOpen, setIsZeroStockOpen] = useState(false);
+    const [zeroStockScope, setZeroStockScope] = useState('all');
     const [deleteCategoryConfirmId, setDeleteCategoryConfirmId] = useState(null);
 
     // Share State
@@ -527,6 +564,10 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                                     className="p-2 bg-blue-100 dark:bg-blue-900/30 text-blue-500 dark:text-blue-400 rounded-xl transition-all active:scale-95" title="Ajuste Masivo de Precios">
                                     <Percent size={16} strokeWidth={2.5} />
                                 </button>
+                                <button onClick={() => { triggerHaptic && triggerHaptic(); setZeroStockScope('all'); setIsZeroStockOpen(true); }}
+                                    className="p-2 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-xl transition-all active:scale-95" title="Vaciar Existencias (Stock a 0)">
+                                    <RotateCcw size={16} strokeWidth={2.5} />
+                                </button>
                                 <button onClick={() => { triggerHaptic && triggerHaptic(); setIsDeleteAllModalOpen(true); }}
                                     className="p-2 bg-red-100 dark:bg-red-900/30 text-red-500 dark:text-red-400 rounded-xl transition-all active:scale-95" title="Borrar Todo">
                                     <Trash2 size={16} strokeWidth={2.5} />
@@ -630,13 +671,26 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                     <span className="text-sm font-bold text-brand flex items-center gap-1">
                         <CheckSquare size={16} /> {selectedIds.size} seleccionados
                     </span>
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2">
                         <button onClick={() => setSelectedIds(new Set())} className="text-xs font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300">
                             Cancelar
                         </button>
                         <button onClick={handlePrintSelected} className="px-3 py-1.5 bg-brand text-white text-xs font-bold rounded-lg shadow-sm hover:bg-brand-dark transition-all flex items-center gap-1">
                             <Printer size={14} /> <span className="hidden sm:inline">Imprimir Etiquetas</span><span className="sm:hidden">Imprimir</span>
                         </button>
+                        {!isCajero && (
+                            <button
+                                onClick={() => {
+                                    triggerHaptic && triggerHaptic();
+                                    setZeroStockScope('selected');
+                                    setIsZeroStockOpen(true);
+                                }}
+                                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1 active:scale-95"
+                                title="Poner seleccionados en 0"
+                            >
+                                <RotateCcw size={14} /> <span className="hidden sm:inline">Poner en 0</span><span className="sm:hidden">En 0</span>
+                            </button>
+                        )}
                     </div>
                 </div>
             )}
@@ -1014,6 +1068,18 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 effectiveRate={effectiveRate}
                 triggerHaptic={triggerHaptic}
                 showToast={showToast}
+            />
+
+            <ZeroStockModal
+                isOpen={isZeroStockOpen}
+                onClose={() => setIsZeroStockOpen(false)}
+                products={products}
+                categories={categories}
+                selectedIds={selectedIds}
+                initialScope={zeroStockScope}
+                initialCategory={activeCategory}
+                onConfirm={handleExecuteZeroStock}
+                triggerHaptic={triggerHaptic}
             />
 
             <QuickStockModal

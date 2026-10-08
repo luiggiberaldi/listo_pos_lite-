@@ -11,6 +11,7 @@ import SalesHistory from '../components/Dashboard/SalesHistory';
 import SalesChart from '../components/Dashboard/SalesChart';
 import ConfirmModal from '../components/ConfirmModal';
 import CierreCajaWizard from '../components/Dashboard/CierreCajaWizard';
+import CashierHeroCard from '../components/Dashboard/CashierHeroCard';
 import { generateTicketPDF, printThermalTicket } from '../utils/ticketGenerator';
 import { generateDailyClosePDF, generateDailyCloseLetterPDF } from '../utils/dailyCloseGenerator';
 import { processVoidSale } from '../utils/voidSaleProcessor';
@@ -497,11 +498,16 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             setIsCashReconOpen(false);
             showToast('Cierre de caja completado (Historial conservado)', 'success');
             auditLog('VENTA', 'CIERRE_CAJA', `Cierre ${operatingDate} completado`);
+            const closeDescription = isAdmin
+                ? `Cierre completado — $${todayTotalUsd.toFixed(2)} en ventas (${todaySales.length} transacciones)`
+                : `Cierre de turno completado — ${todaySales.length} transacciones procesadas`;
             createNotification(
                 NOTIF_TYPES.CAJA_CERRADA,
                 'Caja cerrada',
-                `Cierre completado — $${todayTotalUsd.toFixed(2)} en ventas (${todaySales.length} transacciones)`,
-                { totalUsd: todayTotalUsd, declaredUsd, diffUsd, cierreId: result.closure.cierreId }
+                closeDescription,
+                isAdmin
+                    ? { totalUsd: todayTotalUsd, declaredUsd, diffUsd, cierreId: result.closure.cierreId }
+                    : { cierreId: result.closure.cierreId }
             );
             return true;
         } catch (error) {
@@ -692,40 +698,49 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             )}
 
             {/* ── HERO REVENUE CARD ── */}
-            <div className="relative rounded-[1.5rem] overflow-hidden" style={{ background: 'linear-gradient(135deg, #0EA5E9 0%, #06B6D4 50%, #5EEAD4 100%)' }}>
-                <div className="absolute -right-10 -top-10 w-48 h-48 rounded-full bg-white/10" />
-                <div className="absolute -left-8 -bottom-8 w-36 h-36 rounded-full bg-white/5" />
-                <div className="relative z-10 p-5 lg:p-4">
-                    <div className="flex items-start justify-between mb-3 lg:mb-2">
-                        <span className="text-white/70 text-[10px] font-bold uppercase tracking-widest">{activeCashSession ? 'Ingresos del turno' : 'Ingresos del día'}</span>
-                        <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 text-white px-2.5 py-1 rounded-full backdrop-blur-sm">
-                            {(() => { const d = new Date(`${operatingDate}T12:00:00`); const days = ['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB']; const months = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC']; return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}`; })()}
-                        </span>
-                    </div>
-                    <div className="flex items-end justify-between">
-                        <div>
-                            <div className="flex items-baseline gap-0.5">
-                                <span className="text-white/80 text-xl font-black">$</span>
-                                <span className="text-[2.6rem] font-black text-white tracking-tight leading-none"><AnimatedCounter value={businessTotalUsd} /></span>
-                            </div>
-                            <p className="text-white/60 text-xs font-semibold mt-1.5">{formatBs(businessTotalBs)} Bs</p>
-                            {postClosureReversalTotalUsd !== 0 && (
-                                <p className="text-white/70 text-[10px] font-bold mt-1 flex items-center gap-1">
-                                    <Ban size={10} className="shrink-0" />
-                                    Reverso post-cierre pendiente: {postClosureReversalTotalUsd > 0 ? '+' : '-'}${Math.abs(postClosureReversalTotalUsd).toFixed(2)}
-                                </p>
-                            )}
+            {isAdmin ? (
+                <div className="relative rounded-[1.5rem] overflow-hidden" style={{ background: 'linear-gradient(135deg, #0EA5E9 0%, #06B6D4 50%, #5EEAD4 100%)' }}>
+                    <div className="absolute -right-10 -top-10 w-48 h-48 rounded-full bg-white/10" />
+                    <div className="absolute -left-8 -bottom-8 w-36 h-36 rounded-full bg-white/5" />
+                    <div className="relative z-10 p-5 lg:p-4">
+                        <div className="flex items-start justify-between mb-3 lg:mb-2">
+                            <span className="text-white/70 text-[10px] font-bold uppercase tracking-widest">{activeCashSession ? 'Ingresos del turno' : 'Ingresos del día'}</span>
+                            <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 text-white px-2.5 py-1 rounded-full backdrop-blur-sm">
+                                {(() => { const d = new Date(`${operatingDate}T12:00:00`); const days = ['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB']; const months = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC']; return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}`; })()}
+                            </span>
                         </div>
-                        <div className="text-right">
-                            <div className="bg-white/20 backdrop-blur-sm rounded-2xl px-4 py-2.5 mb-1.5">
-                                <p className="text-2xl font-black text-white leading-none"><AnimatedCounter value={businessSales.length} /></p>
-                                <p className="text-white/70 text-[10px] font-bold mt-0.5">{businessSales.length === 1 ? 'VENTA' : 'VENTAS'}</p>
+                        <div className="flex items-end justify-between">
+                            <div>
+                                <div className="flex items-baseline gap-0.5">
+                                    <span className="text-white/80 text-xl font-black">$</span>
+                                    <span className="text-[2.6rem] font-black text-white tracking-tight leading-none"><AnimatedCounter value={businessTotalUsd} /></span>
+                                </div>
+                                <p className="text-white/60 text-xs font-semibold mt-1.5">{formatBs(businessTotalBs)} Bs</p>
+                                {postClosureReversalTotalUsd !== 0 && (
+                                    <p className="text-white/70 text-[10px] font-bold mt-1 flex items-center gap-1">
+                                        <Ban size={10} className="shrink-0" />
+                                        Reverso post-cierre pendiente: {postClosureReversalTotalUsd > 0 ? '+' : '-'}${Math.abs(postClosureReversalTotalUsd).toFixed(2)}
+                                    </p>
+                                )}
                             </div>
-                            <p className="text-white/60 text-[10px] font-semibold"><AnimatedCounter value={businessItemsSold} /> artículos</p>
+                            <div className="text-right">
+                                <div className="bg-white/20 backdrop-blur-sm rounded-2xl px-4 py-2.5 mb-1.5">
+                                    <p className="text-2xl font-black text-white leading-none"><AnimatedCounter value={businessSales.length} /></p>
+                                    <p className="text-white/70 text-[10px] font-bold mt-0.5">{businessSales.length === 1 ? 'VENTA' : 'VENTAS'}</p>
+                                </div>
+                                <p className="text-white/60 text-[10px] font-semibold"><AnimatedCounter value={businessItemsSold} /> artículos</p>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            ) : (
+                <CashierHeroCard
+                    cashierName={usuarioActivo?.nombre || usuarioActivo?.username || 'Cajero'}
+                    salesCount={businessSales.length}
+                    itemsCount={businessItemsSold}
+                    operatingDate={operatingDate}
+                />
+            )}
 
             {/* ── KPIs ROW ── */}
             <div className={`grid gap-3 ${isAdmin ? 'grid-cols-2' : 'grid-cols-1'}`}>
@@ -827,7 +842,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         </div>
                         <div className="text-left">
                             <p className="text-sm font-black text-white">Cerrar Caja</p>
-                            {isCashierBlindClose ? (
+                            {!isAdmin ? (
                                 <p className="text-[11px] text-white/70 font-medium">{todaySales.length} {todaySales.length === 1 ? 'venta' : 'ventas'} · Cierre ciego</p>
                             ) : (
                                 <p className="text-[11px] text-white/70 font-medium">${todayTotalUsd.toFixed(2)} · {todaySales.length} {todaySales.length === 1 ? 'venta' : 'ventas'}{postClosureReversalTotalUsd !== 0 ? ' · incl. reverso' : ''}</p>
@@ -1412,7 +1427,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 copEnabled={copEnabled}
                 tasaCop={tasaCop}
                 businessDate={operatingDate}
-                blindClose={isCashierBlindClose}
+                blindClose={!isAdmin}
                 historicalBatchReady={isAdmin && Boolean(activeCashSession) && todaySales.length === 66}
                 onFinalizeHistoricalBatch={isAdmin ? handleFinalizeHistoricalBatch : undefined}
                 finalizingHistoricalBatch={isFinalizingHistoricalBatch}

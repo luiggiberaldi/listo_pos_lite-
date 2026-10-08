@@ -59,3 +59,52 @@ export function computeStockAdjustment({
         delta: finalDelta
     };
 }
+
+/**
+ * Filtra los productos que coinciden con el alcance especificado para vaciado de stock.
+ * @param {Array} products
+ * @param {Object} options
+ * @param {('all'|'category'|'selected')} [options.scope='all']
+ * @param {string} [options.category='todos']
+ * @param {Set|Array} [options.selectedIds]
+ * @returns {Array}
+ */
+export function filterProductsByZeroScope(products = [], { scope = 'all', category = 'todos', selectedIds = new Set() } = {}) {
+    if (!Array.isArray(products) || products.length === 0) return [];
+    if (scope === 'selected') {
+        const idSet = selectedIds instanceof Set ? selectedIds : new Set(selectedIds || []);
+        return products.filter(p => idSet.has(p.id));
+    }
+    if (scope === 'category') {
+        if (!category || category === 'todos') return [...products];
+        return products.filter(p => p.category === category);
+    }
+    return [...products];
+}
+
+/**
+ * Coloca las existencias en 0 de los productos según el alcance definido,
+ * preservando intactos todos los demás campos (nombre, precio, costo, código, categoría, etc.).
+ * @param {Array} products
+ * @param {Object} options
+ * @returns {{ updatedProducts: Array, affectedCount: number }}
+ */
+export function bulkZeroProductStock(products = [], { scope = 'all', category = 'todos', selectedIds = new Set() } = {}) {
+    const targets = new Set(filterProductsByZeroScope(products, { scope, category, selectedIds }).map(p => p.id));
+    let affectedCount = 0;
+
+    const updatedProducts = products.map(p => {
+        if (!targets.has(p.id)) return p;
+        affectedCount++;
+        const updated = {
+            ...p,
+            stock: 0,
+        };
+        if (p.stockInLotes !== undefined && p.stockInLotes !== null && p.stockInLotes !== '') {
+            updated.stockInLotes = 0;
+        }
+        return updated;
+    });
+
+    return { updatedProducts, affectedCount };
+}
