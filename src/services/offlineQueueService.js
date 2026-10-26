@@ -10,6 +10,7 @@ import {
   isQueueItemDue,
   nextRetryAt,
   pruneSyncedItems,
+  resolveOperationId,
 } from './offlineQueuePolicy';
 
 const QUEUE_KEY = 'offline_sales_queue';
@@ -22,11 +23,6 @@ localforage.config({
 });
 
 let syncInFlight = false;
-
-function newOperationId() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-  return `offline-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
 
 function getQueueStorageKey() {
   const accountId = getActiveAccountId();
@@ -72,7 +68,10 @@ async function markLocalSaleSynced(item, serverData) {
       ...sale,
       status: 'COMPLETADA',
       syncMode: 'online_after_retry',
+      // Referencia canónica remota: el servidor devuelve su sale_id también en
+      // una respuesta duplicate (operación ya procesada con este mismo ID).
       remoteSaleId: serverData?.sale_id || sale.remoteSaleId || null,
+      remoteDuplicate: serverData?.duplicate === true || sale.remoteDuplicate || false,
       syncedAt: new Date().toISOString(),
     };
   });
@@ -95,7 +94,9 @@ export const offlineQueueService = {
     }
 
     const queue = await readQueue();
-    const operationId = salePayload.queue_id || salePayload.operation_id || newOperationId();
+    // Fase 1: el operation_id llega en el payload (asignado antes del primer
+    // intento online). Reintentar encola la MISMA operación, nunca una nueva.
+    const operationId = resolveOperationId(salePayload);
     const existing = queue.find(item => item.queue_id === operationId);
     if (existing) return existing;
 

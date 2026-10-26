@@ -12,8 +12,10 @@ const SUPABASE_URL = 'https://fgzwmwrugerptfqfrsjd.supabase.co';
 const TTL_SECONDS = 86400; // 24 horas
 const MAX_PAYLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
 
-// Set de queue_ids procesados en esta instancia del worker (idempotencia en memoria)
-const _processedQueueIds = new Set();
+// Resultados ya emitidos por queue_id en esta instancia del worker (atajo en
+// memoria). La garantía de unicidad vive en sales.queue_id dentro de la RPC;
+// esto solo evita egress en reintentos inmediatos.
+const _processedResults = new Map();
 
 // ── Upstash Redis REST helper ──────────────────────────────────────────────
 async function redis(upstashUrl, upstashToken, command, ...args) {
@@ -119,23 +121,38 @@ async function handleCheckout(request, env) {
 
     const { cart = [] } = payload;
 
-    // ── Idempotencia: evitar duplicar ventas offline si el cliente reintenta ──
-    if (payload.queue_id && payload.sync_origin === 'offline_sync') {
-        // 1. Check en memoria (rápido, sin egress)
-        if (_processedQueueIds.has(payload.queue_id)) {
-            return Response.json({ ok: true, duplicate: true }, { headers });
+    // ── Idempotencia: un reintento del mismo operation_id devuelve la venta
+    // canónica ya procesada (sale_id + resultado de inventario), sin repetir
+    // descuentos. Estos checks son SOLO atajos: la unicidad la garantiza el
+    // índice sales.queue_id dentro de la transacción de la RPC.
+    if (payload.queue_id) {
+        // 1. Atajo en memoria (rápido, sin egress)
+        const cached = _processedResults.get(payload.queue_id);
+        if (cached) {
+            return Response.json({ success: true, duplicate: true, ...cached }, { headers });
         }
-        // 2. Check persistente en DB (sobrevive reinicios del worker)
+        // 2. Atajo persistente en DB (sobrevive reinicios del worker)
         const safeQueueId = encodeURIComponent(payload.queue_id);
         const dupCheck = await fetch(
-            `${SUPABASE_URL}/rest/v1/sales?queue_id=eq.${safeQueueId}&select=id&limit=1`,
+            `${SUPABASE_URL}/rest/v1/sales?queue_id=eq.${safeQueueId}&select=id,total,sync_origin,sale_items(quantity,product_id,products(stock))&limit=1`,
             { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }
         );
         if (dupCheck.ok) {
             const existing = await dupCheck.json();
-            if (existing?.length > 0) {
-                _processedQueueIds.add(payload.queue_id);
-                return Response.json({ ok: true, duplicate: true, sale_id: existing[0].id }, { headers });
+            const row = existing?.[0];
+            if (row) {
+                const duplicateResult = {
+                    sale_id: row.id,
+                    total: row.total,
+                    sync_origin: row.sync_origin,
+                    inventory: (row.sale_items || []).map(si => ({
+                        product_id: si.product_id,
+                        quantity: si.quantity,
+                        stock: si.products?.stock ?? null,
+                    })),
+                };
+                _processedResults.set(payload.queue_id, duplicateResult);
+                return Response.json({ success: true, duplicate: true, ...duplicateResult }, { headers });
             }
         }
     }
@@ -205,20 +222,17 @@ async function handleCheckout(request, env) {
 
     const result = await rpcRes.json();
 
-    // ── Estampar queue_id en la venta para idempotencia futura ──
+    // La RPC ya guardó queue_id dentro de su MISMA transacción (migración
+    // 001 + 006/007): el PATCH posterior es innecesario y queda retirado.
+    // Solo se cachea el resultado para reintentos inmediatos de esta instancia.
     if (rpcRes.ok && payload.queue_id && result?.sale_id) {
-        fetch(`${SUPABASE_URL}/rest/v1/sales?id=eq.${result.sale_id}`, {
-            method: 'PATCH',
-            headers: {
-                apikey: SERVICE_KEY,
-                Authorization: `Bearer ${SERVICE_KEY}`,
-                'Content-Type': 'application/json',
-                Prefer: 'return=minimal',
-            },
-            body: JSON.stringify({ queue_id: payload.queue_id }),
-        }).catch(() => {}); // fire-and-forget, no bloquea la respuesta
-        _processedQueueIds.add(payload.queue_id);
-        if (_processedQueueIds.size > 500) _processedQueueIds.clear();
+        _processedResults.set(payload.queue_id, {
+            sale_id: result.sale_id,
+            total: result.total,
+            sync_origin: result.sync_origin,
+            inventory: result.inventory || [],
+        });
+        if (_processedResults.size > 500) _processedResults.clear();
     }
 
     return Response.json(result, { status: rpcRes.ok ? 200 : rpcRes.status, headers });

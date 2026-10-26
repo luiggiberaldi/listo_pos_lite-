@@ -47,19 +47,32 @@ export default async function handler(req, res) {
 
     const { cart = [] } = payload;
 
-    // Idempotencia persistente para ventas que vuelven desde la cola offline.
-    // Si el servidor ya confirmó este operation_id, devolver el resultado
-    // anterior en lugar de ejecutar nuevamente el checkout.
-    if (payload.queue_id && payload.sync_origin === 'offline_sync') {
+    // Idempotencia persistente: si el servidor ya confirmó este operation_id
+    // (queue_id), devolver la venta canónica ya procesada y su resultado de
+    // inventario en lugar de ejecutar el checkout de nuevo. Este check es solo
+    // un atajo: la unicidad la garantiza sales.queue_id dentro de la RPC.
+    if (payload.queue_id) {
         const safeQueueId = encodeURIComponent(payload.queue_id);
         const duplicateResponse = await fetch(
-            `${SUPABASE_URL}/rest/v1/sales?queue_id=eq.${safeQueueId}&select=id&limit=1`,
+            `${SUPABASE_URL}/rest/v1/sales?queue_id=eq.${safeQueueId}&select=id,total,sync_origin,sale_items(quantity,product_id,products(stock))&limit=1`,
             { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }
         );
         if (duplicateResponse.ok) {
             const existing = await duplicateResponse.json();
-            if (existing?.length > 0) {
-                return res.status(200).json({ ok: true, duplicate: true, sale_id: existing[0].id });
+            const row = existing?.[0];
+            if (row) {
+                return res.status(200).json({
+                    success: true,
+                    duplicate: true,
+                    sale_id: row.id,
+                    total: row.total,
+                    sync_origin: row.sync_origin,
+                    inventory: (row.sale_items || []).map(si => ({
+                        product_id: si.product_id,
+                        quantity: si.quantity,
+                        stock: si.products?.stock ?? null,
+                    })),
+                });
             }
         }
     }
@@ -120,26 +133,8 @@ export default async function handler(req, res) {
 
     const result = await rpcRes.json();
 
-    // Estampar queue_id antes de confirmar al dispositivo. Si el marcado
-    // falla, no afirmar que la operación quedó protegida contra duplicados.
-    if (rpcRes.ok && payload.queue_id && result?.sale_id) {
-        const markResponse = await fetch(`${SUPABASE_URL}/rest/v1/sales?id=eq.${encodeURIComponent(result.sale_id)}`, {
-            method: 'PATCH',
-            headers: {
-                apikey: SERVICE_KEY,
-                Authorization: `Bearer ${SERVICE_KEY}`,
-                'Content-Type': 'application/json',
-                Prefer: 'return=minimal',
-            },
-            body: JSON.stringify({ queue_id: payload.queue_id }),
-        });
-        if (!markResponse.ok) {
-            return res.status(502).json({
-                error: 'La venta fue procesada, pero no se pudo confirmar su idempotencia.',
-                retryable: true,
-            });
-        }
-    }
-
+    // La RPC guardó queue_id dentro de su misma transacción (migración 001 +
+    // 006/007): la venta queda protegida contra duplicados ANTES de responder,
+    // sin depender de un PATCH posterior.
     return res.status(rpcRes.ok ? 200 : rpcRes.status).json(result);
 }
