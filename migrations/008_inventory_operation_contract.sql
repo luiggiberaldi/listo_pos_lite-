@@ -60,6 +60,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_operations_operation_id
 CREATE INDEX IF NOT EXISTS idx_inventory_operations_product
     ON public.inventory_operations (product_id, created_at);
 
+-- Sin políticas: solo service_role (la RPC vía /api/inventory-operation) las
+-- usa. Sin RLS, PostgREST las expondría a anon/authenticated con la llave pública.
+ALTER TABLE public.inventory_policies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.inventory_operations ENABLE ROW LEVEL SECURITY;
+
 -- ── RPC: aplicar una operación de inventario (idempotente) ─────────────────
 CREATE OR REPLACE FUNCTION public.apply_inventory_operation(payload jsonb)
 RETURNS jsonb
