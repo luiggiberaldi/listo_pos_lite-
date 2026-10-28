@@ -315,7 +315,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
             </div>
 
             {/* ── Body ── */}
-            <div className="flex-1 overflow-y-auto pb-20 lg:pb-14">
+            <div className="flex-1 overflow-y-auto pb-4">
                 <div className="max-w-lg mx-auto p-4 lg:p-3 space-y-4 lg:space-y-3">
 
                     {/* Section header accent */}

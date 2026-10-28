@@ -597,10 +597,13 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 (App.jsx, esquina superior izquierda, z-50), que tapaba el
                 indicador de sincronización y se tragaba sus clics. El acceso
                 sigue disponible en las demás pantallas. */}
-            <div className="flex items-center justify-between px-3 sm:px-5 pt-2 sm:pt-3 lg:pt-2 pb-1 sm:pb-3 lg:pb-1 transition-all z-[60] relative min-h-[70px] sm:min-h-[100px] lg:min-h-[70px]">
+            {/* Rejilla de 3 columnas: los laterales toman lo que necesitan y el logo
+                se achica en el centro, así nunca se monta sobre los botones
+                (antes el logo era absoluto y a 320-375 px tapaba las píldoras). */}
+            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-3 sm:px-5 pt-2 sm:pt-3 lg:pt-2 pb-1 sm:pb-3 lg:pb-1 transition-all z-[60] relative min-h-[56px] sm:min-h-[100px] lg:min-h-[70px]">
                 
                 {/* ====== LATERAL IZQUIERDO: Píldoras (PC/Móvil) ====== */}
-                <div className="flex items-center justify-start gap-2 sm:gap-3 z-20">
+                <div className="flex items-center justify-start gap-1.5 sm:gap-3 z-20">
                     {/* Píldoras de Estado */}
                     <SyncStatus />
                     
@@ -622,12 +625,12 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 </div>
 
                 {/* ====== LOGO CENTRADO ====== */}
-                <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 flex items-center pointer-events-none z-0">
-                    <img src="/logo.png" alt="Listo POS Lite" style={{ height: '65px' }} className="sm:h-[99px] lg:h-[65px] w-auto object-contain select-none drop-shadow-sm pointer-events-auto transition-transform hover:scale-105 duration-200" draggable={false} />
+                <div className="flex items-center justify-center min-w-0 pointer-events-none z-0">
+                    <img src="/logo.png" alt="Listo POS Lite" className="h-10 min-[400px]:h-[52px] sm:h-[80px] lg:h-[65px] w-auto max-w-full object-contain select-none drop-shadow-sm pointer-events-auto transition-transform hover:scale-105 duration-200" draggable={false} />
                 </div>
 
                 {/* ====== LATERAL DERECHO: Notificaciones + Botones de Salir ====== */}
-                <div className="flex items-center justify-end gap-2 z-20">
+                <div className="flex items-center justify-end gap-1.5 sm:gap-2 z-20">
                     {/* Notification Bell — admin only */}
                     {isAdmin && (
                         <div className="relative" data-alerts-dropdown>
@@ -691,7 +694,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             </div>
 
             {/* ── SCROLL CONTENT ── */}
-            <div className="flex flex-col gap-3 px-4 sm:px-6 pt-2 pb-20 lg:pb-14">
+            <div className="flex flex-col gap-3 px-4 sm:px-6 pt-2 pb-4">
 
             {/* Demo Banner */}
             {isDemo && demoTimeLeft && (

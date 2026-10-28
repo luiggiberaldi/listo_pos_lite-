@@ -436,7 +436,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto scrollbar-hide p-3 sm:p-6 pb-20">
+            <div className="flex-1 overflow-y-auto scrollbar-hide p-3 sm:p-6 pb-4">
                 {/* Header Clientes */}
             <div className="shrink-0 mb-5 flex justify-between items-start">
                 <div>
@@ -494,7 +494,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
             </div>
 
             {/* Listado de Clientes */}
-            <div className="flex-1 space-y-3 pb-20">
+            <div className="flex-1 space-y-3 pb-4">
                 {customers.length === 0 ? (
                     <EmptyState
                         icon={Users}
