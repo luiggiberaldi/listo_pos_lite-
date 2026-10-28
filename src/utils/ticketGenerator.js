@@ -1,3 +1,4 @@
+import { formatSaleNumber } from './saleNumbering';
 import { formatBs, formatUsd } from './calculatorUtils';
 import { formatOfficialRate } from './rateResolver';
 
@@ -60,7 +61,7 @@ function _buildThermalHTML(sale, bcvRate, forCapture = false) {
     };
 
     const rate = sale.rate || bcvRate || 1;
-    const saleNum = String(sale.saleNumber || 0).padStart(7, '0');
+    const saleNum = formatSaleNumber(sale) || '0000000';
     const d = new Date(sale.timestamp);
     const fecha = d.toLocaleDateString('es-VE');
     const hora = d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
@@ -240,7 +241,7 @@ function _buildThermalHTML(sale, bcvRate, forCapture = false) {
  * El resultado visual es idéntico al ticket que se imprime en el momento de la venta.
  */
 export async function generateTicketPDF(sale, bcvRate) {
-    const saleNum = String(sale.saleNumber || 0).padStart(7, '0');
+    const saleNum = formatSaleNumber(sale) || '0000000';
     const filename = 'ticket_' + saleNum + '.pdf';
     const html = _buildThermalHTML(sale, bcvRate, true);
     const isCarta = (localStorage.getItem('printer_mode') || 'thermal') === 'inkjet_carta';
@@ -305,7 +306,7 @@ export async function generateTicketPDF(sale, bcvRate) {
  * Compatible con impresoras USB (PC) y Bluetooth emparejadas (movil Android/iOS).
  */
 export function printThermalTicket(sale, bcvRate) {
-    const saleNum = String(sale.saleNumber || 0).padStart(7, '0');
+    const saleNum = formatSaleNumber(sale) || '0000000';
     const html = _buildThermalHTML(sale, bcvRate, false);
     const isCarta = (localStorage.getItem('printer_mode') || 'thermal') === 'inkjet_carta';
 

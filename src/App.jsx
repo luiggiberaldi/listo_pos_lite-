@@ -33,6 +33,7 @@ import { useCloudSync } from './hooks/useCloudSync';
 import { supabaseCloud } from './config/supabaseCloud';
 import { useConfirm } from './hooks/useConfirm.jsx';
 import { setActiveAccountId } from './config/storageScope';
+import { refreshRegisterCode } from './services/registerCodeService';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('inicio');
@@ -95,6 +96,8 @@ export default function App() {
       // Se fija antes de montar ProductProvider para que IndexedDB nunca lea otra cuenta.
       setActiveAccountId(session.user.id);
       const deviceId = localStorage.getItem('pda_device_id') || 'UNKNOWN';
+      // B6: letra de esta caja para numerar ventas (en segundo plano).
+      refreshRegisterCode(email, deviceId);
 
       try {
         const savedAlias = localStorage.getItem('pda_device_alias');

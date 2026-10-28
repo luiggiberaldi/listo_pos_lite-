@@ -320,7 +320,7 @@ export default function MovementsScreen({ isOpen, onClose, products = [], initia
                                     const saleNo = p.ref && saleNumbers.get(String(p.ref));
                                     return (
                                         <div key={p.key} className="flex items-center justify-between gap-2 px-3 py-1.5 text-sm text-amber-800 dark:text-amber-300">
-                                            <span className="truncate"><b>{prod?.name || 'Producto'}</b> · {p.label}{saleNo ? ` #${String(saleNo).padStart(7, '0')}` : ''} · {fmtTime(p.createdAt)}</span>
+                                            <span className="truncate"><b>{prod?.name || 'Producto'}</b> · {p.label}{saleNo ? ` #${saleNo}` : ''} · {fmtTime(p.createdAt)}</span>
                                             <span className="font-bold shrink-0">{p.countTo != null ? `= ${fmtNum(p.countTo)}` : p.entra != null ? `+${fmtNum(p.entra)}` : `−${fmtNum(p.sale)}`}</span>
                                         </div>
                                     );

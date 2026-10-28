@@ -162,7 +162,7 @@ test('Movimientos: CSV para Excel con BOM, ; y comas decimales', () => {
     const csv = movementsToCsv([
         { product_id: P, operation_type: 'VENTA', delta: -1.5, stock_after: 10.25, origin_ref: 'q', actor: 'Ana; caja 1', created_at: new Date(2026, 9, 28, 9, 5).toISOString() },
         { product_id: 'x', operation_type: 'APERTURA', delta: 4, stock_after: 4, created_at: new Date(2026, 9, 28, 8, 0).toISOString() },
-    ], { productsById: new Map([[P, { name: 'Queso "llanero"' }]]), saleNumbers: new Map([['q', 7]]) });
+    ], { productsById: new Map([[P, { name: 'Queso "llanero"' }]]), saleNumbers: new Map([['q', '0000007']]) });
     assert.equal(csv.charCodeAt(0), 0xFEFF);
     const lines = csv.slice(1).split('\r\n');
     assert.equal(lines[0], 'Fecha;Hora;Producto;Movimiento;Entra;Sale;Saldo;Usuario');

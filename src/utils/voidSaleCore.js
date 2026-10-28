@@ -163,6 +163,7 @@ export function buildVoidMutation({
         status: 'COMPLETADA',
         originSaleId: sale.id,
         originSaleNumber: sale.saleNumber,
+        originRegisterCode: sale.registerCode,
         timestamp: voidTimestamp,
         fechaComercial: resolveVoidBusinessDate(sale, sessionDate),
         horaComercial: getLocalISOTime(now),
@@ -181,6 +182,7 @@ export function buildVoidMutation({
         customerId: sale.customerId ?? sale.clienteId,
         customerName: sale.customerName ?? sale.clienteName,
         saleNumber: sale.saleNumber,
+        registerCode: sale.registerCode,
         changeUsd: sale.changeUsd ? -(sale.changeUsd) : 0,
         changeBs: sale.changeBs ? -(sale.changeBs) : 0,
     };

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { formatSaleNumber } from '../../utils/saleNumbering';
 import { Clock, Send, Ban, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Trash2, Shuffle, Recycle, Receipt, Printer, LockIcon } from 'lucide-react';
 import { formatBs } from '../../utils/calculatorUtils';
 import { formatOfficialRate } from '../../utils/rateResolver';
@@ -70,8 +71,7 @@ export default function SalesHistory({
             <div className="space-y-3">
                 {visibleSales.map(s => {
                     const d = new Date(s.timestamp);
-                    const hasSaleNumber = s.saleNumber !== undefined && s.saleNumber !== null && s.saleNumber !== '';
-                    const saleNumberLabel = hasSaleNumber ? `#${String(s.saleNumber).padStart(7, '0')}` : '#S/C';
+                    const saleNumberLabel = formatSaleNumber(s) ? `#${formatSaleNumber(s)}` : '#S/C';
                     let methodLabel = 'Efectivo';
                     let PayMethodIcon = PAYMENT_ICONS['efectivo_bs'];
 

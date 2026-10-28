@@ -5,7 +5,8 @@ import { useAuthStore } from '../hooks/store/useAuthStore';
 import { round2, subR, sumR, mulR } from './dinero';
 import { supabase } from '../core/supabaseClient';
 import { offlineQueueService } from '../services/offlineQueueService';
-import { getActiveAccountId } from '../config/storageScope';
+import { getActiveAccountId, getScopedStorageKey } from '../config/storageScope';
+import { nextSaleNumber, readRegisterCode, readSaleCounter, writeSaleCounter, formatSaleNumber } from './saleNumbering';
 import { newOperationId, isResolvableConflictStatus, conflictSaleStatus } from '../services/offlineQueuePolicy';
 import { getAuthHeaders } from '../services/authHeaders';
 import { PrinterSerial } from '../services/PrinterSerial';
@@ -205,15 +206,20 @@ export async function processSaleTransaction({
     };
 
     const existingSales = await storageService.getItem(SALES_KEY, []);
-    const saleNumber = existingSales.reduce((mx, s) => Math.max(mx, s.saleNumber || 0), 0) + 1;
-    const finalPersistedSale = Object.freeze({ ...sale, saleNumber });
+    // B6: número propio de esta caja (B-00101). El contador se reserva antes de
+    // cualquier espera para que dos cobros seguidos no tomen el mismo número.
+    const counterOpts = { scopedKey: getScopedStorageKey };
+    const registerCode = readRegisterCode(counterOpts);
+    const saleNumber = nextSaleNumber(existingSales, registerCode, readSaleCounter(counterOpts));
+    writeSaleCounter(registerCode, saleNumber, counterOpts);
+    const finalPersistedSale = Object.freeze({ ...sale, saleNumber, registerCode });
 
     await storageService.setItem(SALES_KEY, [finalPersistedSale, ...existingSales]);
 
     // Audit log
     const user = useAuthStore.getState().usuarioActivo;
     const tipo = casheaUsd > 0 ? 'VENTA_CASHEA' : (fiadoAmountUsd > 0 ? 'VENTA_FIADO' : 'VENTA_COMPLETADA');
-    logEvent('VENTA', tipo, `Venta #${saleNumber} [${saleMode.toUpperCase()}] - $${cartTotalUsd.toFixed(2)} - ${cart.length} items - ${selectedCustomer?.name || 'Consumidor Final'}`, user, { saleId: finalPersistedSale.id, total: cartTotalUsd, items: cart.length });
+    logEvent('VENTA', tipo, `Venta #${formatSaleNumber(finalPersistedSale)} [${saleMode.toUpperCase()}] - $${cartTotalUsd.toFixed(2)} - ${cart.length} items - ${selectedCustomer?.name || 'Consumidor Final'}`, user, { saleId: finalPersistedSale.id, total: cartTotalUsd, items: cart.length });
 
     // Deduct stock in local cache immediately
     const updatedProducts = products.map(p => {
