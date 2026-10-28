@@ -423,6 +423,15 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
                     // No crítico: el otro dispositivo lo verá en el próximo pull
                     console.warn('[CloudSync] Broadcast falló (no crítico):', bcastErr?.message);
                 }
+            } else if (realtimeChannel) {
+                // Documentos pesados (ventas, inventario, clientes…): no viajan por
+                // Realtime, solo un aviso de pocos bytes para que los otros equipos
+                // revisen la nube YA, en vez de esperar su próximo polling de 60 s.
+                realtimeChannel.send({
+                    type: 'broadcast',
+                    event: 'sync_ping',
+                    payload: { doc_id: key },
+                }).catch(() => { /* el polling lo cubre */ });
             }
 
         } catch (e) {
@@ -502,7 +511,6 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
             const savedTs = isInventory ? null : localStorage.getItem(getScopedStorageKey('_sync_local_ts_' + docId));
             const localTs = localIsNewer(dirtyTs, savedTs) ? dirtyTs : (savedTs || dirtyTs);
             if (localIsNewer(localTs, cloudUpdatedAt)) {
-                console.log(`[CloudSync] Skip ${docId}: local (${localTs}) más reciente que nube (${cloudUpdatedAt}). Resubiendo...`);
                 // H-15: las llaves 'local' viven en localStorage, no en IndexedDB.
                 let localData = null;
                 if (collection === 'local') {
@@ -512,6 +520,18 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
                     lf.config({ name: APP_STORAGE_DB_NAME, storeName: APP_STORAGE_STORE_NAME });
                     localData = await lf.getItem(getScopedStorageKey(docId));
                 }
+                // Mismo contenido que la nube: la fecha local era de un re-guardado
+                // idéntico, no de un cambio. Nada que subir; se re-fecha con la hora
+                // del servidor para que no vuelva a "ganar" en cada arranque.
+                if (localData !== null && incomingHash && hashPayload(sanitizeForPush(docId, localData)) === incomingHash) {
+                    _lastPushHash[docId] = incomingHash;
+                    _rememberCloudHash(docId, incomingHash);
+                    if (!isInventory) _nativeSetItem(getScopedStorageKey('_sync_local_ts_' + docId), cloudUpdatedAt);
+                    const scoped = _dirtyScopedKey();
+                    if (scoped && pendingLocalTs) clearDirty(_dirtyStorage, scoped, docId, pendingLocalTs);
+                    return;
+                }
+                console.log(`[CloudSync] Skip ${docId}: local (${localTs}) más reciente que nube (${cloudUpdatedAt}). Resubiendo...`);
                 if (localData !== null) {
                     delete _lastPushHash[docId];
                     // Antes del fin del pull inicial esto solo deja la llave sucia;
@@ -695,6 +715,7 @@ export function useCloudSync() {
         const POLL_INTERVAL_MS = 60 * 1000;
         const VISIBILITY_COOLDOWN_MS = 5 * 1000; // anti-rebote al volver a la pestaña
         let pollInFlight = false;
+        let pollAgain = false; // llegó un aviso durante un polling: repetir al terminar
 
         const scheduleInitRetry = () => {
             if (retryTimer) return;
@@ -707,7 +728,8 @@ export function useCloudSync() {
         };
 
         const pollForChanges = async () => {
-            if (pollInFlight || !initialSyncReady || isSyncingFromCloud) return;
+            if (pollInFlight) { pollAgain = true; return; }
+            if (!initialSyncReady || isSyncingFromCloud) return;
             if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
             pollInFlight = true;
             try {
@@ -759,6 +781,10 @@ export function useCloudSync() {
                 console.warn('[CloudSync] Error en polling:', err?.message ?? err);
             } finally {
                 pollInFlight = false;
+                if (pollAgain) {
+                    pollAgain = false;
+                    pollForChanges().catch(() => {});
+                }
             }
         };
 
@@ -950,6 +976,10 @@ export function useCloudSync() {
                                 await _applyFromCloud(doc_id, collection, data);
                             }
                         )
+                        .on('broadcast', { event: 'sync_ping' }, () => {
+                            // Otro equipo subió un documento pesado: bajar solo lo cambiado.
+                            pollForChanges().catch(() => {});
+                        })
                         .subscribe((status) => {
                             console.log(`[CloudSync] Realtime Broadcast canal: ${status}`);
                         });
