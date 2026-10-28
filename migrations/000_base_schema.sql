@@ -15,7 +15,7 @@
 --     lo declara TEXT (su CREATE TABLE nunca llegó a ejecutarse allí).
 --     ALERTA: un INTEGER no admite UUIDs de auth.users.
 --   * cloud_backups conserva password_hash y cloud_licenses conserva
---     days_remaining (default 15), aunque db_estacion_maestra_setup.sql
+--     days_remaining (default 15), aunque docs/legacy/db_estacion_maestra_setup.sql
 --     ordena eliminarlos. cloud_licenses tiene además plan_tier y
 --     max_devices default 1 (el setup dice default 2) y device_id NOT NULL.
 --   * products, sales, sale_items, inventory_adjustments, journal_entries,

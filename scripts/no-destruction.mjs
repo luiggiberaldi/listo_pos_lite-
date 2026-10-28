@@ -25,7 +25,7 @@ const APPEND_ONLY_TABLES = ['sales', 'sale_items', 'journal_entries', 'inventory
 const MUTABLE_TABLES = ['products'];
 const SAMPLE_LIMIT = 25;
 
-// ── Utilidades de entorno (convención de migrate_inventory.js) ──────────────
+// ── Utilidades de entorno (convención de scripts/legacy/migrate_inventory.js) ──────────────
 
 export function parseEnvFile(text) {
     const out = {};
