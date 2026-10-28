@@ -8,6 +8,8 @@
     "dev:api": "wrangler dev",
     "build": "vite build",
     "test": "node --test tests/*.test.mjs",
+    "data:snapshot": "node scripts/no-destruction.mjs snapshot",
+    "data:verify": "node scripts/no-destruction.mjs verify",
     "lint": "eslint .",
     "prettier": "prettier --write .",
     "linc": "eslint .",

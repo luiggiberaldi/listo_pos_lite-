@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { storageService } from '../utils/storageService';
 import { BODEGA_CATEGORIES } from '../config/categories';
+import { runStockOperation } from '../services/inventoryOperationService';
+import { getActiveAccountId } from '../config/storageScope';
 
 const ProductContext = createContext();
 
@@ -192,39 +194,71 @@ export function ProductProvider({ children, rates }) {
         };
     }, []);
 
-    const adjustStock = (productId, delta) => {
-        setProducts(prevProducts => {
-            const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
-            const updated = prevProducts.map(p => {
-                if (p.id === productId) {
-                    const newStock = (p.stock ?? 0) + delta;
-                    return { ...p, stock: allowNeg ? newStock : Math.max(0, newStock) };
-                }
-                return p;
+    // Fase 3: el stock lo decide el CONTRATO de operación de inventario, no el
+    // reemplazo del array local. Estados del resultado:
+    //   confirmed → el stock_after del servidor es la única ley (sin clamps);
+    //   conflict/invalid → el stock local NO se toca (explicado al usuario);
+    //   pending (offline) → cambio optimista marcado como pendiente, jamás
+    //   confirmado hasta que el contrato lo acepte.
+    const applyStockResultToProduct = (productId, result) => {
+        if (result.outcome === 'confirmed') {
+            setProducts(prevProducts => {
+                const updated = prevProducts.map(p =>
+                    p.id === productId ? { ...p, stock: result.stockAfter, stockSync: 'synced' } : p
+                );
+                storageService.setItem('bodega_products_v1', updated).catch(() => {});
+                return updated;
             });
-            // Persistir inmediatamente para no depender del debounce (evita pérdida al cambiar pestaña rápido)
-            storageService.setItem('bodega_products_v1', updated).catch(() => {});
-            return updated;
-        });
+        } else if (result.outcome === 'pending') {
+            const op = result.operation || {};
+            setProducts(prevProducts => {
+                const updated = prevProducts.map(p => {
+                    if (p.id !== productId) return p;
+                    const target = op.mode === 'count'
+                        ? Number(op.quantity)
+                        : Number(p.stock ?? 0) + Number(op.quantity || 0);
+                    return { ...p, stock: target, stockSync: 'pending' };
+                });
+                storageService.setItem('bodega_products_v1', updated).catch(() => {});
+                return updated;
+            });
+        }
+        return result;
     };
 
-    const setProductStock = (productId, exactStock) => {
-        setProducts(prevProducts => {
-            const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
-            const updated = prevProducts.map(p => {
-                if (p.id === productId) {
-                    const parsed = typeof exactStock === 'number' ? exactStock : parseFloat(exactStock) || 0;
-                    const cleanStock = ['kg', 'litro'].includes(p.unit)
-                        ? Math.round(parsed * 1000) / 1000
-                        : Math.round(parsed);
-                    const finalStock = allowNeg ? cleanStock : Math.max(0, cleanStock);
-                    return { ...p, stock: finalStock };
-                }
-                return p;
-            });
-            storageService.setItem('bodega_products_v1', updated).catch(() => {});
-            return updated;
+    const adjustStock = async (productId, delta, meta = {}) => {
+        const product = products.find(p => p.id === productId);
+        if (!product) return { outcome: 'invalid', status: 'invalid', error: 'producto no encontrado' };
+        const result = await runStockOperation({
+            productId,
+            quantity: delta,
+            mode: 'delta',
+            operationType: 'AJUSTE_DIRECTO',
+            unitMode: product.unit || 'unidad',
+            reason: meta.reason || 'AJUSTE_DIRECTO',
+            accountId: getActiveAccountId(),
+            deviceId: meta.deviceId || null,
+            actor: meta.actor || null,
         });
+        return applyStockResultToProduct(productId, result);
+    };
+
+    const setProductStock = async (productId, exactStock, meta = {}) => {
+        const product = products.find(p => p.id === productId);
+        if (!product) return { outcome: 'invalid', status: 'invalid', error: 'producto no encontrado' };
+        const parsed = typeof exactStock === 'number' ? exactStock : parseFloat(exactStock) || 0;
+        const result = await runStockOperation({
+            productId,
+            quantity: parsed,
+            mode: 'count',
+            operationType: 'CONTEO',
+            unitMode: product.unit || 'unidad',
+            reason: meta.reason || 'CONTEO',
+            accountId: getActiveAccountId(),
+            deviceId: meta.deviceId || null,
+            actor: meta.actor || null,
+        });
+        return applyStockResultToProduct(productId, result);
     };
 
     return (

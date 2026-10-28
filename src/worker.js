@@ -5,6 +5,8 @@
  * /api/checkout — Proxy seguro para process_checkout: upsertea productos
  *                 usando SUPABASE_SERVICE_KEY (secreto del worker, nunca expuesto
  *                 al cliente) y luego llama al RPC de Supabase.
+ * /api/inventory-operation — Contrato único de operación de inventario:
+ *                 aplica apply_inventory_operation (idempotente por operation_id).
  * Todo lo demás cae al SPA estático.
  */
 
@@ -370,6 +372,46 @@ async function handleRates(request) {
 }
 
 // ── Main fetch handler ─────────────────────────────────────────────────────
+// ── Inventory operation handler (contrato único de inventario) ──
+async function handleInventoryOperation(request, env) {
+    const headers = corsHeaders(request);
+
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
+    if (request.method !== 'POST') return Response.json({ error: 'Method not allowed' }, { status: 405, headers });
+
+    const SERVICE_KEY = env.SUPABASE_SERVICE_KEY;
+    if (!SERVICE_KEY) {
+        return Response.json({ error: 'SUPABASE_SERVICE_KEY not configured' }, { status: 500, headers });
+    }
+
+    let payload;
+    try {
+        payload = await request.json();
+    } catch {
+        return Response.json({ error: 'Invalid JSON' }, { status: 400, headers });
+    }
+
+    if (!payload?.operation_id) {
+        return Response.json({ status: 'invalid', message: 'operation_id es obligatorio' }, { status: 400, headers });
+    }
+
+    // La unicidad de operation_id la garantiza idx_inventory_operations_operation_id
+    // dentro de la transacción de la RPC (apply_inventory_operation). Este proxy
+    // solo valida y delega: un reintento con el mismo ID devuelve already_processed
+    // con el resultado canónico, sin aplicar el delta dos veces.
+    const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/apply_inventory_operation`, {
+        method: 'POST',
+        headers: {
+            apikey: SERVICE_KEY,
+            Authorization: `Bearer ${SERVICE_KEY}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ payload }),
+    });
+    const result = await rpcRes.json();
+    return Response.json(result, { status: rpcRes.ok ? 200 : rpcRes.status, headers });
+}
+
 export default {
     async fetch(request, env) {
         const url = new URL(request.url);
@@ -388,6 +430,10 @@ export default {
 
         if (url.pathname.startsWith('/api/checkout')) {
             return handleCheckout(request, env);
+        }
+
+        if (url.pathname.startsWith('/api/inventory-operation')) {
+            return handleInventoryOperation(request, env);
         }
 
         // Static SPA assets for everything else
