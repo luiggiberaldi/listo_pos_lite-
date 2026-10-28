@@ -694,7 +694,9 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             </div>
 
             {/* ── SCROLL CONTENT ── */}
-            <div className="flex flex-col gap-3 px-4 sm:px-6 pt-2 pb-4">
+            {/* Escritorio (lg): dos columnas con el resumen arriba a todo el ancho.
+                Se usan columnas CSS para conservar el orden de las tarjetas. */}
+            <div className="flex flex-col gap-3 px-4 sm:px-6 pt-2 pb-4 lg:block lg:columns-2 lg:gap-4 lg:max-w-6xl lg:mx-auto lg:w-full lg:[&>*]:mb-4 lg:[&>*]:break-inside-avoid">
 
             {/* Demo Banner */}
             {isDemo && demoTimeLeft && (
@@ -717,6 +719,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             )}
 
             {/* ── HERO REVENUE CARD ── */}
+            <div className="lg:[column-span:all]">
             {isAdmin ? (
                 <div className="relative rounded-[1.5rem] overflow-hidden" style={{ background: 'linear-gradient(135deg, #0EA5E9 0%, #06B6D4 50%, #5EEAD4 100%)' }}>
                     <div className="absolute -right-10 -top-10 w-48 h-48 rounded-full bg-white/10" />
@@ -760,9 +763,10 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                     operatingDate={operatingDate}
                 />
             )}
+            </div>
 
             {/* ── KPIs ROW ── */}
-            <div className={`grid gap-3 ${isAdmin ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            <div className={`grid gap-3 lg:[column-span:all] ${isAdmin ? 'grid-cols-2' : 'grid-cols-1'}`}>
                 {isAdmin && (
                 <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm relative overflow-hidden">
                     <div className="absolute -right-3 -top-3 w-14 h-14 bg-emerald-50 rounded-full blur-xl" />

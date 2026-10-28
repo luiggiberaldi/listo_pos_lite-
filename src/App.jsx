@@ -354,7 +354,9 @@ export default function App() {
     const root = document.documentElement;
     if (!el) { root.style.removeProperty('--bottom-nav-space'); return; }
     const update = () => {
-      const space = el.offsetHeight + (parseFloat(getComputedStyle(el).marginBottom) || 0);
+      // En escritorio (lg) la barra es lateral: no ocupa espacio abajo.
+      const isSidebar = window.matchMedia('(min-width: 1024px)').matches;
+      const space = isSidebar ? 0 : el.offsetHeight + (parseFloat(getComputedStyle(el).marginBottom) || 0);
       root.style.setProperty('--bottom-nav-space', `${Math.ceil(space)}px`);
     };
     update();
@@ -517,13 +519,13 @@ export default function App() {
       <CartProvider>
       <ProductProvider rates={rates}>
         <main
-          className={`flex-1 min-h-0 w-full max-w-md md:max-w-3xl lg:max-w-none lg:px-4 xl:px-6 mx-auto relative ${isKeyboardOpen ? 'pb-4' : ''} flex flex-col overflow-y-auto`}
+          className={`flex-1 min-h-0 w-full max-w-md md:max-w-3xl lg:max-w-none lg:pl-[104px] lg:pr-4 xl:pr-6 mx-auto relative ${isKeyboardOpen ? 'pb-4' : ''} flex flex-col overflow-y-auto`}
           style={isKeyboardOpen ? undefined : { paddingBottom: 'calc(var(--bottom-nav-space, 80px) + 8px)' }}
         >
 
           {/* Hidden Admin Trigger Area */}
         <div
-          className="absolute top-0 left-0 w-20 h-20 z-50 cursor-pointer opacity-0"
+          className="absolute top-0 left-0 lg:left-[104px] w-20 h-20 z-50 cursor-pointer opacity-0"
           onClick={handleLogoClick}
           title="Ssshh..."
         ></div>
@@ -589,10 +591,11 @@ export default function App() {
           navigateTo={setActiveTab} 
       />
 
-      {/* Bottom Nav — hidden in POS mode for full-screen selling */}
+      {/* Navegación: barra flotante abajo en celular/tablet; barra lateral fija
+          a la izquierda en escritorio (lg), donde la de abajo tapaba contenido. */}
       {!isKeyboardOpen && (
-        <div ref={setBottomNavEl} className="fixed bottom-0 left-0 right-0 px-4 sm:px-6 pb-[env(safe-area-inset-bottom)] pt-0 mb-2 lg:mb-2 max-w-sm sm:max-w-lg md:max-w-2xl mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300">
-          <div className="bg-[#1E293B]/95 backdrop-blur-xl rounded-2xl p-1 flex justify-between items-center shadow-2xl shadow-slate-900/30 border border-white/10 ring-1 ring-black/5 pointer-events-auto">
+        <div ref={setBottomNavEl} className="fixed bottom-0 left-0 right-0 px-4 sm:px-6 pb-[env(safe-area-inset-bottom)] pt-0 mb-2 max-w-sm sm:max-w-lg md:max-w-2xl mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300 lg:top-0 lg:right-auto lg:w-[88px] lg:max-w-none lg:mx-0 lg:mb-0 lg:p-3 lg:pr-0 lg:animate-none">
+          <div className="bg-[#1E293B]/95 backdrop-blur-xl rounded-2xl p-1 flex justify-between items-center shadow-2xl shadow-slate-900/30 border border-white/10 ring-1 ring-black/5 pointer-events-auto lg:h-full lg:flex-col lg:justify-start lg:gap-1.5 lg:p-1.5 lg:pt-3">
             {TABS.map(tab => (
               <TabButton
                 key={tab.id}
@@ -671,9 +674,10 @@ export default function App() {
 
 function TabButton({ icon, label, isActive, onClick, 'data-tour': dataTour }) {
   return (
-    <button data-tour={dataTour} onClick={onClick} className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 sm:py-2.5 rounded-xl transition-all duration-300 ${isActive ? 'bg-[#0EA5E9] text-white shadow-md shadow-sky-500/30' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+    <button data-tour={dataTour} onClick={onClick} title={label} aria-label={label} className={`flex-1 lg:flex-none lg:w-full flex flex-col items-center justify-center gap-0.5 lg:gap-1 py-2 sm:py-2.5 lg:py-3 rounded-xl transition-colors duration-200 ${isActive ? 'bg-[#0EA5E9] text-white shadow-md shadow-sky-500/30' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
       {icon}
-      {isActive && <span className="text-[9px] sm:text-[10px] font-extrabold animate-in zoom-in duration-200">{label}</span>}
+      {/* En escritorio todas las pestañas muestran su nombre (hay espacio). */}
+      <span className={`text-[9px] sm:text-[10px] font-extrabold ${isActive ? 'animate-in zoom-in duration-200' : 'hidden lg:block lg:font-bold'}`}>{label}</span>
     </button>
   );
 }
