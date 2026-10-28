@@ -118,6 +118,18 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         return () => { mounted = false; };
     }, [isActive]);
 
+    // Ventas/clientes que llegan de otra caja (sync) se reflejan sin recargar.
+    useEffect(() => {
+        if (!isActive) return;
+        const onStorageUpdate = async (e) => {
+            const key = e.detail?.key;
+            if (key === SALES_KEY) setSales(await storageService.getItem(SALES_KEY, []));
+            if (key === 'bodega_customers_v1') setCustomers(await storageService.getItem('bodega_customers_v1', []));
+        };
+        window.addEventListener('app_storage_update', onStorageUpdate);
+        return () => window.removeEventListener('app_storage_update', onStorageUpdate);
+    }, [isActive]);
+
 
 
     // ── Funciones de Historial Avanzado ──
