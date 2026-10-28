@@ -292,4 +292,22 @@ Revisión de código del 28‑oct‑2026 (rama `fix/sync-fase-a`). "Código ✅"
 
 Extras fuera del plan, en la misma rama: Inicio y Clientes se refrescan al llegar datos de otra caja; ventas suben con espera de 10 s; `npm run dev` arranca web + API; opción de PIN al cambiar de pestaña (`feat/bloqueo-cambio-pestana`, unida a esta rama).
 
-**Pendiente para cerrar la Fase A:** prueba manual con 2 navegadores (escenarios E2E 1, 6, 7, 8, 9), subir la rama, PR a `main` y publicar.
+Migración 008 (contrato de inventario) también aplicada en producción el 28‑oct, con RLS agregado a `inventory_operations`/`inventory_policies` (el archivo original no lo activaba).
+
+### Prueba manual en la vista previa de Vercel (28‑oct‑2026)
+
+Dos "dispositivos" = dos orígenes distintos de la misma vista previa (alias de rama y URL del despliegue), cuenta real del usuario.
+
+| Escenario | Resultado |
+|---|---|
+| Arranque: pull inicial, Realtime, indicador, sin pendientes | ✅ 38 documentos, canal SUBSCRIBED, sin errores de consola |
+| Ajuste de inventario (‑1) | ✅ Optimista en pantalla, `applied` por el contrato, en la nube "synced" a los 16 s |
+| Cambio de inventario viaja a otro dispositivo (+1) | ✅ |
+| E2E 1/6‑parcial: venta en B aparece en A sin recargar | ✅ Orden #57649B: A pasó de 5 a 6 ventas en ~20 s; stock 5→4 en A y en la nube (14 s) |
+| A5: modo de tasa y stock negativo llegan a la nube | ✅ |
+
+Fallos encontrados por la prueba y corregidos en la rama: `api/inventory-operation.js` no se publicaba en Vercel (`.gitignore`), e indicador "Offline" pegado 15 min tras un ping lento.
+
+**No probado todavía:** E2E 6 completo (abrir sin internet, vender y reconectar), E2E 7 (reloj desfasado), E2E 8 (pestaña oculta 30 min), anulación entre cajas.
+
+**Pendiente para cerrar la Fase A:** PR a `main` y publicar (en horario de poco movimiento; vigilar 1‑2 días).
