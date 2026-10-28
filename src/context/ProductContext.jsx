@@ -3,6 +3,7 @@ import { storageService } from '../utils/storageService';
 import { BODEGA_CATEGORIES } from '../config/categories';
 import { runStockOperation } from '../services/inventoryOperationService';
 import { getActiveAccountId } from '../config/storageScope';
+import { resolveLocalStock, isUnknownProductResult } from '../sync/stockResolution';
 
 const ProductContext = createContext();
 
@@ -200,28 +201,45 @@ export function ProductProvider({ children, rates }) {
     //   conflict/invalid → el stock local NO se toca (explicado al usuario);
     //   pending (offline) → cambio optimista marcado como pendiente, jamás
     //   confirmado hasta que el contrato lo acepte.
-    const applyStockResultToProduct = (productId, result) => {
-        if (result.outcome === 'confirmed') {
+    // A7 (mitigación): mientras public.products del servidor no tenga el stock real
+    // por cuenta (Fase C), el saldo del servidor NO se copia sobre el stock local.
+    // La operación se aplica sobre el stock del dispositivo (ver sync/stockResolution).
+    //   confirmed → aplicada en el servidor (o ya procesada): se refleja localmente;
+    //   producto desconocido en el servidor → se aplica solo localmente (local_only);
+    //   conflict/invalid → el stock local NO se toca (explicado al usuario);
+    //   pending (offline) → cambio optimista marcado como pendiente.
+    const applyStockResultToProduct = (productId, rawResult) => {
+        const product = products.find(p => p.id === productId);
+        let result = rawResult;
+        if (isUnknownProductResult(result)) {
+            result = { ...result, outcome: 'confirmed', status: 'local_only' };
+        }
+
+        if (result.outcome === 'confirmed' || result.outcome === 'pending') {
+            const target = resolveLocalStock({
+                currentStock: product?.stock,
+                operation: result.operation,
+                status: result.status,
+                unit: product?.unit || 'unidad',
+            });
+            const stockSync = result.outcome === 'pending'
+                ? 'pending'
+                : (result.status === 'local_only' ? 'local_only' : 'synced');
             setProducts(prevProducts => {
-                const updated = prevProducts.map(p =>
-                    p.id === productId ? { ...p, stock: result.stockAfter, stockSync: 'synced' } : p
-                );
+                const updated = prevProducts.map(p => p.id === productId
+                    ? {
+                        ...p,
+                        stock: target,
+                        stockSync,
+                        ...(result.outcome === 'confirmed' && Number.isFinite(result.stockAfter)
+                            ? { stockServer: result.stockAfter }
+                            : {}),
+                    }
+                    : p);
                 storageService.setItem('bodega_products_v1', updated).catch(() => {});
                 return updated;
             });
-        } else if (result.outcome === 'pending') {
-            const op = result.operation || {};
-            setProducts(prevProducts => {
-                const updated = prevProducts.map(p => {
-                    if (p.id !== productId) return p;
-                    const target = op.mode === 'count'
-                        ? Number(op.quantity)
-                        : Number(p.stock ?? 0) + Number(op.quantity || 0);
-                    return { ...p, stock: target, stockSync: 'pending' };
-                });
-                storageService.setItem('bodega_products_v1', updated).catch(() => {});
-                return updated;
-            });
+            return result.outcome === 'confirmed' ? { ...result, stockAfter: target } : result;
         }
         return result;
     };

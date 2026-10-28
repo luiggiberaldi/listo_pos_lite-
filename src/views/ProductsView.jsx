@@ -19,6 +19,7 @@ import BulkPriceAdjustModal from '../components/Products/BulkPriceAdjustModal';
 import ZeroStockModal from '../components/Products/ZeroStockModal';
 import { filterProductsByZeroScope } from '../utils/stockUtils';
 import { applyStockOperation, buildBulkZeroOperations } from '../services/inventoryOperationService';
+import { isUnknownProductResult } from '../sync/stockResolution';
 import { useProductContext } from '../context/ProductContext';
 import EmptyState from '../components/EmptyState';
 import Skeleton from '../components/Skeleton';
@@ -121,7 +122,11 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         const operations = buildBulkZeroOperations(targets);
         const outcomes = [];
         for (const operation of operations) {
-            outcomes.push(await applyStockOperation(operation));
+            const outcome = await applyStockOperation(operation);
+            // A7: producto aún desconocido para el servidor → se aplica solo localmente.
+            outcomes.push(isUnknownProductResult(outcome)
+                ? { ...outcome, outcome: 'confirmed', status: 'local_only' }
+                : outcome);
         }
         const confirmed = outcomes.filter(o => o.outcome === 'confirmed');
         const pendingOps = outcomes.filter(o => o.outcome === 'pending');
@@ -131,7 +136,14 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         const pendingIds = new Set(pendingOps.map(o => o.operation.product_id));
         const updatedProducts = products.map(p => {
             const ok = confirmedByProduct.get(p.id);
-            if (ok) return { ...p, stock: ok.stockAfter, stockSync: 'synced' };
+            // El vaciado deja el stock LOCAL en 0; el saldo del servidor (aún no
+            // autoritativo) solo se guarda como diagnóstico.
+            if (ok) return {
+                ...p,
+                stock: 0,
+                stockSync: ok.status === 'local_only' ? 'local_only' : 'synced',
+                ...(Number.isFinite(ok.stockAfter) ? { stockServer: ok.stockAfter } : {}),
+            };
             if (pendingIds.has(p.id)) return { ...p, stock: 0, stockSync: 'pending' };
             return p;
         });
