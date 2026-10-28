@@ -4,6 +4,7 @@ import { supabaseCloud } from '../config/supabaseCloud';
 import { storageService } from '../utils/storageService';
 import { useAuthStore } from './store/useAuthStore';
 import { APP_STORAGE_DB_NAME, APP_STORAGE_STORE_NAME, getScopedStorageKey, setActiveAccountId } from '../config/storageScope';
+import { computePushHash } from '../sync/syncHash';
 
 // Exportado para que SettingsView pueda enviar el broadcast antes de hacer signOut
 export const broadcastFactoryReset = async (userId) => {
@@ -237,11 +238,9 @@ export function sanitizeForPush(key, value) {
     return sanitizedValue;
 }
 
-function _computePushHash(serialized) {
-    // Hash includes length + start + middle + end to catch changes anywhere in payload
-    const mid = Math.floor(serialized.length / 2);
-    return serialized.length + ':' + serialized.slice(0, 100) + serialized.slice(mid, mid + 100) + serialized.slice(-100);
-}
+// Huella sobre el payload COMPLETO (ver src/sync/syncHash.js). La versión previa
+// solo miraba longitud + 300 caracteres y dejaba sin subir la mayoría de ediciones.
+const _computePushHash = computePushHash;
 
 // ─── Estado Global del Motor ───────────────────────────────────────────────
 let pollIntervalId = null;
