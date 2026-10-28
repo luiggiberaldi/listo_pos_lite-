@@ -6,6 +6,7 @@ import { round2, subR, sumR, mulR } from './dinero';
 import { supabase } from '../core/supabaseClient';
 import { offlineQueueService } from '../services/offlineQueueService';
 import { newOperationId } from '../services/offlineQueuePolicy';
+import { getAuthHeaders } from '../services/authHeaders';
 import { PrinterSerial } from '../services/PrinterSerial';
 import { getLocalISODate, getLocalISOTime } from './dateHelpers';
 
@@ -85,9 +86,10 @@ export async function processSaleTransaction({
 
     if (navigator.onLine) {
        try {
+         const authHeaders = await getAuthHeaders();
          const checkoutPromise = fetch('/api/checkout', {
            method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
+           headers: { 'Content-Type': 'application/json', ...authHeaders },
            body: JSON.stringify(rpcPayload),
            signal: AbortSignal.timeout(5000),
          }).then(r => r.json());

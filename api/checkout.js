@@ -17,8 +17,26 @@ function corsHeaders(origin) {
     return {
         'Access-Control-Allow-Origin': CORS_ORIGINS.includes(origin) ? origin : '',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     };
+}
+
+// Autentica con el access token de Supabase del usuario (Authorization: Bearer).
+// Estos endpoints escriben con la service key: no pueden confiar en el payload.
+async function authenticateRequest(req, serviceKey) {
+    const auth = req.headers['authorization'] || '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+    if (!token) return null;
+    try {
+        const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+            headers: { apikey: serviceKey, Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return null;
+        const user = await res.json();
+        return user?.id ? user : null;
+    } catch {
+        return null;
+    }
 }
 
 export default async function handler(req, res) {
@@ -40,10 +58,17 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: 'SUPABASE_SERVICE_KEY not configured' });
     }
 
+    const user = await authenticateRequest(req, SERVICE_KEY);
+    if (!user) {
+        return res.status(401).json({ error: 'No autorizado: inicia sesión para registrar ventas.' });
+    }
+
     const payload = req.body;
     if (!payload || typeof payload !== 'object') {
         return res.status(400).json({ error: 'Invalid JSON' });
     }
+    // La cuenta sale del token, nunca del payload.
+    payload.account_id = user.id;
 
     const { cart = [] } = payload;
 

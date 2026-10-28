@@ -15,6 +15,7 @@
  */
 
 import { newOperationId, resolveOperationId } from './offlineQueuePolicy.js';
+import { getAuthHeaders } from './authHeaders.js';
 import {
     checkNegativePolicy,
     normalizeStockQuantity,
@@ -77,14 +78,15 @@ export function buildInventoryOperation({
  * el mismo payload (mismo operation_id); el servidor responde already_processed
  * con el resultado canónico si este o un intento anterior ya la aplicó.
  */
-export async function applyInventoryOperation(operation, { fetchImpl } = {}) {
+export async function applyInventoryOperation(operation, { fetchImpl, authHeaders } = {}) {
     const doFetch = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
     if (!doFetch) throw new Error('fetch no está disponible');
     const payload = { ...operation, operation_id: resolveOperationId(operation) };
 
+    const auth = authHeaders || (fetchImpl ? {} : await getAuthHeaders());
     const res = await doFetch('/api/inventory-operation', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...auth },
         body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({}));

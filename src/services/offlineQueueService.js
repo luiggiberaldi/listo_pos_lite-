@@ -12,6 +12,7 @@ import {
   pruneSyncedItems,
   resolveOperationId,
 } from './offlineQueuePolicy';
+import { getAuthHeaders } from './authHeaders';
 
 const QUEUE_KEY = 'offline_sales_queue';
 const SALES_KEY = 'bodega_sales_v1';
@@ -153,13 +154,28 @@ export const offlineQueueService = {
             device_id: item.device_id,
           };
 
+          // El token se obtiene en CADA reintento (nunca se guarda en la cola):
+          // así una venta encolada hace días usa la sesión vigente.
+          const authHeaders = await getAuthHeaders();
           const res = await fetch('/api/checkout', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...authHeaders },
             body: JSON.stringify(payloadWithOrigin),
             signal: AbortSignal.timeout(10000),
           });
           const data = await res.json().catch(() => ({}));
+
+          if (res.status === 401) {
+            // Sesión vencida o ausente: la venta NO está mal, solo falta iniciar
+            // sesión. No consume intentos ni se marca como fallida.
+            queue = queue.map(q => q.id === item.id ? {
+              ...q,
+              next_attempt_at: nextRetryAt(3),
+              last_error: 'Sesión expirada: vuelve a iniciar sesión para sincronizar.',
+            } : q);
+            await writeQueue(queue);
+            continue;
+          }
 
           if (!res.ok || data.error || data.code) {
             throw new Error(data.message || data.error || `HTTP ${res.status}`);

@@ -52,8 +52,31 @@ function corsHeaders(request) {
     return {
         'Access-Control-Allow-Origin': ALLOWED.includes(origin) ? origin : '',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     };
+}
+
+/**
+ * Autentica la petición con el access token de Supabase del usuario
+ * (Authorization: Bearer <token>). Devuelve el usuario o null.
+ * Los endpoints que escriben con SUPABASE_SERVICE_KEY (checkout, inventario) NO
+ * pueden confiar en el payload: sin esto cualquiera que conozca la URL podía
+ * registrar ventas o mover stock de cualquier cuenta.
+ */
+async function authenticateRequest(request, env) {
+    const auth = request.headers.get('Authorization') || '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+    if (!token || !env.SUPABASE_SERVICE_KEY) return null;
+    try {
+        const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+            headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return null;
+        const user = await res.json();
+        return user?.id ? user : null;
+    } catch {
+        return null;
+    }
 }
 
 // ── Update Profile handler (Admin API — service key never exposed al cliente) ─
@@ -114,12 +137,19 @@ async function handleCheckout(request, env) {
         return Response.json({ error: 'SUPABASE_SERVICE_KEY not configured' }, { status: 500, headers });
     }
 
+    const user = await authenticateRequest(request, env);
+    if (!user) {
+        return Response.json({ error: 'No autorizado: inicia sesión para registrar ventas.' }, { status: 401, headers });
+    }
+
     let payload;
     try {
         payload = await request.json();
     } catch {
         return Response.json({ error: 'Invalid JSON' }, { status: 400, headers });
     }
+    // La cuenta sale del token, nunca del payload.
+    payload.account_id = user.id;
 
     const { cart = [] } = payload;
 
@@ -384,12 +414,19 @@ async function handleInventoryOperation(request, env) {
         return Response.json({ error: 'SUPABASE_SERVICE_KEY not configured' }, { status: 500, headers });
     }
 
+    const user = await authenticateRequest(request, env);
+    if (!user) {
+        return Response.json({ error: 'No autorizado: inicia sesión para operar inventario.' }, { status: 401, headers });
+    }
+
     let payload;
     try {
         payload = await request.json();
     } catch {
         return Response.json({ error: 'Invalid JSON' }, { status: 400, headers });
     }
+    // La cuenta sale del token, nunca del payload.
+    if (payload && typeof payload === 'object') payload.account_id = user.id;
 
     if (!payload?.operation_id) {
         return Response.json({ status: 'invalid', message: 'operation_id es obligatorio' }, { status: 400, headers });
