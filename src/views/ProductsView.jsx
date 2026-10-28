@@ -99,7 +99,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         auditLog('INVENTARIO', mode === 'add' ? 'AJUSTE_DIRECTO' : 'CONTEO', `Stock de "${prodName}": ${descAction}${pending ? ' [PENDIENTE_SYNC]' : ''}`);
 
         if (pending) {
-            showToast(`Sin conexión: ajuste de "${prodName}" marcado como PENDIENTE`, 'warning');
+            showToast(`Servidor sin confirmar: ajuste de "${prodName}" guardado y PENDIENTE de sincronizar`, 'warning');
             return;
         }
         const updated = products.map(p => p.id === productId ? { ...p, stock: result.stockAfter } : p);
@@ -208,7 +208,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         } catch (e) { /* silencioso */ }
 
         if (pending && !meta.silent) {
-            showToast('Sin conexión: ajuste marcado como PENDIENTE de sincronizar', 'warning');
+            showToast('Servidor sin confirmar: ajuste guardado y PENDIENTE de sincronizar', 'warning');
         }
         return result;
     }

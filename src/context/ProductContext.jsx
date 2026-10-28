@@ -251,9 +251,27 @@ export function ProductProvider({ children, rates }) {
         return result;
     };
 
+    // Optimista: la cantidad elegida se ve en el acto (sin "volver" al valor
+    // anterior mientras responde el servidor). Si el contrato la rechaza
+    // (conflicto/inválida), se revierte — solo si nadie la cambió entretanto.
+    const showOptimisticStock = (product, operation) => {
+        const unit = product.unit || 'unidad';
+        const optimistic = resolveLocalStock({ currentStock: product.stock, operation, status: 'pending', unit });
+        setProducts(prev => prev.map(p => p.id === product.id ? { ...p, stock: optimistic, stockSync: 'pending' } : p));
+        return () => setProducts(prev => prev.map(p => (p.id === product.id && p.stock === optimistic)
+            ? { ...p, stock: product.stock, stockSync: product.stockSync }
+            : p));
+    };
+    const finishStockOperation = (productId, result, revert) => {
+        const applied = applyStockResultToProduct(productId, result);
+        if (applied.outcome === 'conflict' || applied.outcome === 'invalid') revert();
+        return applied;
+    };
+
     const adjustStock = async (productId, delta, meta = {}) => {
         const product = products.find(p => p.id === productId);
         if (!product) return { outcome: 'invalid', status: 'invalid', error: 'producto no encontrado' };
+        const revert = showOptimisticStock(product, { mode: 'delta', quantity: delta });
         const result = await runStockOperation({
             productId,
             quantity: delta,
@@ -265,13 +283,14 @@ export function ProductProvider({ children, rates }) {
             deviceId: meta.deviceId || null,
             actor: meta.actor || null,
         });
-        return applyStockResultToProduct(productId, result);
+        return finishStockOperation(productId, result, revert);
     };
 
     const setProductStock = async (productId, exactStock, meta = {}) => {
         const product = products.find(p => p.id === productId);
         if (!product) return { outcome: 'invalid', status: 'invalid', error: 'producto no encontrado' };
         const parsed = typeof exactStock === 'number' ? exactStock : parseFloat(exactStock) || 0;
+        const revert = showOptimisticStock(product, { mode: 'count', quantity: parsed });
         const result = await runStockOperation({
             productId,
             quantity: parsed,
@@ -283,7 +302,7 @@ export function ProductProvider({ children, rates }) {
             deviceId: meta.deviceId || null,
             actor: meta.actor || null,
         });
-        return applyStockResultToProduct(productId, result);
+        return finishStockOperation(productId, result, revert);
     };
 
     return (
