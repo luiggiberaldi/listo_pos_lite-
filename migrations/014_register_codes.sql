@@ -27,14 +27,14 @@ IMMUTABLE
 AS $function$
 DECLARE
     n integer := p_index;
-    out text := '';
+    v_out text := '';
 BEGIN
     WHILE n > 0 LOOP
         n := n - 1;
-        out := chr(65 + (n % 26)) || out;
+        v_out := chr(65 + (n % 26)) || v_out;
         n := n / 26;
     END LOOP;
-    RETURN out;
+    RETURN v_out;
 END;
 $function$;
 
@@ -78,7 +78,7 @@ WITH ordered AS (
     WHERE register_code IS NULL
 )
 UPDATE public.account_devices d
-SET register_code = public.register_code_from_index(o.rn)
+SET register_code = public.register_code_from_index(o.rn::integer)
 FROM ordered o
 WHERE d.id = o.id;
 
