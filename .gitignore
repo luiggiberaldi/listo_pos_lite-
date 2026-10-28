@@ -83,16 +83,16 @@ TASASALDIA_MANUAL_TEXTO.md
 CONTEXT.md
 capturas_manual/
 directivas/
-future_plans/
 android/
 server/
-scripts/
 
 # Herramientas de agente y configs de deploy privadas
 .agent/
 .freebuff/
 .wrangler/
 .vercel
+.claude/
+supabase/.temp/
 capacitor.config.json
 
 # Android signing keys

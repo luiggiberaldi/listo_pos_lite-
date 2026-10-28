@@ -131,6 +131,7 @@ Aplicar `touch()` en **cada** escritura de entidad:
 - Consolidación en el cierre de caja (operaciones de más de 7 días pasan a `stockBase`).
 - Lo mismo para clientes: `balanceOps` + `balanceBase`.
 - *Si se prefiere ir directo a la Fase C, B4 puede omitirse;* se recomienda hacerla si la Fase C tardará más de un mes.
+- **Decisión (28‑oct‑2026): B4 se omite.** Los clientes usan una sola caja; la multicaja se prepara con el [plan multicaja](2026-10-28-plan-multicaja.md) y la Fase C.
 
 ### B5. Quitar la bandera global y el eco (H‑10, H‑11)
 - Eliminar `isSyncingFromCloud` como bloqueo de pushes. `_applyFromCloud` escribe vía `writeFromCloud()` que no llama `pushCloudSync`; las escrituras locales siempre se encolan.

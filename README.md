@@ -35,9 +35,14 @@ El proyecto está construido sobre las tecnologías más modernas y estables par
 ## 📂 Estructura del Proyecto
 
 ```text
-abasto/
+listo_pos_lite-/
 ├── android/             # Archivos nativos de la aplicación Android de Capacitor
+├── api/                 # Funciones serverless de Vercel (checkout, kardex, tasas…)
+├── docs/                # Planes, ideas y respaldos (ver docs/README.md)
+├── migrations/          # Migraciones SQL de Supabase, numeradas (000, 001, …)
 ├── public/              # Archivos estáticos e iconos PWA
+├── scripts/             # Scripts de desarrollo y datos (dev, respaldo, no-destrucción)
+│   └── legacy/          # Scripts viejos, solo de referencia
 ├── src/
 │   ├── assets/          # Imágenes, gráficos y fuentes
 │   ├── components/      # Componentes reutilizables de React (Sales, Customers, etc.)
@@ -46,13 +51,15 @@ abasto/
 │   ├── core/            # Funciones esenciales y lógica de negocio principal
 │   ├── data/            # Almacenamiento de datos locales y mocks temporales
 │   ├── hooks/           # Custom React Hooks
-│   ├── modules/         # Lógica agrupada por áreas de la aplicación
 │   ├── services/        # Integración con APIs externas, Supabase, Groq
-│   ├── testing/         # Scripts y archivos de pruebas unitarias/E2E
-│   ├── utils/           # Utilidades (ej. ticketGenerator)
+│   ├── sync/            # Motor de sincronización (merge, cursor, lápidas, hash)
+│   ├── testing/         # Auditor financiero interno (suites deterministas)
+│   ├── utils/           # Utilidades (ej. ticketGenerator, cierres, numeración)
 │   ├── views/           # Páginas o vistas principales de la aplicación (Views)
+│   ├── worker.js        # API para desarrollo local con Wrangler
 │   ├── App.jsx          # Componente principal / Root Router
 │   └── main.jsx         # Punto de entrada de React
+├── tests/               # Pruebas automáticas (`npm test`)
 ├── package.json         # Dependencias y scripts
 ├── tailwind.config.js   # Configuración de los temas visuales
 └── vite.config.js       # Configuración del bundler y plugins
@@ -93,7 +100,8 @@ abasto/
 
 ### Scripts Disponibles
 
-- `npm run dev`: Inicia el servidor de desarrollo local a través de Vite.
+- `npm run dev`: Inicia la app (Vite) y la API local (Wrangler) a la vez.
+- `npm test`: Corre las pruebas automáticas de `tests/`.
 - `npm run build`: Compila y empaqueta la aplicación de forma optimizada para producción.
 - `npm run preview`: Sirve los archivos de producción de manera local para pruebas.
 - `npm run lint`: Ejecuta ESLint en todo el proyecto asegurando el estándar de código.
