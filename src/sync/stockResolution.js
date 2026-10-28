@@ -22,6 +22,14 @@ export function isUnknownProductResult(outcome) {
         && /desconocido/i.test(String(outcome?.result?.message || ''));
 }
 
+// Producto aún desconocido para el servidor → la operación se aplica solo
+// localmente (no se encola: reintentarla daría el mismo resultado).
+export function asLocalOnlyIfUnknown(outcome) {
+    return isUnknownProductResult(outcome)
+        ? { ...outcome, outcome: 'confirmed', status: 'local_only' }
+        : outcome;
+}
+
 export function resolveLocalStock({ currentStock, operation, status, unit = 'unidad' }) {
     const current = Number(currentStock ?? 0);
     if (status === 'already_processed') return normalizeStockQuantity(current, unit);

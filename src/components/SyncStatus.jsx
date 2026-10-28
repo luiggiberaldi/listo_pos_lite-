@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom';
 import { Wifi, WifiOff, RefreshCw, AlertTriangle, X, ChevronRight, Copy, Check, RotateCcw } from 'lucide-react';
 import { supabaseCloud as supabase } from '../config/supabaseCloud';
 import { offlineQueueService } from '../services/offlineQueueService';
+import { inventoryQueueService } from '../services/inventoryQueueService';
 import { getSyncDiagnostics } from '../hooks/useCloudSync';
 
 // "hace 40 s" / "hace 3 min" / "hace 2 h" a partir del último pull exitoso.
@@ -39,6 +40,7 @@ export default function SyncStatus() {
             if (result.error) throw result.error;
             setIsOnline(true);
             offlineQueueService.syncPendingSales().catch(() => {});
+            inventoryQueueService.syncPendingOperations().catch(() => {});
         } catch (err) {
             setIsOnline(false);
         }
@@ -156,6 +158,7 @@ export default function SyncStatus() {
         checkHealth();
         if (isOnline) {
             offlineQueueService.syncPendingSales().catch(() => {});
+            inventoryQueueService.syncPendingOperations().catch(() => {});
         }
     };
 
