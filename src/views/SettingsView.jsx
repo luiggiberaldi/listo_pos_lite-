@@ -289,7 +289,8 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                         )}
                     </div>
 
-                    {/* Pill tab navigator */}
+                    {/* Pill tab navigator — en celular la pestaña activa muestra su
+                        nombre y las demás solo el ícono (antes ninguna tenía texto). */}
                     <div className="flex gap-1.5 pb-3 overflow-x-auto scrollbar-hide">
                         {visibleTabs.map(tab => {
                             const Icon = tab.icon;
@@ -299,14 +300,16 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                 <button
                                     key={tab.id}
                                     onClick={() => { setActiveTab(tab.id); triggerHaptic?.(); }}
-                                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all duration-200 ${
+                                    aria-label={tab.label}
+                                    title={tab.label}
+                                    className={`flex items-center gap-1.5 px-3.5 py-2 sm:py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all duration-200 ${
                                         isActive
                                             ? `${c.pill} ${c.pillText} shadow-md scale-105`
                                             : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
                                     }`}
                                 >
                                     <Icon size={14} />
-                                    <span className="hidden sm:inline">{tab.label}</span>
+                                    <span className={isActive ? 'inline' : 'hidden sm:inline'}>{tab.label}</span>
                                 </button>
                             );
                         })}

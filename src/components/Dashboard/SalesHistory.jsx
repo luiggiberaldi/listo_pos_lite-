@@ -127,13 +127,13 @@ export default function SalesHistory({
                                         {isCanceled && s.tipo !== 'ANULACION_VENTA' && <span className="text-[9px] bg-red-100 text-red-500 px-1 rounded uppercase">Anulada</span>}
                                         {s.tipo === 'ANULACION_VENTA' && <span className="text-[9px] bg-red-100 text-red-600 px-1 rounded uppercase">Reverso</span>}
                                     </p>
-                                    <p className="text-[11px] text-slate-500 flex items-center gap-1 flex-wrap">
+                                    {/* Dos líneas fijas: número + fecha, y hora + método de pago.
+                                        Antes una sola línea se partía en lugares raros en celular. */}
+                                    <p className="text-[11px] text-slate-500 truncate">
                                         <span className="font-bold text-indigo-400">{saleNumberLabel}</span>
-                                        <span>·</span>
-                                        <span>{d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })}</span> ·
-                                        <span>{d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}</span> ·
-                                        <span>{methodLabel}</span>
+                                        {' · '}{d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })}
                                     </p>
+                                    <p className="text-[11px] text-slate-400 truncate">{d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })} · {methodLabel}</p>
                                 </div>
                                 <div className="text-right shrink-0">
                                     <p className={`text-sm font-black ${isCanceled ? 'text-slate-400' : 'text-slate-800 dark:text-white'}`}>
