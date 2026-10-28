@@ -344,6 +344,26 @@ export default function App() {
     };
   }, []);
 
+  // Alto real que ocupa la barra de navegación flotante (con su margen y el
+  // área segura del iPhone). Se publica como --bottom-nav-space para que el
+  // contenido termine justo encima de ella en cualquier tamaño de pantalla.
+  // Ref de callback: la barra aparece después del PIN o al cerrar el teclado.
+  const [bottomNavEl, setBottomNavEl] = useState(null);
+  useEffect(() => {
+    const el = bottomNavEl;
+    const root = document.documentElement;
+    if (!el) { root.style.removeProperty('--bottom-nav-space'); return; }
+    const update = () => {
+      const space = el.offsetHeight + (parseFloat(getComputedStyle(el).marginBottom) || 0);
+      root.style.setProperty('--bottom-nav-space', `${Math.ceil(space)}px`);
+    };
+    update();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
+    ro?.observe(el);
+    window.addEventListener('resize', update);
+    return () => { ro?.disconnect(); window.removeEventListener('resize', update); };
+  }, [bottomNavEl]);
+
   // === Auth — condiciones para mostrar pantalla de PIN ===
   const usuarioActivo = useAuthStore(s => s.usuarioActivo);
   const requireLogin = useAuthStore(s => s.requireLogin ?? false);
@@ -496,7 +516,10 @@ export default function App() {
 
       <CartProvider>
       <ProductProvider rates={rates}>
-        <main className={`flex-1 min-h-0 w-full max-w-md md:max-w-3xl lg:max-w-none lg:px-4 xl:px-6 mx-auto relative ${isKeyboardOpen ? 'pb-4' : 'pb-20 lg:pb-16'} flex flex-col overflow-y-auto`}>
+        <main
+          className={`flex-1 min-h-0 w-full max-w-md md:max-w-3xl lg:max-w-none lg:px-4 xl:px-6 mx-auto relative ${isKeyboardOpen ? 'pb-4' : ''} flex flex-col overflow-y-auto`}
+          style={isKeyboardOpen ? undefined : { paddingBottom: 'calc(var(--bottom-nav-space, 80px) + 8px)' }}
+        >
 
           {/* Hidden Admin Trigger Area */}
         <div
@@ -568,7 +591,7 @@ export default function App() {
 
       {/* Bottom Nav — hidden in POS mode for full-screen selling */}
       {!isKeyboardOpen && (
-        <div className="fixed bottom-0 left-0 right-0 px-4 sm:px-6 pb-[env(safe-area-inset-bottom)] pt-0 mb-2 lg:mb-2 max-w-sm sm:max-w-lg md:max-w-2xl mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300">
+        <div ref={setBottomNavEl} className="fixed bottom-0 left-0 right-0 px-4 sm:px-6 pb-[env(safe-area-inset-bottom)] pt-0 mb-2 lg:mb-2 max-w-sm sm:max-w-lg md:max-w-2xl mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300">
           <div className="bg-[#1E293B]/95 backdrop-blur-xl rounded-2xl p-1 flex justify-between items-center shadow-2xl shadow-slate-900/30 border border-white/10 ring-1 ring-black/5 pointer-events-auto">
             {TABS.map(tab => (
               <TabButton

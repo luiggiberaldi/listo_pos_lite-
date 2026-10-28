@@ -89,7 +89,7 @@ export default function SuppliersList({
             </div>
 
             {/* Listado */}
-            <div className="flex-1 space-y-3 mt-4 px-3 sm:px-6 pb-20">
+            <div className="flex-1 space-y-3 mt-4 px-3 sm:px-6 pb-4">
                 {suppliers.length === 0 ? (
                     <EmptyState
                         icon={Truck}

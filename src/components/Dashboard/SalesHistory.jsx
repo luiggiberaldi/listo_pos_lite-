@@ -39,7 +39,7 @@ export default function SalesHistory({
 
     if (visibleSales.length === 0) {
         return (
-            <div className="mb-20 mt-4">
+            <div className="mt-4">
                 <EmptyState
                     icon={Receipt}
                     title={isCashier ? 'No hay ventas en este turno' : 'Aún no hay ventas'}
@@ -50,7 +50,7 @@ export default function SalesHistory({
     }
 
     return (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 shadow-sm mb-20">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 shadow-sm">
             <div className="flex items-center justify-between mb-3">
                 <h3 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1">
                     <Clock size={12} /> {isCashier ? 'Ventas de mi turno' : 'Últimas 7 Ventas'}
