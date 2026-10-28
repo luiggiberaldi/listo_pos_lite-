@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
-import { Camera, X, AlertTriangle, Package, Tag, Scale, Droplets, ChevronDown, ChevronUp, Barcode, Banknote, CheckCircle, Clock, ShoppingBag, CreditCard, ArrowUpRight, Plus, Minus } from 'lucide-react';
+import { Camera, X, AlertTriangle, Package, Tag, Scale, Droplets, ChevronDown, ChevronUp, Barcode, Banknote, CheckCircle } from 'lucide-react';
 import { Modal } from '../Modal';
+import KardexPanel from './KardexPanel';
 
 const PACKAGING_TYPES = [
     { id: 'suelto', label: 'Suelto', Icon: Tag, desc: 'Unidad individual', color: 'emerald' },
@@ -40,11 +41,10 @@ export default function ProductFormModal({
     handleImageUpload,
     handleSave,
     categories,
-    productMovements
+    kardexProductId
 }) {
     const fileInputRef = useRef(null);
     const [showSummary, setShowSummary] = useState(false);
-    const [showMovements, setShowMovements] = useState(false);
 
     if (!isOpen) return null;
 
@@ -418,68 +418,8 @@ export default function ProductFormModal({
                         </div>
                     )}
 
-                    {/* ─── KARDEX LITE: Movimientos Recientes ─── */}
-                    {isEditing && productMovements && (
-                        <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-                            <button onClick={() => setShowMovements(!showMovements)}
-                                className="w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 dark:bg-slate-800/50 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors">
-                                <span className="flex items-center gap-1.5">
-                                    <Clock size={13} className="text-blue-500" />
-                                    Movimientos Recientes
-                                    {productMovements.length > 0 && (
-                                        <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-[9px] font-black px-1.5 py-0.5 rounded-full">{productMovements.length}</span>
-                                    )}
-                                </span>
-                                {showMovements ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                            </button>
-                            {showMovements && (
-                                <div className="bg-white dark:bg-slate-900 divide-y divide-slate-100 dark:divide-slate-800 max-h-56 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-150">
-                                    {productMovements.length === 0 ? (
-                                        <p className="text-xs text-slate-400 text-center py-6">Sin movimientos registrados</p>
-                                    ) : (
-                                        productMovements.map(mov => {
-                                            const date = new Date(mov.timestamp);
-                                            const dateStr = date.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' });
-                                            const timeStr = date.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', hour12: false });
-                                            const isCobro = mov.tipo === 'COBRO_DEUDA';
-                                            const isFiada = mov.tipo === 'VENTA_FIADA';
-                                            const isEntrada = mov.tipo === 'AJUSTE_ENTRADA';
-                                            const isSalida = mov.tipo === 'AJUSTE_SALIDA';
-                                            const isAjuste = isEntrada || isSalida;
-                                            return (
-                                                <div key={mov.id} className="flex items-center gap-2.5 px-3 py-2">
-                                                    <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
-                                                        isEntrada ? 'bg-emerald-100 dark:bg-emerald-900/30'
-                                                        : isSalida ? 'bg-rose-100 dark:bg-rose-900/30'
-                                                        : isCobro ? 'bg-emerald-100 dark:bg-emerald-900/30' 
-                                                        : isFiada ? 'bg-amber-100 dark:bg-amber-900/30' 
-                                                        : 'bg-blue-100 dark:bg-blue-900/30'}`}>
-                                                        {isEntrada ? <Plus size={12} className="text-emerald-500" />
-                                                        : isSalida ? <Minus size={12} className="text-rose-500" />
-                                                        : isCobro ? <ArrowUpRight size={12} className="text-emerald-500" /> 
-                                                        : isFiada ? <CreditCard size={12} className="text-amber-500" /> 
-                                                        : <ShoppingBag size={12} className="text-blue-500" />}
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex justify-between items-center">
-                                                            <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                                                                {isEntrada ? 'Entrada manual' : isSalida ? 'Salida manual' : isFiada ? 'Fiado' : isCobro ? 'Cobro' : 'Venta'}
-                                                                {mov.qty && <span className="text-slate-400 font-medium"> {isAjuste ? (isEntrada ? '+' : '-') : 'x'}{mov.qty}</span>}
-                                                            </span>
-                                                            <span className="text-[10px] text-slate-400">{dateStr} {timeStr}</span>
-                                                        </div>
-                                                        {mov.clienteName && (
-                                                            <p className="text-[9px] text-slate-400 truncate">{mov.clienteName}</p>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    )}
+                    {/* ─── KARDEX: libreta de movimientos del servidor ─── */}
+                    {isEditing && kardexProductId && <KardexPanel productId={kardexProductId} />}
                 </div>
 
                 <button onClick={handleSave} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-4 rounded-2xl font-black uppercase tracking-wider shadow-lg shadow-emerald-500/20 active:scale-95 transition-all">

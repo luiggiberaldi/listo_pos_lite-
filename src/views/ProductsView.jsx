@@ -17,6 +17,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import CategoryManagerModal from '../components/Products/CategoryManagerModal';
 import BulkPriceAdjustModal from '../components/Products/BulkPriceAdjustModal';
 import ZeroStockModal from '../components/Products/ZeroStockModal';
+import KardexOpenButton from '../components/Products/KardexOpenButton';
 import { filterProductsByZeroScope } from '../utils/stockUtils';
 import { applyStockOperation, buildBulkZeroOperations } from '../services/inventoryOperationService';
 import { isUnknownProductResult } from '../sync/stockResolution';
@@ -47,7 +48,8 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         adjustStock: baseAdjustStock,
         setProductStock
     } = useProductContext();
-    const isCajero = useAuthStore(s => s.usuarioActivo)?.rol === 'CAJERO';
+    const usuarioActivo = useAuthStore(s => s.usuarioActivo);
+    const isCajero = usuarioActivo?.rol === 'CAJERO';
     const { log: auditLog } = useAudit();
 
     // Modal para ajuste rápido numérico de stock
@@ -321,7 +323,6 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     const [deleteId, setDeleteId] = useState(null);
     const [isDeleteAllModalOpen, setIsDeleteAllModalOpen] = useState(false);
     const [deleteAllConfirmText, setDeleteAllConfirmText] = useState('');
-    const [productMovements, setProductMovements] = useState([]);
 
     // ─── SALES VELOCITY (Días de Inventario) ────────────────
     const { salesVelocityMap } = useInventoryVelocity(products.length);
@@ -505,28 +506,6 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         if (u === 'kg' || u === 'litro') setGranelUnit(u);
 
         setIsModalOpen(true);
-
-        // Load product movements (Kardex Lite)
-        try {
-            const allSales = await storageService.getItem('bodega_sales_v1', []);
-            const movements = allSales
-                .filter(s => (s.items || []).some(i => i.id === product.id || i.name === product.name))
-                .map(s => {
-                    const item = (s.items || []).find(i => i.id === product.id || i.name === product.name);
-                    return {
-                        id: s.id,
-                        timestamp: s.timestamp,
-                        tipo: s.tipo || 'VENTA',
-                        qty: item?.qty,
-                        clienteName: s.clienteName || null,
-                    };
-                })
-                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-                .slice(0, 20);
-            setProductMovements(movements);
-        } catch (e) {
-            setProductMovements([]);
-        }
     };
 
     const handleDelete = (id) => { triggerHaptic && triggerHaptic(); setDeleteId(id); };
@@ -541,7 +520,6 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     const handleClose = () => {
         setName(''); setBarcode(''); setPriceUsd(''); setPriceBs(''); setCostUsd(''); setCostBs(''); setStock(''); setUnit('unidad'); setUnitsPerPackage(''); setSellByUnit(false); setUnitPriceUsd(''); setCategory('otros'); setLowStockAlert('5'); setImage(null); setEditingId(null); setIsModalOpen(false);
         setPackagingType('suelto'); setStockInLotes(''); setGranelUnit('kg');
-        setProductMovements([]);
     };
 
     // Gestionar Categorias
@@ -606,6 +584,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                     <div className="flex items-center gap-1 shrink-0">
                         {products.length > 0 && !isCajero && (
                             <>
+                                <KardexOpenButton products={products} actor={usuarioActivo?.nombre || null} triggerHaptic={triggerHaptic} showToast={showToast} />
                                 <button onClick={() => { triggerHaptic && triggerHaptic(); setIsBulkPriceOpen(true); }}
                                     className="p-2 bg-blue-100 dark:bg-blue-900/30 text-blue-500 dark:text-blue-400 rounded-xl transition-all active:scale-95" title="Ajuste Masivo de Precios">
                                     <Percent size={16} strokeWidth={2.5} />
@@ -1018,7 +997,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 handleImageUpload={handleImageUpload}
                 handleSave={handleSave}
                 categories={categories}
-                productMovements={editingId ? productMovements : null}
+                kardexProductId={editingId}
             />
 
             {/* Share Modal */}

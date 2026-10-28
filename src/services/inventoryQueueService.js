@@ -151,7 +151,7 @@ export function createInventoryQueueService({
     syncStartedAt = Date.now();
     const run = ++syncRun;
     try {
-      let queue = pruneSyncedItems(await storage.loadQueue());
+      let queue = pruneSyncedItems(await storage.loadQueue(), Date.parse(now()));
       const nowMs = Date.now();
       const due = queue.filter(
         item => belongsToAccount(item, accountId) && isQueueItemDue(item, nowMs)
@@ -187,7 +187,7 @@ export function createInventoryQueueService({
         await storage.saveQueue(queue);
       }
 
-      await storage.saveQueue(pruneSyncedItems(queue));
+      await storage.saveQueue(pruneSyncedItems(queue, Date.parse(now())));
     } finally {
       if (run === syncRun) syncStartedAt = 0;
     }

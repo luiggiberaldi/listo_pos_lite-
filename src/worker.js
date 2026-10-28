@@ -493,10 +493,89 @@ async function handleCatalogSync(request, env) {
             Authorization: `Bearer ${SERVICE_KEY}`,
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ payload: { products } }),
+        // account_id del token: el alta de un producto queda en la libreta de la cuenta.
+        body: JSON.stringify({ payload: { products, account_id: user.id } }),
     });
     const result = await rpcRes.json();
     return Response.json(result, { status: rpcRes.ok ? 200 : rpcRes.status, headers });
+}
+
+// ── Kardex (Fase 5): leer la libreta de un producto y corte de apertura ──
+// GET  /api/kardex                  → estado de la apertura de la cuenta
+// GET  /api/kardex?product_id=<uuid> → apertura + movimientos del producto
+// POST /api/kardex {products,actor}  → open_kardex (una sola vez por cuenta)
+// Todo filtrado por la cuenta del token; nunca por un dato del cliente.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const KARDEX_FIELDS = 'id,operation_id,operation_type,mode,quantity,unit_mode,delta,stock_before,stock_after,reason,origin_ref,actor,device_id,created_at';
+
+async function handleKardex(request, env) {
+    const headers = corsHeaders(request);
+
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
+    if (request.method !== 'GET' && request.method !== 'POST') {
+        return Response.json({ error: 'Method not allowed' }, { status: 405, headers });
+    }
+
+    const SERVICE_KEY = env.SUPABASE_SERVICE_KEY;
+    if (!SERVICE_KEY) {
+        return Response.json({ error: 'SUPABASE_SERVICE_KEY not configured' }, { status: 500, headers });
+    }
+
+    const user = await authenticateRequest(request, env);
+    if (!user) {
+        return Response.json({ error: 'No autorizado: inicia sesión para ver el Kardex.' }, { status: 401, headers });
+    }
+    const dbHeaders = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' };
+    const account = encodeURIComponent(user.id);
+
+    if (request.method === 'POST') {
+        let body;
+        try {
+            body = await request.json();
+        } catch {
+            return Response.json({ error: 'Invalid JSON' }, { status: 400, headers });
+        }
+        const products = Array.isArray(body?.products) ? body.products : null;
+        if (!products) {
+            return Response.json({ status: 'invalid', message: 'products debe ser una lista' }, { status: 400, headers });
+        }
+        const payload = {
+            account_id: user.id,
+            actor: typeof body.actor === 'string' ? body.actor.slice(0, 120) : null,
+            device_id: typeof body.device_id === 'string' ? body.device_id.slice(0, 120) : null,
+            products: products.map(p => ({ id: p?.id, stock: p?.stock })),
+        };
+        const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/open_kardex`, {
+            method: 'POST', headers: dbHeaders, body: JSON.stringify({ payload }),
+        });
+        const result = await rpcRes.json();
+        return Response.json(result, { status: rpcRes.ok ? 200 : rpcRes.status, headers });
+    }
+
+    const url = new URL(request.url);
+    const productId = url.searchParams.get('product_id');
+    if (productId && !UUID_RE.test(productId)) {
+        return Response.json({ status: 'invalid', message: 'product_id inválido' }, { status: 400, headers });
+    }
+
+    const openingRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/kardex_openings?account_id=eq.${account}&select=opened_at,actor,product_count&limit=1`,
+        { headers: dbHeaders },
+    );
+    if (!openingRes.ok) {
+        return Response.json({ error: 'No se pudo leer el Kardex' }, { status: 502, headers });
+    }
+    const opening = (await openingRes.json())[0] || null;
+    if (!productId) return Response.json({ opening }, { status: 200, headers });
+
+    const movRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/inventory_operations?account_id=eq.${account}&product_id=eq.${productId}&select=${KARDEX_FIELDS}&order=id.asc&limit=2000`,
+        { headers: dbHeaders },
+    );
+    if (!movRes.ok) {
+        return Response.json({ error: 'No se pudo leer el Kardex' }, { status: 502, headers });
+    }
+    return Response.json({ opening, movements: await movRes.json() }, { status: 200, headers });
 }
 
 // ── Main fetch handler ─────────────────────────────────────────────────────
@@ -526,6 +605,10 @@ export default {
 
         if (url.pathname.startsWith('/api/catalog-sync')) {
             return handleCatalogSync(request, env);
+        }
+
+        if (url.pathname.startsWith('/api/kardex')) {
+            return handleKardex(request, env);
         }
 
         // Static SPA assets for everything else

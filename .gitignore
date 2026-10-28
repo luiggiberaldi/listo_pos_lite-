@@ -41,6 +41,7 @@ api/*.js
 !api/rates.js
 !api/inventory-operation.js
 !api/catalog-sync.js
+!api/kardex.js
 
 # Backups y datos locales
 backup_*.json
