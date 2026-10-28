@@ -77,6 +77,12 @@ Compras/facturas de proveedor como entradas, costo promedio, exportar a Excel/PD
 - Navegador (app de la rama contra staging): Iniciar Kardex (9 productos, 6 ajustados), venta de 1 caja (48 → 36), editar sin tocar stock (sigue 36), cambiar lotes 3 → 4 (Conteo +12), granel 37.25 intacto, Movimientos con filtros y "Ver todos" desde la ficha. `staging/scripts/kardex-check.mjs`: 9/9 productos cuadran.
 - `npm test` 196/196, `npm run build` ✓.
 
-## Publicación en producción (pendiente, requiere OK)
+## Publicación en producción (ejecutada 2026-10-28, con OK del usuario)
+
+- Respaldo completo `backups/fgzwmwrugerptfqfrsjd-2026-10-28T15-45-37-795Z` (sales 8640, products 2040) y foto de no-destrucción.
+- 013 aplicada con `apply_migration`; las 5 huellas coinciden con staging; RLS en `kardex_openings` e índice creados; `data:verify` 0 violaciones.
+- Después: unir el PR y comprobar el despliegue de Vercel.
+
+Procedimiento:
 
 Mismo procedimiento que 010-012: respaldo → 013 con `apply_migration` → comprobar las huellas de arriba → `data:verify` → unir el PR. 013 es compatible con la app actual (misma firma y respuesta de `process_checkout`), así que va antes que el código. Vuelta atrás del código: Instant Rollback en Vercel; la base puede quedarse con 013.
