@@ -7,6 +7,7 @@ import { useAuthStore } from './store/useAuthStore';
 import { APP_STORAGE_DB_NAME, APP_STORAGE_STORE_NAME, getActiveAccountId, getScopedStorageKey, setActiveAccountId } from '../config/storageScope';
 import { hashPayload } from '../sync/syncHash';
 import { ENTITY_KEYS, mergeEntities } from '../sync/entityMeta';
+import { LOCAL_SYNC_KEYS } from '../config/accountLocalSwap';
 import { classifyChangedMeta, cursorQueryFrom, maxIso } from '../sync/syncCursor';
 import { CLEAN_HASH_STORAGE_KEY, DIRTY_KEYS_STORAGE_KEY, clearDirty, isRealChange, localIsNewer, markDirty, readCleanHashes, readDirty, setCleanHash } from '../sync/dirtyKeys';
 
@@ -83,34 +84,8 @@ const SYNC_KEYS = [
 ];
 
 // Llaves que van a colección 'local' (localStorage); el resto va a 'store' (IndexedDB)
-const LOCAL_KEYS = [
-    'abasto-auth-storage',
-    'monitor_rates_v12',
-    'bodega_custom_rate',
-    'bodega_use_auto_rate',
-    'tasa_cop',
-    'cop_enabled',
-    'auto_cop_enabled',
-    'cashea_enabled',
-    'business_address',
-    'business_phone',
-    'business_instagram',
-    'admin_auto_lock_minutes',
-    'theme',
-    'catalog_show_cash_price',
-    'catalog_custom_usdt_price',
-    'catalog_use_auto_usdt',
-    'street_rate_bs',
-    'printer_paper_width',
-    'business_name',
-    'business_rif',
-    'allow_negative_stock',
-    'bodega_rate_mode',
-    'cajero_puede_abrir_caja',
-    'cajero_puede_cerrar_caja',
-    'cajero_max_descuento',
-    'cashea_min_amount',
-];
+// Lista compartida con la separación por cuenta (B8).
+const LOCAL_KEYS = LOCAL_SYNC_KEYS;
 
 // ─── Realtime selectivo ────────────────────────────────────────────────────
 // Solo llaves pequeñas (<1KB) van por Realtime para multi-dispositivo instantáneo.

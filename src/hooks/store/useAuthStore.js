@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { logEvent } from '../../services/auditService';
+import { ACCOUNT_LOCAL_SWITCHED_EVENT } from '../../config/accountLocalSwap';
 
 // ─── PIN Hashing (SHA-256 via Web Crypto) ───────────────────────────────────
 export async function hashPin(pin) {
@@ -17,15 +18,20 @@ const DEFAULT_USERS = [
     { id: 2, nombre: 'Cajero', rol: 'CAJERO', pin: '0000', pinHashed: false }
 ];
 
+const readDeviceSession = () => {
+    try {
+        const saved = localStorage.getItem('abasto-device-session');
+        return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+};
+
+// Valores guardados por defecto (lo que tiene un equipo que nunca usó la cuenta).
+const DEFAULT_PERSISTED = { usuarios: DEFAULT_USERS, requireLogin: false, adminEmail: '', adminPassword: '' };
+
 export const useAuthStore = create(
     persist(
         (set, get) => ({
-            usuarioActivo: (() => {
-                try {
-                    const saved = localStorage.getItem('abasto-device-session');
-                    return saved ? JSON.parse(saved) : null;
-                } catch { return null; }
-            })(),
+            usuarioActivo: readDeviceSession(),
             usuarios: DEFAULT_USERS,
             requireLogin: false, // Login opcional, por defecto desactivado
             adminEmail: '',
@@ -198,6 +204,14 @@ export const useAuthStore = create(
                 }
                 return persistedState;
             },
+            // B8: al recargar tras cambiar de cuenta, lo que falta vuelve a los
+            // valores por defecto (no se quedan los usuarios de la otra cuenta)
+            // y el cajero activo es el de la sesión de ESTA cuenta.
+            merge: (persisted, current) => ({
+                ...current,
+                ...(persisted || DEFAULT_PERSISTED),
+                usuarioActivo: readDeviceSession(),
+            }),
             partialize: (state) => ({
                 usuarios: state.usuarios,
                 requireLogin: state.requireLogin,
@@ -222,3 +236,11 @@ export const useAuthStore = create(
         }
     )
 );
+
+// B8: otra cuenta entró en este equipo → cargar sus usuarios y PIN sin
+// guardar ni subir nada (rehydrate solo lee).
+if (typeof window !== 'undefined') {
+    window.addEventListener(ACCOUNT_LOCAL_SWITCHED_EVENT, () => {
+        useAuthStore.persist.rehydrate();
+    });
+}
