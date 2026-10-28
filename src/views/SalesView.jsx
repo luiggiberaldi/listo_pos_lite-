@@ -8,7 +8,7 @@ import { useNotifications } from '../hooks/useNotifications';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { getActivePaymentMethods } from '../config/paymentMethods';
 import { showToast } from '../components/Toast';
-import { ShoppingCart, X, DollarSign, CheckCircle2 } from 'lucide-react';
+import { ShoppingCart, X, DollarSign } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useProductContext } from '../context/ProductContext';
 import { useAuthStore } from '../hooks/store/useAuthStore';
@@ -744,6 +744,11 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                 rates={rates}
                 rateMode={rateMode}
                 setRateMode={setRateMode}
+                shift={todayAperturaData ? {
+                    date: getSaleBusinessDate(todayAperturaData),
+                    openingUsd: todayAperturaData.openingUsd,
+                    openingBs: todayAperturaData.openingBs,
+                } : null}
             />
 
             {!todayAperturaData ? (
@@ -758,21 +763,6 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                 />
             ) : (
                 <>
-                    {/* ── APERTURA DE CAJA BANNER ── */}
-                    <div className="shrink-0 mb-2 lg:mb-1">
-                        <div className="w-full bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/30 rounded-2xl sm:rounded-3xl p-3 sm:p-4 lg:p-2.5 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 sm:w-10 sm:h-10 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center">
-                                    <CheckCircle2 size={18} className="text-emerald-500" />
-                                </div>
-                                <div>
-                                    <p className="text-xs sm:text-sm font-bold text-emerald-700 dark:text-emerald-400">Turno Abierto</p>
-                                    <p className="text-[10px] sm:text-xs text-emerald-500/70">{getSaleBusinessDate(todayAperturaData)} · ${todayAperturaData.openingUsd?.toFixed(2)} · Bs {formatBs(todayAperturaData.openingBs || 0)}</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
                     {/* ── Split Layout: Products (left) + Cart Sidebar (right) on tablet+ ── */}
                     <div className="flex-1 min-h-0 flex flex-col md:flex-row md:gap-4">
 
