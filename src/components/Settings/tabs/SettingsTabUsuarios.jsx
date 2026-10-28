@@ -5,6 +5,7 @@ import {
 import { SectionCard, Toggle } from '../../SettingsShared';
 import UsersManager from '../UsersManager';
 import CloudAuthModal from '../../security/CloudAuthModal';
+import { getLockOnTabChange, setLockOnTabChange } from '../../../utils/lockOnTabChange';
 
 // ─── CONTROL DE PRÓXIMAMENTE ────────────────────────────────────────────────
 const SHOW_COMING_SOON = false;
@@ -242,6 +243,7 @@ export default function SettingsTabUsuarios({
     setAdminCredentials, showToast, triggerHaptic,
 }) {
     const [isCloudModalOpen, setIsCloudModalOpen] = useState(false);
+    const [lockOnTabChange, setLockOnTabChangeState] = useState(getLockOnTabChange);
 
     return (
         <div className="relative">
@@ -269,6 +271,27 @@ export default function SettingsTabUsuarios({
                         }}
                     />
                 </div>
+
+                {/* Bloqueo al cambiar de pestaña — por dispositivo, solo visible si PIN está activo */}
+                {requireLogin && (
+                    <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+                        <div>
+                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Bloquear con PIN al cambiar de pestaña</p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">Pide el PIN al salir de la app o minimizarla. Solo en este dispositivo.</p>
+                        </div>
+                        <Toggle
+                            enabled={lockOnTabChange}
+                            color="rose"
+                            onChange={() => {
+                                const newVal = !lockOnTabChange;
+                                setLockOnTabChange(newVal);
+                                setLockOnTabChangeState(newVal);
+                                triggerHaptic?.();
+                                showToast(newVal ? 'Se pedirá PIN al cambiar de pestaña' : 'Ya no se pedirá PIN al cambiar de pestaña', 'success');
+                            }}
+                        />
+                    </div>
+                )}
 
                 {/* Bloqueo por inactividad — solo visible si PIN está activo */}
                 {requireLogin && (
