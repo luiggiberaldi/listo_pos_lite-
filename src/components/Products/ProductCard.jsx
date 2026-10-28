@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Tag, Banknote, AlertTriangle, Box, Minus, Plus, Pencil, Trash2, Package, Layers, Clock, Printer, Check, X } from 'lucide-react';
+import { Banknote, AlertTriangle, Box, Minus, Plus, Pencil, Trash2, Package, Layers, Clock, Printer, Check, X } from 'lucide-react';
 import { CATEGORY_COLORS, CATEGORY_ICONS, UNITS } from '../../config/categories';
 import { formatUsd, formatBs, smartCashRounding } from '../../utils/calculatorUtils';
 
@@ -33,19 +33,16 @@ export default function ProductCard({
 
     return (
         <div className={`bg-white dark:bg-slate-900 rounded-2xl shadow-sm border flex flex-col overflow-hidden group ${isLowStock ? 'border-amber-300 dark:border-amber-700' : 'border-slate-100 dark:border-slate-800'} ${isSelected ? 'ring-2 ring-brand border-brand shadow-brand/20 bg-brand/5 dark:bg-brand/10' : ''}`}>
-            {/* Image */}
-            <div className="w-full h-24 bg-slate-100 dark:bg-slate-800 overflow-hidden relative shrink-0">
+            {/* Image — sin foto, solo una franja para la casilla y las etiquetas:
+                el recuadro vacío de 96 px hacía que en celular cupieran ~3 productos. */}
+            <div className={`w-full ${p.image ? 'h-24' : 'h-8'} bg-slate-100 dark:bg-slate-800 overflow-hidden relative shrink-0`}>
                 {/* Select Checkbox */}
                 <div className="absolute top-1 left-1 z-10 w-6 h-6 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 rounded backdrop-blur-sm">
                     <input type="checkbox" checked={isSelected} onChange={onToggleSelect} className="w-4 h-4 rounded border-slate-300 text-brand focus:ring-brand cursor-pointer shadow-sm" />
                 </div>
                 {p.image ? (
                     <img src={p.image} className="w-full h-full object-contain p-1" alt={p.name} loading="lazy" />
-                ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-300 dark:text-slate-600">
-                        <Tag size={24} />
-                    </div>
-                )}
+                ) : null}
                 {/* Category badge */}
                 {catInfo && catInfo.id !== 'otros' && (
                     <div className={`absolute top-1 left-8 text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5 ${CATEGORY_COLORS[catInfo.color] || ''}`}>
@@ -177,9 +174,9 @@ export default function ProductCard({
 
             {/* Actions */}
             <div className="flex border-t border-slate-100 dark:border-slate-800">
-                <button onClick={onPrint} className="flex-1 py-1.5 flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-brand hover:bg-brand/10 transition-colors" title="Imprimir Etiqueta"><Printer size={12} /></button>
-                {!readOnly && <button onClick={() => onEdit(p)} className="flex-1 py-1.5 flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"><Pencil size={12} /></button>}
-                {!readOnly && <button onClick={() => onDelete(p.id)} className="flex-1 py-1.5 flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"><Trash2 size={12} /></button>}
+                <button onClick={onPrint} className="flex-1 py-2.5 sm:py-1.5 flex items-center justify-center text-slate-400 dark:text-slate-500 hover:text-brand hover:bg-brand/10 transition-colors" title="Imprimir etiqueta" aria-label="Imprimir etiqueta"><Printer size={16} /></button>
+                {!readOnly && <button onClick={() => onEdit(p)} className="flex-1 py-2.5 sm:py-1.5 flex items-center justify-center text-slate-400 dark:text-slate-500 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors" title="Editar" aria-label="Editar"><Pencil size={16} /></button>}
+                {!readOnly && <button onClick={() => onDelete(p.id)} className="flex-1 py-2.5 sm:py-1.5 flex items-center justify-center text-slate-400 dark:text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors" title="Borrar" aria-label="Borrar"><Trash2 size={16} /></button>}
             </div>
         </div >
     );

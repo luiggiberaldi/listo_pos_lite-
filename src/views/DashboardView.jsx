@@ -892,16 +892,16 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         className="bg-white rounded-2xl p-4 border border-rose-100 shadow-sm relative overflow-hidden cursor-pointer active:scale-[0.99] transition-all"
                     >
                         <div className="absolute -right-4 -top-4 w-16 h-16 bg-rose-50 rounded-full blur-2xl" />
-                        <div className="flex items-center justify-between relative z-10">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-rose-50 rounded-xl flex items-center justify-center">
+                        <div className="flex items-center justify-between gap-2 relative z-10">
+                            <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-10 h-10 bg-rose-50 rounded-xl flex items-center justify-center shrink-0">
                                     <Users size={20} className="text-rose-500" />
                                 </div>
-                                <div>
+                                <div className="min-w-0">
                                     <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest">Deudas</p>
                                     <p className="text-xl font-black text-rose-600">${totalDeudas.totalUsd.toFixed(2)}</p>
                                     {totalDeudas.totalCashea > 0 && (
-                                        <div className="flex items-center gap-2 mt-0.5">
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
                                             {totalDeudas.totalFiado > 0 && (
                                                 <span className="text-[10px] font-bold text-rose-400">Fiado ${totalDeudas.totalFiado.toFixed(2)}</span>
                                             )}
@@ -913,9 +913,9 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                                     )}
                                 </div>
                             </div>
-                            <div className="text-right flex items-center gap-2">
+                            <div className="text-right flex items-center gap-2 shrink-0">
                                 <div>
-                                    <p className="text-sm font-bold text-slate-500">{totalDeudas.count} {totalDeudas.count === 1 ? 'cliente' : 'clientes'}</p>
+                                    <p className="text-sm font-bold text-slate-500 whitespace-nowrap">{totalDeudas.count} {totalDeudas.count === 1 ? 'cliente' : 'clientes'}</p>
                                     {bcvRate > 0 && <p className="text-[10px] text-slate-400">{formatBs(totalDeudas.totalUsd * bcvRate)} Bs</p>}
                                 </div>
                                 {showTopDeudas ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
@@ -1159,12 +1159,14 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             {lowStockProducts.length > 0 && (
                 <div className="bg-white rounded-2xl p-4 border border-amber-100 shadow-sm">
                     <h3 className="text-[10px] font-bold text-amber-500 uppercase tracking-widest mb-3 flex items-center gap-1.5"><AlertTriangle size={14} /> Bajo Stock</h3>
-                    <div className="flex flex-wrap gap-2">
+                    {/* Celular: una fila por producto a todo el ancho (antes el nombre se
+                        cortaba a 120 px aunque sobrara espacio). */}
+                    <div className="grid grid-cols-1 sm:flex sm:flex-wrap gap-2">
                         {lowStockProducts.map(p => (
-                            <div key={p.id} className="flex items-center gap-2 bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-xl">
-                                <span className={`w-2 h-2 rounded-full ${(p.stock ?? 0) === 0 ? 'bg-red-500' : 'bg-amber-400'}`} />
-                                <span className="text-xs font-bold text-slate-700 truncate max-w-[120px]">{p.name}</span>
-                                <span className="text-[10px] font-black text-slate-400 ml-1">{p.stock ?? 0} {p.unit === 'kg' ? 'kg' : p.unit === 'litro' ? 'lt' : 'u'}</span>
+                            <div key={p.id} className="flex items-center gap-2 bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-xl min-w-0">
+                                <span className={`w-2 h-2 rounded-full shrink-0 ${(p.stock ?? 0) === 0 ? 'bg-red-500' : 'bg-amber-400'}`} />
+                                <span className="text-xs font-bold text-slate-700 truncate flex-1 sm:flex-none sm:max-w-[160px]">{p.name}</span>
+                                <span className="text-[10px] font-black text-slate-400 ml-1 shrink-0 whitespace-nowrap">{p.stock ?? 0} {p.unit === 'kg' ? 'kg' : p.unit === 'litro' ? 'lt' : 'u'}</span>
                             </div>
                         ))}
                     </div>

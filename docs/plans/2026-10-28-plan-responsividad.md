@@ -34,6 +34,8 @@ No hay ninguna pantalla que se salga de lado: ninguna produce scroll horizontal.
 | 9 | Configuración | En celular, las pestañas (Negocio, Ventas, Usuarios, Licencia, Sistema) son solo íconos: no se sabe qué es cada una. | `src/views/SettingsView.jsx` (barra de pestañas) | Mostrar el texto también en celular, con scroll horizontal si no cabe; o mostrar el nombre de la pestaña activa al lado. |
 | 10 | Historial de ventas | La línea "#0005833 · 28-oct. · 12:19 a. m. · Efectivo" se parte en lugares raros. | `src/components/Dashboard/SalesHistory.jsx` | Dos líneas fijas: número + fecha/hora arriba y método de pago abajo, con `whitespace-nowrap` en cada parte. |
 
+**Hecho en P2, fuera del plan inicial:** se quitó la vista de lista del Inventario (y su botón). No se usaba y en celular se veía rota: nombres cortados a 6 letras y el precio montado sobre el ícono de imprimir.
+
 ### P3 — Aprovechar tablet y escritorio
 
 | # | Pantalla | Problema | Dónde | Arreglo propuesto |
