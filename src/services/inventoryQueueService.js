@@ -105,7 +105,11 @@ export function createInventoryQueueService({
   resolveDeviceId = getDeviceId,
   now = () => new Date().toISOString(),
 } = {}) {
-  let syncInFlight = false;
+  // Seguro contra corridas simultáneas que se libera solo si una corrida
+  // queda colgada más de 60 s (misma regla que la cola de ventas).
+  const SYNC_LOCK_MAX_MS = 60000;
+  let syncStartedAt = 0;
+  let syncRun = 0;
 
   /**
    * Persiste una operación con su operation_id. Idempotente: reintentar con el
@@ -139,12 +143,13 @@ export function createInventoryQueueService({
   }
 
   async function syncPendingOperations() {
-    if (syncInFlight) return;
+    if (syncStartedAt && Date.now() - syncStartedAt < SYNC_LOCK_MAX_MS) return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     const accountId = getAccountId();
     if (!accountId) return;
 
-    syncInFlight = true;
+    syncStartedAt = Date.now();
+    const run = ++syncRun;
     try {
       let queue = pruneSyncedItems(await storage.loadQueue());
       const nowMs = Date.now();
@@ -184,7 +189,7 @@ export function createInventoryQueueService({
 
       await storage.saveQueue(pruneSyncedItems(queue));
     } finally {
-      syncInFlight = false;
+      if (run === syncRun) syncStartedAt = 0;
     }
   }
 

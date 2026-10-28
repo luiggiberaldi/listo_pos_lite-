@@ -58,6 +58,11 @@ export async function pushCatalogSync(products, { fetchImpl, authHeaders } = {})
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...auth },
         body: JSON.stringify({ products: rows }),
+        // Sin respuesta en 10 s se aborta: la cola de ventas no debe quedar
+        // esperando al catálogo indefinidamente.
+        signal: typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+            ? AbortSignal.timeout(10000)
+            : undefined,
     });
     return res.json().catch(() => ({ status: 'error', httpStatus: res.status }));
 }

@@ -89,6 +89,12 @@ export function buildInventoryOperation({
  * el mismo payload (mismo operation_id); el servidor responde already_processed
  * con el resultado canónico si este o un intento anterior ya la aplicó.
  */
+function requestTimeoutSignal(ms) {
+    return typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+        ? AbortSignal.timeout(ms)
+        : undefined;
+}
+
 export async function applyInventoryOperation(operation, { fetchImpl, authHeaders } = {}) {
     const doFetch = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
     if (!doFetch) throw new Error('fetch no está disponible');
@@ -99,6 +105,9 @@ export async function applyInventoryOperation(operation, { fetchImpl, authHeader
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...auth },
         body: JSON.stringify(payload),
+        // Sin respuesta en 10 s → error transitorio: la operación queda
+        // pendiente en la cola (mismo operation_id) en vez de colgarla.
+        signal: requestTimeoutSignal(10000),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok && !data.status) {

@@ -28,7 +28,12 @@ localforage.config({
   storeName: APP_STORAGE_STORE_NAME,
 });
 
-let syncInFlight = false;
+// Seguro contra sincronizaciones simultáneas. Si una corrida queda colgada
+// (petición sin respuesta), el seguro se libera solo tras SYNC_LOCK_MAX_MS
+// para que la cola no quede bloqueada hasta recargar la app.
+const SYNC_LOCK_MAX_MS = 60000;
+let syncStartedAt = 0;
+let syncRun = 0;
 
 function getQueueStorageKey() {
   const accountId = getActiveAccountId();
@@ -168,11 +173,13 @@ export const offlineQueueService = {
   },
 
   async syncPendingSales() {
-    if (syncInFlight || typeof navigator !== 'undefined' && !navigator.onLine) return;
+    if (syncStartedAt && Date.now() - syncStartedAt < SYNC_LOCK_MAX_MS) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
     const accountId = getActiveAccountId();
     if (!accountId) return;
 
-    syncInFlight = true;
+    syncStartedAt = Date.now();
+    const run = ++syncRun;
     try {
       let queue = pruneSyncedItems(await readQueue());
       const now = Date.now();
@@ -262,7 +269,7 @@ export const offlineQueueService = {
 
       await writeQueue(pruneSyncedItems(queue));
     } finally {
-      syncInFlight = false;
+      if (run === syncRun) syncStartedAt = 0;
     }
   },
 

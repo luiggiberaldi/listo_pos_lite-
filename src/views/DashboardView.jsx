@@ -593,7 +593,11 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             )}
 
             {/* ── HEADER ── */}
-            <div className="flex items-center justify-between px-3 sm:px-5 pt-2 sm:pt-3 lg:pt-2 pb-1 sm:pb-3 lg:pb-1 transition-all z-10 relative min-h-[70px] sm:min-h-[100px] lg:min-h-[70px]">
+            {/* z-[60]: por encima de la zona invisible del acceso de administrador
+                (App.jsx, esquina superior izquierda, z-50), que tapaba el
+                indicador de sincronización y se tragaba sus clics. El acceso
+                sigue disponible en las demás pantallas. */}
+            <div className="flex items-center justify-between px-3 sm:px-5 pt-2 sm:pt-3 lg:pt-2 pb-1 sm:pb-3 lg:pb-1 transition-all z-[60] relative min-h-[70px] sm:min-h-[100px] lg:min-h-[70px]">
                 
                 {/* ====== LATERAL IZQUIERDO: Píldoras (PC/Móvil) ====== */}
                 <div className="flex items-center justify-start gap-2 sm:gap-3 z-20">

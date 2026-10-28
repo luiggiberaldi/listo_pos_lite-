@@ -17,6 +17,31 @@ function formatAgo(iso, now) {
     return `hace ${Math.round(m / 60)} h`;
 }
 
+// Título y sugerencia legibles para una venta o ajuste que requiere atención.
+function describeProblem(kind, item) {
+    if (kind === 'venta') {
+        const total = item.payload?.total;
+        const title = `Venta ${total != null ? `$${Number(total).toFixed(2)}` : 'offline'}`;
+        if (item.sync_status !== 'conflicted') return { title, hint: null };
+        const status = item.conflict?.status;
+        return {
+            title,
+            hint: status === 'unknown_product'
+                ? 'Un producto no está registrado en el servidor. Revisa el producto y pulsa Reintentar.'
+                : 'El servidor no permitió dejar el stock en negativo. Corrige el stock (conteo) y pulsa Reintentar.',
+        };
+    }
+    const op = item.operation || {};
+    const qty = Number(op.quantity);
+    const title = `Ajuste de inventario${Number.isFinite(qty) ? ` (${qty > 0 ? '+' : ''}${qty})` : ''}`;
+    return {
+        title,
+        hint: item.sync_status === 'conflicted'
+            ? 'El servidor bloqueó este ajuste. Corrige el stock y pulsa Reintentar.'
+            : null,
+    };
+}
+
 export default function SyncStatus() {
     const [isOnline, setIsOnline] = useState(navigator.onLine);
     const [pendingCount, setPendingCount] = useState(0);
@@ -28,10 +53,12 @@ export default function SyncStatus() {
     // A8: último sync de documentos (cursor A2) y cambios locales sin confirmar (A4)
     const [syncDiag, setSyncDiag] = useState(() => ({ ...getSyncDiagnostics(), now: Date.now() }));
 
-    const checkHealth = async () => {
+    // Devuelve si hay conexión. Con triggerSync, además dispara las dos colas
+    // (ventas e inventario) sin esperarlas.
+    const checkHealth = async (triggerSync = true) => {
         if (!navigator.onLine) {
             setIsOnline(false);
-            return;
+            return false;
         }
         try {
             const pingPromise = supabase.from('sync_documents').select('doc_id').limit(1);
@@ -39,43 +66,75 @@ export default function SyncStatus() {
             const result = await Promise.race([pingPromise, timeoutPromise]);
             if (result.error) throw result.error;
             setIsOnline(true);
-            offlineQueueService.syncPendingSales().catch(() => {});
-            inventoryQueueService.syncPendingOperations().catch(() => {});
+            if (triggerSync) {
+                offlineQueueService.syncPendingSales().catch(() => {});
+                inventoryQueueService.syncPendingOperations().catch(() => {});
+            }
+            return true;
         } catch (err) {
             setIsOnline(false);
+            return false;
         }
     };
 
+    // Lee las dos colas: pendientes (se reintentan solas) y problemas que
+    // requieren atención — ventas o ajustes 'failed' (reintentos agotados) y
+    // 'conflicted' (el servidor los bloqueó: stock, producto no vinculado).
     const checkQueue = async () => {
         try {
-            const queue = await offlineQueueService.getQueue();
-            const pending = queue.filter(q => q.sync_status === 'pending');
-            const failed = queue.filter(q => q.sync_status === 'failed');
-            setPendingCount(pending.length);
-            setFailedCount(failed.length);
-            setFailedItems(failed);
-            if (failed.length > 0) setShowFailedBanner(true);
+            const [salesQueue, invQueue] = await Promise.all([
+                offlineQueueService.getQueue(),
+                inventoryQueueService.getQueue(),
+            ]);
+            const salesPending = salesQueue.filter(q => q.sync_status === 'pending');
+            const invPending = invQueue.filter(q => q.sync_status === 'pending');
+            const problems = [
+                ...salesQueue.filter(q => q.sync_status === 'conflicted' || q.sync_status === 'failed')
+                    .map(item => ({ kind: 'venta', item })),
+                ...invQueue.filter(q => q.sync_status === 'conflicted' || q.sync_status === 'failed')
+                    .map(item => ({ kind: 'inventario', item })),
+            ];
+            setPendingCount(salesPending.length + invPending.length);
+            setFailedCount(problems.length);
+            setFailedItems(problems);
+            if (problems.length > 0) setShowFailedBanner(true);
+
+            // Reintento automático: si el navegador tiene red pero el servidor
+            // estuvo caído, nadie dispara un evento 'online'. Cada cola respeta
+            // su propio backoff, así que llamar seguido no satura el servidor.
+            if (navigator.onLine && (salesPending.length > 0 || invPending.length > 0)) {
+                offlineQueueService.syncPendingSales().catch(() => {});
+                inventoryQueueService.syncPendingOperations().catch(() => {});
+            }
         } catch(err) {
             console.error('[SyncStatus] Error al leer cola', err);
         }
     };
 
     const [isRetrying, setIsRetrying] = useState(false);
+    const [isForcing, setIsForcing] = useState(false);
 
+    // Solo descarta lo 'failed'. Los conflictos ('conflicted') son ventas ya
+    // cobradas o ajustes que el servidor bloqueó: nunca se borran en silencio.
     const handleDismissFailed = async (e) => {
         e.stopPropagation();
         await offlineQueueService.dismissFailed();
-        setFailedCount(0);
-        setFailedItems([]);
-        setShowFailedBanner(false);
+        await inventoryQueueService.dismissFailed();
+        await checkQueue();
         setShowErrorModal(false);
     };
 
+    // Reintenta fallidos y conflictos de las dos colas con su MISMO
+    // operation_id (el servidor no duplica nada). En orden, para que cada
+    // reintento no choque con el seguro de la corrida anterior.
     const handleRetryFailed = async (e) => {
         e.stopPropagation();
         setIsRetrying(true);
         try {
             await offlineQueueService.retryFailed();
+            await offlineQueueService.retryConflicted();
+            await inventoryQueueService.retryFailed();
+            await inventoryQueueService.retryConflicted();
             await checkQueue();
             setShowErrorModal(false);
         } finally {
@@ -84,15 +143,14 @@ export default function SyncStatus() {
     };
 
     const handleCopyLogs = () => {
-        const text = failedItems.map((item, i) => {
+        const text = failedItems.map(({ kind, item }, i) => {
             const d = new Date(item.created_at);
-            const total = item.payload?.total;
             return [
-                `--- Venta ${i + 1} ---`,
+                `--- ${describeProblem(kind, item).title} (${i + 1}) ---`,
+                `Estado: ${item.sync_status === 'conflicted' ? 'Conflicto' : 'Fallida'}`,
                 `Fecha: ${d.toLocaleString('es-VE')}`,
-                `Total: ${total != null ? `$${Number(total).toFixed(2)}` : 'N/A'}`,
                 `Intentos: ${item.attempts || 0}`,
-                `Error: ${item.last_error || 'Error desconocido'}`,
+                `Detalle: ${item.last_error || 'Error desconocido'}`,
             ].join('\n');
         }).join('\n\n');
         const doCopy = () => {
@@ -154,11 +212,22 @@ export default function SyncStatus() {
     if (!isOnline) statusType = 'offline';
     else if (pendingCount > 0) statusType = 'syncing';
 
-    const handleForceSync = () => {
-        checkHealth();
-        if (isOnline) {
-            offlineQueueService.syncPendingSales().catch(() => {});
-            inventoryQueueService.syncPendingOperations().catch(() => {});
+    // El botón espera a que las dos colas terminen y refresca el contador,
+    // en vez de dispararlas y olvidarlas.
+    const handleForceSync = async () => {
+        if (isForcing) return;
+        setIsForcing(true);
+        try {
+            const online = await checkHealth(false);
+            if (online) {
+                await Promise.allSettled([
+                    offlineQueueService.syncPendingSales(),
+                    inventoryQueueService.syncPendingOperations(),
+                ]);
+            }
+            await checkQueue();
+        } finally {
+            setIsForcing(false);
         }
     };
 
@@ -176,13 +245,13 @@ export default function SyncStatus() {
                         : 'bg-rose-50 border-rose-100 text-rose-500 animate-pulse focus:ring-rose-500'
                 }`}
                 title={[
-                    statusType === 'online' ? 'Conectado' : statusType === 'syncing' ? `${pendingCount} transacciones pendientes` : 'Sin conexión',
+                    isForcing ? 'Sincronizando…' : statusType === 'online' ? 'Conectado' : statusType === 'syncing' ? `${pendingCount} pendiente${pendingCount > 1 ? 's' : ''} (ventas y ajustes)` : 'Sin conexión',
                     `Último sync: ${lastSyncLabel || 'todavía no'}`,
                     syncDiag.dirtyCount > 0 ? `${syncDiag.dirtyCount} cambio${syncDiag.dirtyCount > 1 ? 's' : ''} sin subir` : null,
                 ].filter(Boolean).join(' · ')}
             >
-                {statusType === 'online' && <><Wifi size={13} strokeWidth={2.5} /><span className="hidden sm:inline">Online</span></>}
-                {statusType === 'syncing' && <><RefreshCw size={13} strokeWidth={2.5} className="animate-spin-slow" /><span className="hidden sm:inline">Sync ({pendingCount})</span><span className="sm:hidden">{pendingCount}</span></>}
+                {statusType === 'online' && <>{isForcing ? <RefreshCw size={13} strokeWidth={2.5} className="animate-spin" /> : <Wifi size={13} strokeWidth={2.5} />}<span className="hidden sm:inline">Online</span></>}
+                {statusType === 'syncing' && <><RefreshCw size={13} strokeWidth={2.5} className={isForcing ? 'animate-spin' : 'animate-spin-slow'} /><span className="hidden sm:inline">Sync ({pendingCount})</span><span className="sm:hidden">{pendingCount}</span></>}
                 {statusType === 'offline' && <><WifiOff size={13} strokeWidth={2.5} /><span>Offline</span></>}
             </button>
 
@@ -201,7 +270,7 @@ export default function SyncStatus() {
                     className="flex items-center gap-1.5 px-2 py-1 bg-red-50 border border-red-200 rounded-lg text-[10px] text-red-600 font-medium max-w-[200px] hover:bg-red-100 transition-colors text-left"
                 >
                     <AlertTriangle size={11} className="shrink-0" />
-                    <span className="truncate flex-1">{failedCount} venta{failedCount > 1 ? 's' : ''} no sincronizada{failedCount > 1 ? 's' : ''}</span>
+                    <span className="truncate flex-1">{failedCount} por revisar</span>
                     <ChevronRight size={10} className="shrink-0" />
                 </button>
             )}
@@ -223,7 +292,7 @@ export default function SyncStatus() {
                                 </div>
                                 <div>
                                     <p className="text-sm font-black text-slate-800 dark:text-white">Log de Sincronización</p>
-                                    <p className="text-[10px] text-slate-400">{failedCount} venta{failedCount > 1 ? 's' : ''} con error</p>
+                                    <p className="text-[10px] text-slate-400">{failedCount} venta{failedCount > 1 ? 's' : ''} o ajuste{failedCount > 1 ? 's' : ''} por revisar</p>
                                 </div>
                             </div>
                             <button onClick={() => setShowErrorModal(false)} className="text-slate-400 hover:text-slate-600 p-1">
@@ -232,18 +301,19 @@ export default function SyncStatus() {
                         </div>
 
                         <div className="overflow-y-auto flex-1 space-y-2 mb-4">
-                            {failedItems.map((item, i) => {
+                            {failedItems.map(({ kind, item }) => {
                                 const d = new Date(item.created_at);
-                                const totalUsd = item.payload?.total;
+                                const { title, hint } = describeProblem(kind, item);
+                                const isConflict = item.sync_status === 'conflicted';
                                 return (
-                                    <div key={item.id} className="bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded-xl p-3 space-y-1.5">
+                                    <div key={`${kind}-${item.id}`} className="bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded-xl p-3 space-y-1.5">
                                         <div className="flex items-center justify-between">
                                             <span className="text-xs font-black text-slate-700 dark:text-slate-200">
-                                                {totalUsd != null ? `$${Number(totalUsd).toFixed(2)}` : 'Venta offline'}
+                                                {title}
                                             </span>
                                             <div className="flex items-center gap-2">
                                                 <span className="text-[9px] bg-red-100 dark:bg-red-900/40 text-red-500 px-1.5 py-0.5 rounded font-bold uppercase">
-                                                    {item.attempts || 0} intentos
+                                                    {isConflict ? 'Conflicto' : `${item.attempts || 0} intentos`}
                                                 </span>
                                                 <span className="text-[10px] text-slate-400">
                                                     {d.toLocaleString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
@@ -253,6 +323,7 @@ export default function SyncStatus() {
                                         <p className="text-[10px] text-red-600 dark:text-red-400 font-mono break-all leading-snug bg-red-100/50 dark:bg-red-900/20 rounded px-2 py-1.5">
                                             {item.last_error || 'Error desconocido'}
                                         </p>
+                                        {hint && <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug">{hint}</p>}
                                     </div>
                                 );
                             })}
@@ -277,7 +348,7 @@ export default function SyncStatus() {
                                 onClick={handleDismissFailed}
                                 className="py-2.5 px-3 text-xs font-bold text-white bg-red-500 hover:bg-red-600 rounded-xl transition-all active:scale-95"
                             >
-                                Descartar
+                                Descartar fallidas
                             </button>
                         </div>
                     </div>
