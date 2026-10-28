@@ -149,8 +149,15 @@ export function ProductProvider({ children, rates }) {
                 setRateMode(e.newValue);
             }
             if (e.key === 'bodega_use_auto_rate') {
+                // bodega_rate_mode (A5) llega por su lado y es el dato preciso; esta
+                // llave vieja solo dice auto/manual, así que no debe pisar 'euro'.
                 const isAuto = !!JSON.parse(e.newValue);
-                setRateMode(isAuto ? 'bcv' : 'manual');
+                setRateMode(prev => {
+                    if (!isAuto) return 'manual';
+                    if (prev !== 'manual') return prev;
+                    const stored = localStorage.getItem('bodega_rate_mode');
+                    return stored && stored !== 'manual' ? stored : 'bcv';
+                });
             }
             if (e.key === 'cop_enabled') {
                 setCopEnabled(e.newValue === 'true');

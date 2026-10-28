@@ -69,6 +69,15 @@ const SYNC_KEYS = [
     'catalog_use_auto_usdt',
     'street_rate_bs',
     'printer_paper_width',
+    // A5: configuración del negocio que antes no viajaba entre cajas
+    'business_name',
+    'business_rif',
+    'allow_negative_stock',
+    'bodega_rate_mode',
+    'cajero_puede_abrir_caja',
+    'cajero_puede_cerrar_caja',
+    'cajero_max_descuento',
+    'cashea_min_amount',
 ];
 
 // Llaves que van a colección 'local' (localStorage); el resto va a 'store' (IndexedDB)
@@ -91,6 +100,14 @@ const LOCAL_KEYS = [
     'catalog_use_auto_usdt',
     'street_rate_bs',
     'printer_paper_width',
+    'business_name',
+    'business_rif',
+    'allow_negative_stock',
+    'bodega_rate_mode',
+    'cajero_puede_abrir_caja',
+    'cajero_puede_cerrar_caja',
+    'cajero_max_descuento',
+    'cashea_min_amount',
 ];
 
 // ─── Realtime selectivo ────────────────────────────────────────────────────
@@ -114,6 +131,14 @@ const REALTIME_KEYS = [
     'catalog_use_auto_usdt',
     'street_rate_bs',
     'printer_paper_width',
+    'business_name',
+    'business_rif',
+    'allow_negative_stock',
+    'bodega_rate_mode',
+    'cajero_puede_abrir_caja',
+    'cajero_puede_cerrar_caja',
+    'cajero_max_descuento',
+    'cashea_min_amount',
 ];
 
 // ─── Llaves que contienen arrays con campo `id` y requieren merge inteligente ──
@@ -323,6 +348,9 @@ const HEAVY_KEYS = [
 ];
 const DEBOUNCE_MS = 3000;
 const DEBOUNCE_MS_HEAVY = 30000;
+// Ventas: la otra caja debe verlas pronto (cierre, totales del turno). 10 s aún
+// agrupa ráfagas de hora pico; lo inmediato real llega con filas por venta (Fase C).
+const DEBOUNCE_MS_SALES = 10000;
 
 /**
  * Empuja una llave al sincronizador de Supabase.
@@ -451,7 +479,8 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
     } else {
         _pendingPushValues[key] = value;
         if (_pushDebounceTimers[key]) clearTimeout(_pushDebounceTimers[key]);
-        const delay = HEAVY_KEYS.includes(key) ? DEBOUNCE_MS_HEAVY : DEBOUNCE_MS;
+        const delay = key === 'bodega_sales_v1' ? DEBOUNCE_MS_SALES
+            : HEAVY_KEYS.includes(key) ? DEBOUNCE_MS_HEAVY : DEBOUNCE_MS;
         _pushDebounceTimers[key] = setTimeout(() => {
             delete _pushDebounceTimers[key];
             delete _pendingPushValues[key];
