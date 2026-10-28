@@ -1,5 +1,7 @@
 // Vercel Serverless Function — Checkout proxy
-// Upserts unknown products then calls process_checkout RPC using service_role key.
+// Calls process_checkout RPC using service_role key. Fase 2 (fin): SIN upsert
+// de productos desconocidos — el ID del carrito debe estar vinculado al
+// catálogo canónico; la RPC responde 'unknown_product' explícito si no lo está.
 
 // La URL de producción debe venir de Vercel; el fallback conserva compatibilidad
 // con despliegues antiguos, pero no debe ser la fuente principal.
@@ -102,17 +104,25 @@ export default async function handler(req, res) {
         }
     }
 
-    // Upsert unknown products (ON CONFLICT DO NOTHING)
-    // name may be absent in offline queue entries saved before the fix — use fallback
-    const productsToUpsert = cart
-        .filter(item => item.id)
-        .map(item => ({
-            id: item.id,
-            name: item.name || `Producto ${item.id.slice(0, 8)}`,
-            price: item.priceUsd || 0,
-            stock: 0,
-            cost_price: 0,
-        }));
+    // Compatibilidad de transición (expand/contract): un cliente ANTERIOR no envía
+    // stock_qty y sigue convirtiendo IDs legacy a UUID aleatorios; sin este paso,
+    // process_checkout respondería 'unknown_product' y esa app vieja marcaría la
+    // venta como sincronizada sin estar en el servidor. Para esos clientes se
+    // conserva el upsert anterior (ON CONFLICT DO NOTHING, stock 0). Los clientes
+    // nuevos (con stock_qty) registran su catálogo por /api/catalog-sync.
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const legacyClient = cart.length > 0 && cart.every(item => item.stock_qty === undefined);
+    const productsToUpsert = legacyClient
+        ? cart
+            .filter(item => item.id && UUID_RE.test(item.id))
+            .map(item => ({
+                id: item.id,
+                name: item.name || `Producto ${item.id.slice(0, 8)}`,
+                price: item.priceUsd || 0,
+                stock: 0,
+                cost_price: 0,
+            }))
+        : [];
 
     if (productsToUpsert.length > 0) {
         await fetch(`${SUPABASE_URL}/rest/v1/products`, {
@@ -142,7 +152,7 @@ export default async function handler(req, res) {
 
     const rpcPayload = {
         ...payload,
-        cart: cart.map(({ id, qty, priceUsd }) => ({ id, qty, priceUsd })),
+        cart: cart.map(({ id, qty, stock_qty, priceUsd }) => ({ id, qty, stock_qty, priceUsd })),
         payments: normalizedPayments,
     };
 

@@ -2,11 +2,12 @@
  * Cloudflare Worker — listo-pos-lite
  *
  * /api/share  — Upstash Redis relay for inventory share codes.
- * /api/checkout — Proxy seguro para process_checkout: upsertea productos
- *                 usando SUPABASE_SERVICE_KEY (secreto del worker, nunca expuesto
- *                 al cliente) y luego llama al RPC de Supabase.
+ * /api/checkout — Proxy seguro para process_checkout usando SUPABASE_SERVICE_KEY
+ *                 (secreto del worker, nunca expuesto al cliente). SIN upsert de
+ *                 productos: el ID del carrito debe estar vinculado al catálogo.
  * /api/inventory-operation — Contrato único de operación de inventario:
  *                 aplica apply_inventory_operation (idempotente por operation_id).
+ * /api/catalog-sync — Catálogo solo-metadatos (sync_product_catalog).
  * Todo lo demás cae al SPA estático.
  */
 
@@ -189,25 +190,31 @@ async function handleCheckout(request, env) {
         }
     }
 
-    // Normaliza IDs de carrito: si un item tiene un ID legacy (no-UUID como "p-snack-4"),
-    // le asigna un UUID nuevo para que PostgreSQL no rechace la inserción.
-    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const normalizedCart = cart.map(item => ({
-        ...item,
-        id: item.id && UUID_RE.test(item.id) ? item.id : crypto.randomUUID(),
-    }));
+    // Fase 2 (fin): SIN upsert de productos desconocidos ni renominación de
+    // IDs legacy. Todo item del carrito debe estar vinculado al catálogo
+    // canónico (mismo UUID del catálogo local); process_checkout responde
+    // 'unknown_product' explícito y resoluble para los IDs no vinculados,
+    // sin aplicar nada y sin crear productos fantasma.
 
-    // ── Paso 1: upsertear productos desconocidos (ON CONFLICT DO NOTHING) ──
-    // name puede estar ausente en entradas de la cola offline guardadas antes del fix.
-    const productsToUpsert = normalizedCart
-        .filter(item => item.id)
-        .map(item => ({
-            id: item.id,
-            name: item.name || `Producto ${item.id.slice(0, 8)}`,
-            price: item.priceUsd || 0,
-            stock: 0,
-            cost_price: 0,
-        }));
+    // Compatibilidad de transición (expand/contract): un cliente ANTERIOR no envía
+    // stock_qty y sigue convirtiendo IDs legacy a UUID aleatorios; sin este paso,
+    // process_checkout respondería 'unknown_product' y esa app vieja marcaría la
+    // venta como sincronizada sin estar en el servidor. Para esos clientes se
+    // conserva el upsert anterior (ON CONFLICT DO NOTHING, stock 0). Los clientes
+    // nuevos (con stock_qty) registran su catálogo por /api/catalog-sync.
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const legacyClient = cart.length > 0 && cart.every(item => item.stock_qty === undefined);
+    const productsToUpsert = legacyClient
+        ? cart
+            .filter(item => item.id && UUID_RE.test(item.id))
+            .map(item => ({
+                id: item.id,
+                name: item.name || `Producto ${item.id.slice(0, 8)}`,
+                price: item.priceUsd || 0,
+                stock: 0,
+                cost_price: 0,
+            }))
+        : [];
 
     if (productsToUpsert.length > 0) {
         await fetch(`${SUPABASE_URL}/rest/v1/products`, {
@@ -222,7 +229,7 @@ async function handleCheckout(request, env) {
         });
     }
 
-    // ── Paso 2: llamar a process_checkout con el payload limpio ──
+    // ── Llamar a process_checkout con el payload limpio ──
     // El RPC sólo necesita {id, qty, priceUsd} por item; quitamos "name".
     // El RPC requiere sum(payments) + fiadoUsd == total (doble entrada).
     // En ventas con cambio, el pago bruto supera el total. Se escalan
@@ -238,7 +245,7 @@ async function handleCheckout(request, env) {
 
     const rpcPayload = {
         ...payload,
-        cart: normalizedCart.map(({ id, qty, priceUsd }) => ({ id, qty, priceUsd })),
+        cart: cart.map(({ id, qty, stock_qty, priceUsd }) => ({ id, qty, stock_qty, priceUsd })),
         payments: normalizedPayments,
     };
 
@@ -401,7 +408,6 @@ async function handleRates(request) {
     }
 }
 
-// ── Main fetch handler ─────────────────────────────────────────────────────
 // ── Inventory operation handler (contrato único de inventario) ──
 async function handleInventoryOperation(request, env) {
     const headers = corsHeaders(request);
@@ -449,6 +455,51 @@ async function handleInventoryOperation(request, env) {
     return Response.json(result, { status: rpcRes.ok ? 200 : rpcRes.status, headers });
 }
 
+// ── Catalog sync handler (catálogo solo-metadatos, Fase 2) ──
+async function handleCatalogSync(request, env) {
+    const headers = corsHeaders(request);
+
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
+    if (request.method !== 'POST') return Response.json({ error: 'Method not allowed' }, { status: 405, headers });
+
+    const SERVICE_KEY = env.SUPABASE_SERVICE_KEY;
+    if (!SERVICE_KEY) {
+        return Response.json({ error: 'SUPABASE_SERVICE_KEY not configured' }, { status: 500, headers });
+    }
+
+    const user = await authenticateRequest(request, env);
+    if (!user) {
+        return Response.json({ error: 'No autorizado: inicia sesión para sincronizar el catálogo.' }, { status: 401, headers });
+    }
+
+    let payload;
+    try {
+        payload = await request.json();
+    } catch {
+        return Response.json({ error: 'Invalid JSON' }, { status: 400, headers });
+    }
+
+    const products = Array.isArray(payload?.products) ? payload.products : null;
+    if (!products || products.length === 0) {
+        return Response.json({ status: 'invalid', message: 'products vacío' }, { status: 400, headers });
+    }
+
+    // sync_product_catalog separa metadatos de existencias: el stock de la
+    // lista solo fija el saldo inicial al crear la fila y se ignora en updates.
+    const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/sync_product_catalog`, {
+        method: 'POST',
+        headers: {
+            apikey: SERVICE_KEY,
+            Authorization: `Bearer ${SERVICE_KEY}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ payload: { products } }),
+    });
+    const result = await rpcRes.json();
+    return Response.json(result, { status: rpcRes.ok ? 200 : rpcRes.status, headers });
+}
+
+// ── Main fetch handler ─────────────────────────────────────────────────────
 export default {
     async fetch(request, env) {
         const url = new URL(request.url);
@@ -471,6 +522,10 @@ export default {
 
         if (url.pathname.startsWith('/api/inventory-operation')) {
             return handleInventoryOperation(request, env);
+        }
+
+        if (url.pathname.startsWith('/api/catalog-sync')) {
+            return handleCatalogSync(request, env);
         }
 
         // Static SPA assets for everything else

@@ -29,6 +29,18 @@ export function normalizeStockQuantity(value, unit = 'unidad') {
 }
 
 /**
+ * Cantidad derivada de líneas de venta (descuento o restitución): se conserva
+ * la fracción exacta a la precisión del servidor (numeric(15,4)), sin redondear
+ * a enteros por unidad. Vender 6 de 12 uds descuenta 0.5 paquete y anular debe
+ * reponer exactamente 0.5, no 1.
+ */
+export function normalizeSaleLineQuantity(value) {
+    const num = typeof value === 'number' ? value : parseFloat(value);
+    if (!Number.isFinite(num)) return 0;
+    return Math.round(num * 10000) / 10000;
+}
+
+/**
  * Convierte una cantidad vendida a unidad de inventario:
  *  - item por peso (isWeight): suma directa;
  *  - item con _mode 'unit' (venta por paquete): qty ÷ unidadesPorPaquete;
@@ -40,6 +52,19 @@ export function toInventoryQuantity(qty, { isWeight = false, mode = 'product', u
     if (isWeight) return num;
     if (mode === 'unit') return num / (unitsPerPackage > 0 ? unitsPerPackage : 1);
     return num;
+}
+
+/**
+ * Cantidad de inventario que una línea del carrito descuenta (lo que el
+ * servidor debe restar de products.stock): mismo cálculo que el descuento
+ * local y que la restitución de la anulación, con la precisión del servidor.
+ */
+export function saleLineStockQuantity(item) {
+    return normalizeSaleLineQuantity(toInventoryQuantity(item?.qty, {
+        isWeight: Boolean(item?.isWeight),
+        mode: item?._mode,
+        unitsPerPackage: item?._unitsPerPackage,
+    }));
 }
 
 /**

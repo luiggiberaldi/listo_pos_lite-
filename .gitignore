@@ -40,6 +40,7 @@ api/*.js
 !api/update-profile.js
 !api/rates.js
 !api/inventory-operation.js
+!api/catalog-sync.js
 
 # Backups y datos locales
 backup_*.json
