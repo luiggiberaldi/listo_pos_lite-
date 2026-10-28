@@ -126,7 +126,6 @@ export default function SyncStatus() {
         checkHealth();
         checkQueue();
 
-        const healthInterval = setInterval(checkHealth, 900000);
         const queueInterval = setInterval(checkQueue, 15000);
         const diagInterval = setInterval(() => {
             if (mounted) setSyncDiag({ ...getSyncDiagnostics(), now: Date.now() });
@@ -136,11 +135,18 @@ export default function SyncStatus() {
             mounted = false;
             window.removeEventListener('online', goOnline);
             window.removeEventListener('offline', goOffline);
-            clearInterval(healthInterval);
             clearInterval(queueInterval);
             clearInterval(diagInterval);
         };
     }, []);
+
+    // Revisión de salud: cada 15 min si hay conexión, cada 30 s si se marcó
+    // "Offline". Antes un solo ping lento (pestaña oculta, red lenta) dejaba
+    // "Offline" 15 minutos aunque la sincronización siguiera funcionando.
+    useEffect(() => {
+        const healthInterval = setInterval(checkHealth, isOnline ? 900000 : 30000);
+        return () => clearInterval(healthInterval);
+    }, [isOnline]);
 
     let statusType = 'online';
     if (!isOnline) statusType = 'offline';
