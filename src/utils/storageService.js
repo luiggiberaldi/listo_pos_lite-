@@ -1,6 +1,14 @@
 import localforage from 'localforage';
 import { pushCloudSync } from '../hooks/useCloudSync';
 import { APP_STORAGE_DB_NAME, APP_STORAGE_STORE_NAME, getScopedStorageKey } from '../config/storageScope';
+import { ENTITY_KEYS, alive, getDeviceId, stampChanges } from '../sync/entityMeta';
+
+// Fase B: las listas sincronizadas guardan lápidas (registros borrados) que las
+// pantallas no deben ver. getItem devuelve solo los vivos.
+const visible = (key, value) => (ENTITY_KEYS.includes(key) ? alive(value) : value);
+
+// Escrituras de una misma llave en orden: cada una se marca contra la anterior.
+const _writeChains = {};
 
 localforage.config({
     name: APP_STORAGE_DB_NAME,
@@ -25,7 +33,7 @@ export const storageService = {
             const value = await localforage.getItem(scopedKey);
 
             if (value !== null) {
-                return value;
+                return visible(key, value);
             }
 
             // No importar automáticamente bases de otras aplicaciones.
@@ -49,7 +57,7 @@ export const storageService = {
                 // Borrar el viejo para liberar el preciado espacio de 5MB
                 localStorage.removeItem(scopedKey);
 
-                return parsedValue;
+                return visible(key, parsedValue);
             }
 
             // 3. No existe en ningún lado
@@ -60,7 +68,7 @@ export const storageService = {
             // Fallback drástico en caso de que el navegador bloquee IndexedDB por privacidad extrema
             const backup = localStorage.getItem(getScopedStorageKey(key));
             if (backup) {
-                try { return JSON.parse(backup); } catch (e) { return backup; }
+                try { return visible(key, JSON.parse(backup)); } catch (e) { return backup; }
             }
             return defaultValue;
         }
@@ -69,7 +77,35 @@ export const storageService = {
     /**
      * Guarda un item directamente en IndexedDB
      */
-    async setItem(key, value) {
+    /**
+     * Guarda en IndexedDB. Para las listas sincronizadas (ENTITY_KEYS) marca cada
+     * registro cambiado con fecha/versión/dispositivo y convierte los borrados en
+     * lápidas (Fase B: B1/B2). `allowMassDelete` permite vaciar a propósito una
+     * lista grande (p. ej. "Borrar todo" del inventario).
+     */
+    async setItem(key, value, options = {}) {
+        if (ENTITY_KEYS.includes(key) && Array.isArray(value)) {
+            const chain = (_writeChains[key] || Promise.resolve()).then(() => storageService._setEntityList(key, value, options));
+            _writeChains[key] = chain.catch(() => {});
+            return chain;
+        }
+        return storageService._setRaw(key, value);
+    },
+
+    async _setEntityList(key, value, { allowMassDelete = false } = {}) {
+        const scopedKey = getScopedStorageKey(key);
+        let prev = null;
+        try { prev = await localforage.getItem(scopedKey); } catch { /* sin lectura → todo cuenta como nuevo */ }
+        const result = stampChanges(prev, value, { deviceId: getDeviceId(), allowMassDelete });
+        if (result.blocked) {
+            console.warn(`[Storage] Se evitó vaciar ${key}: la lista tenía ${alive(prev).length} registros y llegó vacía.`);
+            return;
+        }
+        if (!result.changed && Array.isArray(prev)) return; // nada que guardar ni subir
+        return storageService._setRaw(key, result.list);
+    },
+
+    async _setRaw(key, value) {
         const scopedKey = getScopedStorageKey(key);
         try {
             await localforage.setItem(scopedKey, value);

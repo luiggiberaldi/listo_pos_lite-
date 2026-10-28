@@ -1111,7 +1111,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                             if (deleteAllConfirmText.trim().toUpperCase() === 'BORRAR') {
                                 const count = products.length;
                                 // Borrar de storage primero para garantizar persistencia
-                                await storageService.setItem('bodega_products_v1', []);
+                                await storageService.setItem('bodega_products_v1', [], { allowMassDelete: true });
                                 // Luego actualizar el estado React
                                 setProducts([]);
                                 auditLog('INVENTARIO', 'BORRADO_TOTAL', `Borrado total: ${count} productos eliminados`);

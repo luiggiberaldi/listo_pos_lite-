@@ -6,6 +6,7 @@ import { pushCatalogSync } from '../services/catalogSyncService';
 import { useAuthStore } from './store/useAuthStore';
 import { APP_STORAGE_DB_NAME, APP_STORAGE_STORE_NAME, getActiveAccountId, getScopedStorageKey, setActiveAccountId } from '../config/storageScope';
 import { hashPayload } from '../sync/syncHash';
+import { ENTITY_KEYS, mergeEntities } from '../sync/entityMeta';
 import { classifyChangedMeta, cursorQueryFrom, maxIso } from '../sync/syncCursor';
 import { CLEAN_HASH_STORAGE_KEY, DIRTY_KEYS_STORAGE_KEY, clearDirty, isRealChange, localIsNewer, markDirty, readCleanHashes, readDirty, setCleanHash } from '../sync/dirtyKeys';
 
@@ -142,67 +143,16 @@ const REALTIME_KEYS = [
     'cashea_min_amount',
 ];
 
-// ─── Llaves que contienen arrays con campo `id` y requieren merge inteligente ──
-// Cuando llegan datos de la nube, en vez de sobreescribir el array completo,
-// se hace merge por ID: se combinan items locales + nube, y si ambos tienen
-// el mismo ID, gana el que tenga updatedAt/createdAt más reciente.
-const MERGEABLE_KEYS = [
-    // El inventario no se mezcla: la cuenta/nube activa es la fuente de verdad.
-    'bodega_customers_v1',
-    'bodega_sales_v1',
-    'bodega_cierres_v1',
-    'bodega_payment_methods_v1',
-    'bodega_accounts_v2',
-    'my_categories_v1',
-    'bodega_suppliers_v1',
-    'bodega_supplier_invoices_v1',
-];
+// ─── Llaves que se mezclan registro por registro (Fase B, B3) ──────────────
+// Al llegar de la nube no se reemplaza la lista completa: por cada registro gana
+// la versión más nueva (updatedAt/rev/updatedBy) y una lápida más nueva gana a la
+// versión viva. Incluye el INVENTARIO: antes se reemplazaba entero y un cambio de
+// otra caja en OTRO producto se perdía.
+const MERGEABLE_KEYS = ENTITY_KEYS;
 
 // Llaves legadas que dispositivos con versiones viejas aún pueden subir a
 // sync_documents; se ignoran al recibir para no pisar el estado local.
 const PULL_IGNORE_KEYS = ['abasto_audit_log_v1'];
-
-/**
- * Merge inteligente de arrays por ID.
- * Combina localArr + cloudArr sin perder items de ninguno.
- * Si un item existe en ambos, gana el más reciente (por updatedAt o createdAt).
- */
-function _mergeArraysById(localArr, cloudArr) {
-    if (!Array.isArray(localArr) || !Array.isArray(cloudArr)) return cloudArr;
-
-    const map = new Map();
-
-    // Primero agregar todos los locales
-    for (const item of localArr) {
-        const id = item?.id ?? item?.cierreId;
-        if (id !== null && id !== undefined) map.set(String(id), item);
-    }
-
-    // Luego agregar/sobreescribir con los de la nube si son más recientes
-    for (const item of cloudArr) {
-        const id = item?.id ?? item?.cierreId;
-        if (id === null || id === undefined) {
-            // Items sin id: agregar directamente
-            map.set(Symbol(), item);
-            continue;
-        }
-
-        const existing = map.get(String(id));
-        if (!existing) {
-            map.set(String(id), item);
-        } else {
-            // Comparar timestamps — gana el más reciente
-            const localTime = existing.updatedAt || existing.createdAt || '';
-            const cloudTime = item.updatedAt || item.createdAt || '';
-            if (cloudTime >= localTime) {
-                map.set(String(id), item);
-            }
-            // Si local es más reciente, se queda el local (ya está en el map)
-        }
-    }
-
-    return Array.from(map.values());
-}
 
 // ─── Sanitización previa al push ───────────────────────────────────────────
 // Ventana de sync para ventas. El historial completo se conserva en el
@@ -536,23 +486,19 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
     try { incomingHash = payload === undefined ? null : hashPayload(payload); } catch { /* sin hash → aplicar */ }
     if (incomingHash && _lastPushHash[docId] === incomingHash) return;
 
-    // El inventario de la cuenta activa es autoritativo: no se mezcla ni se
-    // bloquea por timestamps locales heredados de otro sistema.
-    const isInventory = docId === 'bodega_products_v1' && collection === 'store';
-    // Para llaves mergeables (excepto inventario), se conserva el merge por ID.
+    // Listas con registros (incluido el inventario) se mezclan registro por registro.
     const isMergeable = MERGEABLE_KEYS.includes(docId) && collection === 'store';
     // Cambio local pendiente de subir (A4), leído una sola vez para todo el apply.
     let pendingLocalTs;
     try { pendingLocalTs = _readDirtyMap()[docId]; } catch { /* sin marca */ }
 
-    // Protección contra sobreescritura para llaves NO mergeables. Un cambio local
-    // pendiente (llave sucia, A4) más nuevo que la nube gana y se re-sube. El
-    // inventario solo se protege por llave sucia: su `_sync_local_ts_` puede venir
-    // de datos heredados y la cuenta activa sigue siendo la fuente de verdad.
+    // Protección contra sobreescritura para llaves NO mergeables (configuración).
+    // Un cambio local pendiente (llave sucia, A4) más nuevo que la nube gana y se
+    // re-sube.
     if (!isMergeable && cloudUpdatedAt) {
         try {
             const dirtyTs = pendingLocalTs;
-            const savedTs = isInventory ? null : localStorage.getItem(getScopedStorageKey('_sync_local_ts_' + docId));
+            const savedTs = localStorage.getItem(getScopedStorageKey('_sync_local_ts_' + docId));
             const localTs = localIsNewer(dirtyTs, savedTs) ? dirtyTs : (savedTs || dirtyTs);
             if (localIsNewer(localTs, cloudUpdatedAt)) {
                 // H-15: las llaves 'local' viven en localStorage, no en IndexedDB.
@@ -570,7 +516,7 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
                 if (localData !== null && incomingHash && hashPayload(sanitizeForPush(docId, localData)) === incomingHash) {
                     _lastPushHash[docId] = incomingHash;
                     _rememberCloudHash(docId, incomingHash);
-                    if (!isInventory) _nativeSetItem(getScopedStorageKey('_sync_local_ts_' + docId), cloudUpdatedAt);
+                    _nativeSetItem(getScopedStorageKey('_sync_local_ts_' + docId), cloudUpdatedAt);
                     const scoped = _dirtyScopedKey();
                     if (scoped && pendingLocalTs) clearDirty(_dirtyStorage, scoped, docId, pendingLocalTs);
                     return;
@@ -633,17 +579,18 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
                 try {
                     const localData = await localforage.getItem(getScopedStorageKey(docId));
                     if (Array.isArray(localData)) {
-                        finalData = _mergeArraysById(localData, payload);
+                        finalData = mergeEntities(localData, payload, {
+                            localOnlyFields: docId === 'bodega_products_v1' ? ['image'] : [],
+                        });
                         console.log(`[CloudSync] Merge ${docId}: local=${localData.length}, nube=${payload.length}, resultado=${finalData.length}`);
 
-                        // Si el merge produjo más items que la nube, re-subir el resultado.
-                        // Para ventas se compara la versión recortada: el local siempre
-                        // tiene más historial que la nube (ventana de N días) y comparar
-                        // el array completo causaría re-push infinito en cada poll.
-                        const pushable = docId === 'bodega_sales_v1' ? _trimSalesForSync(finalData) : finalData;
-                        // También si había un cambio local sin confirmar: editar un
-                        // elemento existente no cambia la cantidad y no se subiría nunca.
-                        if (pushable.length > payload.length || pendingLocalTs) {
+                        // Re-subir si el resultado DIFIERE de la nube (antes: solo si tenía
+                        // más elementos, así una edición local ganadora nunca se subía).
+                        // Se compara lo que realmente se subiría (sin fotos, ventas
+                        // recortadas a la ventana), para no re-subir en cada polling.
+                        let differs = Boolean(pendingLocalTs);
+                        try { differs = differs || hashPayload(sanitizeForPush(docId, finalData)) !== incomingHash; } catch { /* sin hash → no re-subir */ }
+                        if (differs) {
                             setTimeout(() => {
                                 delete _lastPushHash[docId];
                                 pushCloudSync(docId, finalData).catch(() => {});
