@@ -1,0 +1,3 @@
+# Las huellas md5 de las funciones (planes de publicación y vuelta atrás)
+# asumen saltos de línea LF: los SQL se guardan siempre con LF.
+*.sql text eol=lf
