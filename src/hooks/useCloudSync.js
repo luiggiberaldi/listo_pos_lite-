@@ -226,7 +226,10 @@ let factoryResetChannel = null; // Canal broadcast factory-reset / force_reload
 let syncGeneration = 0;
 // Intentional module-level singletons: shared across all hook instances to
 // coordinate cloud-sync echo prevention and debounce timers.
-let isSyncingFromCloud = false; // true mientras aplicamos cambios de la nube → evita eco
+// B5: llaves que se están aplicando desde la nube en este momento. Antes era un
+// interruptor global: mientras bajaba UNA llave, cualquier guardado local de
+// OTRA llave no se subía nunca y los avisos de Realtime se descartaban.
+const _applyingKeys = new Set();
 // Cursor del polling: el MAYOR updated_at recibido del servidor (nunca la hora
 // local). Con relojes desfasados entre equipos la hora local descartaba cambios.
 let syncCursor = null;
@@ -311,7 +314,7 @@ const DEBOUNCE_MS_FAST_HEAVY = 10000;
  * Soporta un parámetro bypassDebounce para subidas iniciales o forzadas inmediatas.
  */
 export const pushCloudSync = async (key, value, bypassDebounce = false) => {
-    if (isSyncingFromCloud) return;          // Nunca re-emitir lo que llegó de la nube
+    if (_applyingKeys.has(key)) return;      // Nunca re-emitir lo que llega de la nube
     if (!SYNC_KEYS.includes(key)) return;
 
     // A4: el cambio queda pendiente (persistido) hasta que la nube lo confirme.
@@ -471,11 +474,26 @@ export const flushPendingPushes = () => {
 
 /**
  * Aplica un documento recibido de la nube al almacenamiento local.
- * Garantiza que isSyncingFromCloud esté activo durante toda la operación.
  * Si cloudUpdatedAt se provee, verifica que sea más reciente que el timestamp local
  * para evitar sobreescribir cambios locales con datos desactualizados de la nube.
+ *
+ * B5: los documentos se aplican de a uno, en el orden en que llegan (cola), y
+ * cada llave de IndexedDB se aplica con el mismo candado que usan los guardados
+ * locales de esa llave: leer-mezclar-escribir no se intercala con un guardado.
  */
-async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
+let _applyQueue = Promise.resolve();
+function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
+    const run = _applyQueue.then(async () => {
+        const apply = () => _applyFromCloudNow(docId, collection, payload, cloudUpdatedAt);
+        if (collection !== 'store') return apply();
+        const { storageService } = await import('../utils/storageService');
+        return storageService.runExclusive(docId, apply);
+    });
+    _applyQueue = run.catch(() => {});
+    return run;
+}
+
+async function _applyFromCloudNow(docId, collection, payload, cloudUpdatedAt) {
     // Llaves legadas subidas por versiones viejas de la app: ignorar para no
     // pisar el estado local (ej. el audit log, que ahora vive en la tabla audit_log)
     if (PULL_IGNORE_KEYS.includes(docId)) return;
@@ -533,7 +551,7 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
         } catch(e) { /* Si falla la comparación, aplicar de todas formas */ }
     }
 
-    isSyncingFromCloud = true;
+    _applyingKeys.add(docId);
     try {
         if (collection === 'local') {
             let finalPayload = payload;
@@ -619,7 +637,7 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
             try { if (scoped) clearDirty(_dirtyStorage, scoped, docId, pendingLocalTs); } catch { /* ignorar */ }
         }
     } finally {
-        isSyncingFromCloud = false;
+        _applyingKeys.delete(docId);
     }
 }
 
@@ -650,7 +668,7 @@ export function useCloudSync() {
         // Interceptor de localStorage — solo para llaves 'local'
         const originalSetItem = localStorage.setItem.bind(localStorage);
         localStorage.setItem = function (key, value) {
-            const tracked = !isSyncingFromCloud && LOCAL_KEYS.includes(key);
+            const tracked = !_applyingKeys.has(key) && LOCAL_KEYS.includes(key);
             const previous = tracked ? localStorage.getItem(key) : null;
             originalSetItem(key, value);
             if (tracked) {
@@ -720,7 +738,7 @@ export function useCloudSync() {
 
         const pollForChanges = async () => {
             if (pollInFlight) { pollAgain = true; return; }
-            if (!initialSyncReady || isSyncingFromCloud) return;
+            if (!initialSyncReady) return;
             if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
             pollInFlight = true;
             try {
@@ -959,7 +977,6 @@ export function useCloudSync() {
                             'broadcast',
                             { event: 'sync_update' },
                             async ({ payload }) => {
-                                if (isSyncingFromCloud) return;
                                 const { doc_id, collection, data } = payload;
                                 // Solo procesar llaves ligeras (tasas/config)
                                 if (!REALTIME_KEYS.includes(doc_id)) return;

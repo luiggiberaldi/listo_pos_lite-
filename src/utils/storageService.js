@@ -85,11 +85,20 @@ export const storageService = {
      */
     async setItem(key, value, options = {}) {
         if (ENTITY_KEYS.includes(key) && Array.isArray(value)) {
-            const chain = (_writeChains[key] || Promise.resolve()).then(() => storageService._setEntityList(key, value, options));
-            _writeChains[key] = chain.catch(() => {});
-            return chain;
+            return storageService.runExclusive(key, () => storageService._setEntityList(key, value, options));
         }
         return storageService._setRaw(key, value);
+    },
+
+    /**
+     * Ejecuta `fn` en la fila de escrituras de `key`: espera a los guardados
+     * anteriores y los siguientes esperan a que termine (B5: lo usa el
+     * sincronizador para aplicar lo que baja de la nube sin intercalarse).
+     */
+    runExclusive(key, fn) {
+        const run = (_writeChains[key] || Promise.resolve()).then(fn);
+        _writeChains[key] = run.catch(() => {});
+        return run;
     },
 
     async _setEntityList(key, value, { allowMassDelete = false } = {}) {
