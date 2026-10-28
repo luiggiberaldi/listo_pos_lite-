@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useAuthStore } from './store/useAuthStore';
 import { logEvent } from '../services/auditService';
+import { getLockOnTabChange } from '../utils/lockOnTabChange';
 
 const CAJERO_LOCK_MINUTES = 5; // Fijo, no configurable
 
@@ -59,8 +60,8 @@ export function useAutoLock() {
 
         const handleVisibilityChange = () => {
             if (document.hidden) {
-                // Admin: bloquear al minimizar. Cajero: solo reiniciar el timer
-                if (isAdmin) {
+                // Admin: bloquear al minimizar (si la opción está activa). Cajero: solo reiniciar el timer
+                if (isAdmin && getLockOnTabChange()) {
                     performLock('app_minimizada');
                 } else {
                     resetTimer();

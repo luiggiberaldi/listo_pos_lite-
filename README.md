@@ -98,6 +98,18 @@ abasto/
 - `npm run preview`: Sirve los archivos de producción de manera local para pruebas.
 - `npm run lint`: Ejecuta ESLint en todo el proyecto asegurando el estándar de código.
 - `npm run prettier`: Ejecuta auto-formateo en la base de código.
+- `npm run data:snapshot`: Captura conteos y muestras de ventas/productos ANTES de una migración o despliegue (gate de no-destrucción).
+- `npm run data:verify`: Compara el estado actual contra el snapshot y falla si detecta destrucción de datos.
+
+### Comprobación de no-destrucción (gate de despliegue)
+
+Antes de aplicar migraciones SQL o desplegar cambios que toquen datos:
+
+1. `npm run data:snapshot` — guarda conteos y muestras de ventas/productos del proyecto destino.
+2. Aplicar la migración / desplegar el código.
+3. `npm run data:verify` — reconsulta el proyecto y compara: termina con error si una venta muestreada desapareció o fue alterada, si los conteos bajaron, o si se comparan proyectos distintos. El tráfico en vivo solo agrega filas, así que cualquier baja es sospechosa.
+
+Opciones útiles: `--env-file` (credenciales), `--expect-host` (evita apuntar al proyecto equivocado) y `--product-tolerance`. La clave de servicio nunca se imprime ni se guarda en el snapshot.
 
 ---
 

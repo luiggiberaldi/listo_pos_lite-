@@ -3,6 +3,18 @@ import ReactDOM from 'react-dom';
 import { Wifi, WifiOff, RefreshCw, AlertTriangle, X, ChevronRight, Copy, Check, RotateCcw } from 'lucide-react';
 import { supabaseCloud as supabase } from '../config/supabaseCloud';
 import { offlineQueueService } from '../services/offlineQueueService';
+import { getSyncDiagnostics } from '../hooks/useCloudSync';
+
+// "hace 40 s" / "hace 3 min" / "hace 2 h" a partir del último pull exitoso.
+function formatAgo(iso, now) {
+    const t = Date.parse(iso || '');
+    if (Number.isNaN(t)) return null;
+    const s = Math.max(0, Math.round((now - t) / 1000));
+    if (s < 60) return `hace ${s} s`;
+    const m = Math.round(s / 60);
+    if (m < 60) return `hace ${m} min`;
+    return `hace ${Math.round(m / 60)} h`;
+}
 
 export default function SyncStatus() {
     const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -12,6 +24,8 @@ export default function SyncStatus() {
     const [showErrorModal, setShowErrorModal] = useState(false);
     const [failedItems, setFailedItems] = useState([]);
     const [copied, setCopied] = useState(false);
+    // A8: último sync de documentos (cursor A2) y cambios locales sin confirmar (A4)
+    const [syncDiag, setSyncDiag] = useState(() => ({ ...getSyncDiagnostics(), now: Date.now() }));
 
     const checkHealth = async () => {
         if (!navigator.onLine) {
@@ -112,17 +126,27 @@ export default function SyncStatus() {
         checkHealth();
         checkQueue();
 
-        const healthInterval = setInterval(checkHealth, 900000);
         const queueInterval = setInterval(checkQueue, 15000);
+        const diagInterval = setInterval(() => {
+            if (mounted) setSyncDiag({ ...getSyncDiagnostics(), now: Date.now() });
+        }, 5000);
 
         return () => {
             mounted = false;
             window.removeEventListener('online', goOnline);
             window.removeEventListener('offline', goOffline);
-            clearInterval(healthInterval);
             clearInterval(queueInterval);
+            clearInterval(diagInterval);
         };
     }, []);
+
+    // Revisión de salud: cada 15 min si hay conexión, cada 30 s si se marcó
+    // "Offline". Antes un solo ping lento (pestaña oculta, red lenta) dejaba
+    // "Offline" 15 minutos aunque la sincronización siguiera funcionando.
+    useEffect(() => {
+        const healthInterval = setInterval(checkHealth, isOnline ? 900000 : 30000);
+        return () => clearInterval(healthInterval);
+    }, [isOnline]);
 
     let statusType = 'online';
     if (!isOnline) statusType = 'offline';
@@ -135,6 +159,8 @@ export default function SyncStatus() {
         }
     };
 
+    const lastSyncLabel = formatAgo(syncDiag.lastSyncTime, syncDiag.now);
+
     return (
         <div className="flex flex-col items-start gap-1">
             <button
@@ -146,12 +172,24 @@ export default function SyncStatus() {
                         ? 'bg-amber-50 border-amber-100 text-amber-600 focus:ring-amber-500 hover:bg-amber-100'
                         : 'bg-rose-50 border-rose-100 text-rose-500 animate-pulse focus:ring-rose-500'
                 }`}
-                title={statusType === 'online' ? 'Conectado' : statusType === 'syncing' ? `${pendingCount} transacciones pendientes` : 'Sin conexión'}
+                title={[
+                    statusType === 'online' ? 'Conectado' : statusType === 'syncing' ? `${pendingCount} transacciones pendientes` : 'Sin conexión',
+                    `Último sync: ${lastSyncLabel || 'todavía no'}`,
+                    syncDiag.dirtyCount > 0 ? `${syncDiag.dirtyCount} cambio${syncDiag.dirtyCount > 1 ? 's' : ''} sin subir` : null,
+                ].filter(Boolean).join(' · ')}
             >
                 {statusType === 'online' && <><Wifi size={13} strokeWidth={2.5} /><span className="hidden sm:inline">Online</span></>}
                 {statusType === 'syncing' && <><RefreshCw size={13} strokeWidth={2.5} className="animate-spin-slow" /><span className="hidden sm:inline">Sync ({pendingCount})</span><span className="sm:hidden">{pendingCount}</span></>}
                 {statusType === 'offline' && <><WifiOff size={13} strokeWidth={2.5} /><span>Offline</span></>}
             </button>
+
+            {/* Último sync y cambios pendientes de subir */}
+            <span className="hidden sm:block text-[9px] leading-none text-slate-400 dark:text-slate-500 pl-1">
+                {lastSyncLabel ? `Sync ${lastSyncLabel}` : 'Sin sincronizar'}
+                {syncDiag.dirtyCount > 0 && (
+                    <span className="text-amber-500"> · {syncDiag.dirtyCount} sin subir</span>
+                )}
+            </span>
 
             {/* Banner ventas fallidas */}
             {showFailedBanner && failedCount > 0 && (

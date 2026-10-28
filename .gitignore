@@ -39,6 +39,7 @@ api/*.js
 !api/checkout.js
 !api/update-profile.js
 !api/rates.js
+!api/inventory-operation.js
 
 # Backups y datos locales
 backup_*.json
@@ -96,3 +97,6 @@ capacitor.config.json
 *.jks
 *.keystore
 .dev.vars
+
+# Clon de pruebas staging (sandbox aislado; nunca entra a Git ni sus credenciales)
+staging/

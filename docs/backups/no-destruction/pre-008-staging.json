@@ -1,0 +1,90 @@
+{
+  "projectRef": "kkwqarueckiyytdqgqck",
+  "host": "kkwqarueckiyytdqgqck.supabase.co",
+  "createdAt": "2026-10-26T17:48:37.256Z",
+  "counts": {
+    "sales": 8,
+    "sale_items": 9,
+    "journal_entries": 16,
+    "inventory_adjustments": 0,
+    "products": 8
+  },
+  "samples": {
+    "sales": [
+      {
+        "id": "ba0ffae0-afd5-404c-bd64-0f12337bfb10",
+        "total": 0.85,
+        "created_at": "2026-10-26T16:53:16.486+00:00"
+      },
+      {
+        "id": "2e2f43fc-62aa-4c9e-842e-20f35cd44179",
+        "total": 0.95,
+        "created_at": "2026-10-26T16:50:34.269131+00:00"
+      },
+      {
+        "id": "ca2a8101-45f5-4e01-b6a6-5704e5e8e934",
+        "total": 1.7,
+        "created_at": "2026-10-26T16:42:22.804863+00:00"
+      },
+      {
+        "id": "86a6dd2f-a112-4db5-8513-70a9a90e5d6c",
+        "total": 2.2,
+        "created_at": "2026-10-26T16:28:10.783201+00:00"
+      },
+      {
+        "id": "e8e075a0-40e7-4fc1-b213-1847aa378659",
+        "total": 1.1,
+        "created_at": "2026-10-26T16:28:10.272635+00:00"
+      },
+      {
+        "id": "f77fe1b6-a9d9-405d-a7a0-e6280d0ca6e2",
+        "total": 1.1,
+        "created_at": "2026-10-26T16:28:09.803433+00:00"
+      },
+      {
+        "id": "51b4e00f-c2d3-440f-b53b-6054ce5898f4",
+        "total": 3,
+        "created_at": "2026-10-26T15:28:22.538416+00:00"
+      },
+      {
+        "id": "1fcd0db9-35e9-475a-8cf9-b11beded70fd",
+        "total": 2.2,
+        "created_at": "2026-10-26T15:28:21.870973+00:00"
+      }
+    ],
+    "products": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "name": "Harina Pan 1kg"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "name": "Arroz Mary 1kg"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "name": "Aceite Mazola 1L"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "name": "Leche Completa 1L"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000005",
+        "name": "Queso Llanero 1kg"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000006",
+        "name": "Jabon Las Llaves 3u"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000007",
+        "name": "Agua Mineral 600ml"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000008",
+        "name": "Papas Margarita 30g"
+      }
+    ]
+  }
+}

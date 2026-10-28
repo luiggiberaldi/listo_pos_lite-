@@ -10,7 +10,9 @@ import {
   isQueueItemDue,
   nextRetryAt,
   pruneSyncedItems,
+  resolveOperationId,
 } from './offlineQueuePolicy';
+import { getAuthHeaders } from './authHeaders';
 
 const QUEUE_KEY = 'offline_sales_queue';
 const SALES_KEY = 'bodega_sales_v1';
@@ -22,11 +24,6 @@ localforage.config({
 });
 
 let syncInFlight = false;
-
-function newOperationId() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-  return `offline-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
 
 function getQueueStorageKey() {
   const accountId = getActiveAccountId();
@@ -72,7 +69,10 @@ async function markLocalSaleSynced(item, serverData) {
       ...sale,
       status: 'COMPLETADA',
       syncMode: 'online_after_retry',
+      // Referencia canónica remota: el servidor devuelve su sale_id también en
+      // una respuesta duplicate (operación ya procesada con este mismo ID).
       remoteSaleId: serverData?.sale_id || sale.remoteSaleId || null,
+      remoteDuplicate: serverData?.duplicate === true || sale.remoteDuplicate || false,
       syncedAt: new Date().toISOString(),
     };
   });
@@ -95,7 +95,9 @@ export const offlineQueueService = {
     }
 
     const queue = await readQueue();
-    const operationId = salePayload.queue_id || salePayload.operation_id || newOperationId();
+    // Fase 1: el operation_id llega en el payload (asignado antes del primer
+    // intento online). Reintentar encola la MISMA operación, nunca una nueva.
+    const operationId = resolveOperationId(salePayload);
     const existing = queue.find(item => item.queue_id === operationId);
     if (existing) return existing;
 
@@ -152,13 +154,28 @@ export const offlineQueueService = {
             device_id: item.device_id,
           };
 
+          // El token se obtiene en CADA reintento (nunca se guarda en la cola):
+          // así una venta encolada hace días usa la sesión vigente.
+          const authHeaders = await getAuthHeaders();
           const res = await fetch('/api/checkout', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...authHeaders },
             body: JSON.stringify(payloadWithOrigin),
             signal: AbortSignal.timeout(10000),
           });
           const data = await res.json().catch(() => ({}));
+
+          if (res.status === 401) {
+            // Sesión vencida o ausente: la venta NO está mal, solo falta iniciar
+            // sesión. No consume intentos ni se marca como fallida.
+            queue = queue.map(q => q.id === item.id ? {
+              ...q,
+              next_attempt_at: nextRetryAt(3),
+              last_error: 'Sesión expirada: vuelve a iniciar sesión para sincronizar.',
+            } : q);
+            await writeQueue(queue);
+            continue;
+          }
 
           if (!res.ok || data.error || data.code) {
             throw new Error(data.message || data.error || `HTTP ${res.status}`);

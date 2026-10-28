@@ -5,6 +5,8 @@
  * /api/checkout — Proxy seguro para process_checkout: upsertea productos
  *                 usando SUPABASE_SERVICE_KEY (secreto del worker, nunca expuesto
  *                 al cliente) y luego llama al RPC de Supabase.
+ * /api/inventory-operation — Contrato único de operación de inventario:
+ *                 aplica apply_inventory_operation (idempotente por operation_id).
  * Todo lo demás cae al SPA estático.
  */
 
@@ -12,8 +14,10 @@ const SUPABASE_URL = 'https://fgzwmwrugerptfqfrsjd.supabase.co';
 const TTL_SECONDS = 86400; // 24 horas
 const MAX_PAYLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
 
-// Set de queue_ids procesados en esta instancia del worker (idempotencia en memoria)
-const _processedQueueIds = new Set();
+// Resultados ya emitidos por queue_id en esta instancia del worker (atajo en
+// memoria). La garantía de unicidad vive en sales.queue_id dentro de la RPC;
+// esto solo evita egress en reintentos inmediatos.
+const _processedResults = new Map();
 
 // ── Upstash Redis REST helper ──────────────────────────────────────────────
 async function redis(upstashUrl, upstashToken, command, ...args) {
@@ -48,8 +52,31 @@ function corsHeaders(request) {
     return {
         'Access-Control-Allow-Origin': ALLOWED.includes(origin) ? origin : '',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     };
+}
+
+/**
+ * Autentica la petición con el access token de Supabase del usuario
+ * (Authorization: Bearer <token>). Devuelve el usuario o null.
+ * Los endpoints que escriben con SUPABASE_SERVICE_KEY (checkout, inventario) NO
+ * pueden confiar en el payload: sin esto cualquiera que conozca la URL podía
+ * registrar ventas o mover stock de cualquier cuenta.
+ */
+async function authenticateRequest(request, env) {
+    const auth = request.headers.get('Authorization') || '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+    if (!token || !env.SUPABASE_SERVICE_KEY) return null;
+    try {
+        const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+            headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return null;
+        const user = await res.json();
+        return user?.id ? user : null;
+    } catch {
+        return null;
+    }
 }
 
 // ── Update Profile handler (Admin API — service key never exposed al cliente) ─
@@ -110,32 +137,54 @@ async function handleCheckout(request, env) {
         return Response.json({ error: 'SUPABASE_SERVICE_KEY not configured' }, { status: 500, headers });
     }
 
+    const user = await authenticateRequest(request, env);
+    if (!user) {
+        return Response.json({ error: 'No autorizado: inicia sesión para registrar ventas.' }, { status: 401, headers });
+    }
+
     let payload;
     try {
         payload = await request.json();
     } catch {
         return Response.json({ error: 'Invalid JSON' }, { status: 400, headers });
     }
+    // La cuenta sale del token, nunca del payload.
+    payload.account_id = user.id;
 
     const { cart = [] } = payload;
 
-    // ── Idempotencia: evitar duplicar ventas offline si el cliente reintenta ──
-    if (payload.queue_id && payload.sync_origin === 'offline_sync') {
-        // 1. Check en memoria (rápido, sin egress)
-        if (_processedQueueIds.has(payload.queue_id)) {
-            return Response.json({ ok: true, duplicate: true }, { headers });
+    // ── Idempotencia: un reintento del mismo operation_id devuelve la venta
+    // canónica ya procesada (sale_id + resultado de inventario), sin repetir
+    // descuentos. Estos checks son SOLO atajos: la unicidad la garantiza el
+    // índice sales.queue_id dentro de la transacción de la RPC.
+    if (payload.queue_id) {
+        // 1. Atajo en memoria (rápido, sin egress)
+        const cached = _processedResults.get(payload.queue_id);
+        if (cached) {
+            return Response.json({ success: true, duplicate: true, ...cached }, { headers });
         }
-        // 2. Check persistente en DB (sobrevive reinicios del worker)
+        // 2. Atajo persistente en DB (sobrevive reinicios del worker)
         const safeQueueId = encodeURIComponent(payload.queue_id);
         const dupCheck = await fetch(
-            `${SUPABASE_URL}/rest/v1/sales?queue_id=eq.${safeQueueId}&select=id&limit=1`,
+            `${SUPABASE_URL}/rest/v1/sales?queue_id=eq.${safeQueueId}&select=id,total,sync_origin,sale_items(quantity,product_id,products(stock))&limit=1`,
             { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }
         );
         if (dupCheck.ok) {
             const existing = await dupCheck.json();
-            if (existing?.length > 0) {
-                _processedQueueIds.add(payload.queue_id);
-                return Response.json({ ok: true, duplicate: true, sale_id: existing[0].id }, { headers });
+            const row = existing?.[0];
+            if (row) {
+                const duplicateResult = {
+                    sale_id: row.id,
+                    total: row.total,
+                    sync_origin: row.sync_origin,
+                    inventory: (row.sale_items || []).map(si => ({
+                        product_id: si.product_id,
+                        quantity: si.quantity,
+                        stock: si.products?.stock ?? null,
+                    })),
+                };
+                _processedResults.set(payload.queue_id, duplicateResult);
+                return Response.json({ success: true, duplicate: true, ...duplicateResult }, { headers });
             }
         }
     }
@@ -205,20 +254,17 @@ async function handleCheckout(request, env) {
 
     const result = await rpcRes.json();
 
-    // ── Estampar queue_id en la venta para idempotencia futura ──
+    // La RPC ya guardó queue_id dentro de su MISMA transacción (migración
+    // 001 + 006/007): el PATCH posterior es innecesario y queda retirado.
+    // Solo se cachea el resultado para reintentos inmediatos de esta instancia.
     if (rpcRes.ok && payload.queue_id && result?.sale_id) {
-        fetch(`${SUPABASE_URL}/rest/v1/sales?id=eq.${result.sale_id}`, {
-            method: 'PATCH',
-            headers: {
-                apikey: SERVICE_KEY,
-                Authorization: `Bearer ${SERVICE_KEY}`,
-                'Content-Type': 'application/json',
-                Prefer: 'return=minimal',
-            },
-            body: JSON.stringify({ queue_id: payload.queue_id }),
-        }).catch(() => {}); // fire-and-forget, no bloquea la respuesta
-        _processedQueueIds.add(payload.queue_id);
-        if (_processedQueueIds.size > 500) _processedQueueIds.clear();
+        _processedResults.set(payload.queue_id, {
+            sale_id: result.sale_id,
+            total: result.total,
+            sync_origin: result.sync_origin,
+            inventory: result.inventory || [],
+        });
+        if (_processedResults.size > 500) _processedResults.clear();
     }
 
     return Response.json(result, { status: rpcRes.ok ? 200 : rpcRes.status, headers });
@@ -356,6 +402,53 @@ async function handleRates(request) {
 }
 
 // ── Main fetch handler ─────────────────────────────────────────────────────
+// ── Inventory operation handler (contrato único de inventario) ──
+async function handleInventoryOperation(request, env) {
+    const headers = corsHeaders(request);
+
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
+    if (request.method !== 'POST') return Response.json({ error: 'Method not allowed' }, { status: 405, headers });
+
+    const SERVICE_KEY = env.SUPABASE_SERVICE_KEY;
+    if (!SERVICE_KEY) {
+        return Response.json({ error: 'SUPABASE_SERVICE_KEY not configured' }, { status: 500, headers });
+    }
+
+    const user = await authenticateRequest(request, env);
+    if (!user) {
+        return Response.json({ error: 'No autorizado: inicia sesión para operar inventario.' }, { status: 401, headers });
+    }
+
+    let payload;
+    try {
+        payload = await request.json();
+    } catch {
+        return Response.json({ error: 'Invalid JSON' }, { status: 400, headers });
+    }
+    // La cuenta sale del token, nunca del payload.
+    if (payload && typeof payload === 'object') payload.account_id = user.id;
+
+    if (!payload?.operation_id) {
+        return Response.json({ status: 'invalid', message: 'operation_id es obligatorio' }, { status: 400, headers });
+    }
+
+    // La unicidad de operation_id la garantiza idx_inventory_operations_operation_id
+    // dentro de la transacción de la RPC (apply_inventory_operation). Este proxy
+    // solo valida y delega: un reintento con el mismo ID devuelve already_processed
+    // con el resultado canónico, sin aplicar el delta dos veces.
+    const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/apply_inventory_operation`, {
+        method: 'POST',
+        headers: {
+            apikey: SERVICE_KEY,
+            Authorization: `Bearer ${SERVICE_KEY}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ payload }),
+    });
+    const result = await rpcRes.json();
+    return Response.json(result, { status: rpcRes.ok ? 200 : rpcRes.status, headers });
+}
+
 export default {
     async fetch(request, env) {
         const url = new URL(request.url);
@@ -374,6 +467,10 @@ export default {
 
         if (url.pathname.startsWith('/api/checkout')) {
             return handleCheckout(request, env);
+        }
+
+        if (url.pathname.startsWith('/api/inventory-operation')) {
+            return handleInventoryOperation(request, env);
         }
 
         // Static SPA assets for everything else

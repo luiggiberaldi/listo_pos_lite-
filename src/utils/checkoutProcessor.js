@@ -5,6 +5,8 @@ import { useAuthStore } from '../hooks/store/useAuthStore';
 import { round2, subR, sumR, mulR } from './dinero';
 import { supabase } from '../core/supabaseClient';
 import { offlineQueueService } from '../services/offlineQueueService';
+import { newOperationId } from '../services/offlineQueuePolicy';
+import { getAuthHeaders } from '../services/authHeaders';
 import { PrinterSerial } from '../services/PrinterSerial';
 import { getLocalISODate, getLocalISOTime } from './dateHelpers';
 
@@ -60,6 +62,12 @@ export async function processSaleTransaction({
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const toUuid = id => (id && UUID_RE.test(id) ? id : crypto.randomUUID());
 
+    // Fase 1 (idempotencia): el operation_id se asigna ANTES del primer
+    // intento online y viaja como queue_id en todos los caminos (online,
+    // fallback offline y reintentos de la cola). Un reintento es la MISMA
+    // operación: mismo payload, mismo ID — nunca una venta nueva.
+    const operationId = newOperationId();
+
     const rpcPayload = {
       total: cartTotalUsd,
       cart: cart.map(i => ({ id: toUuid(i._originalId || i.id), qty: i.qty, priceUsd: i.priceUsd, name: i.name || '' })),
@@ -69,18 +77,19 @@ export async function processSaleTransaction({
         currency: p.currency || 'USD',          // 'USD' | 'BS' | 'COP'
         methodLabel: p.methodLabel || p.methodId // Nombre legible: "Pago Móvil", "Binance", etc.
       })),
-      fiadoUsd: fiadoAmountUsd
+      fiadoUsd: fiadoAmountUsd,
+      queue_id: operationId
     };
 
     let saleMode = 'online';
     let finalSaleId = null;
-    let offlineQueueEntry = null;
 
     if (navigator.onLine) {
        try {
+         const authHeaders = await getAuthHeaders();
          const checkoutPromise = fetch('/api/checkout', {
            method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
+           headers: { 'Content-Type': 'application/json', ...authHeaders },
            body: JSON.stringify(rpcPayload),
            signal: AbortSignal.timeout(5000),
          }).then(r => r.json());
@@ -88,7 +97,13 @@ export async function processSaleTransaction({
          const data = await checkoutPromise;
          if (data.error || data.code) throw new Error(data.message || data.error || 'RPC error');
 
+         // data.sale_id es SIEMPRE el ID canónico: si el servidor ya conocía
+         // esta operación (respuesta previa perdida), responde duplicate:true
+         // con el sale_id de la venta existente, sin descontar de nuevo.
          finalSaleId = data.sale_id;
+         if (data.duplicate) {
+            console.info(`[Checkout] Operación ${operationId} ya procesada; venta canónica ${data.sale_id}.`);
+         }
        } catch (err) {
          console.warn("[Checkout] Fallo en /api/checkout, cambiando a MODO OFFLINE", err);
          saleMode = 'offline';
@@ -98,9 +113,11 @@ export async function processSaleTransaction({
     }
 
     if (saleMode === 'offline') {
-       // Persistir primero en una cola aislada por cuenta y con una clave
-       // idempotente para sobrevivir a apagones y reintentos.
-       offlineQueueEntry = await offlineQueueService.addSaleToQueue(rpcPayload);
+       // Timeout, corte de conexión o respuesta ambígua: se encola EXACTAMENTE
+       // el mismo payload con el mismo operation_id (rpcPayload.queue_id). El
+       // reintento posterior será idéntico para el servidor, que devolverá la
+       // venta canónica si este primer intento ya la había procesado.
+       await offlineQueueService.addSaleToQueue(rpcPayload);
     }
 
     // ── GESTIÓN DE CACHÉ LOCAL (Para no bloquear al usuario) ──
@@ -114,8 +131,10 @@ export async function processSaleTransaction({
     const tipoVenta = casheaUsd > 0 ? 'VENTA_CASHEA' : (fiadoAmountUsd > 0 ? 'VENTA_FIADA' : 'VENTA');
 
     const sale = {
-        id: finalSaleId || offlineQueueEntry?.queue_id || crypto.randomUUID(),
-        syncQueueId: offlineQueueEntry?.queue_id || null,
+        // Identidad estable: el sale_id canónico del servidor cuando se conoce;
+        // si no, el operation_id local (misma identidad a través de reintentos).
+        id: finalSaleId || operationId,
+        syncQueueId: operationId,
         tipo: tipoVenta,
         status: saleMode === 'online' ? 'COMPLETADA' : 'PENDIENTE_SYNC',
         items: cart.map(i => ({ id: i.id, name: i.name, qty: i.qty, priceUsd: i.priceUsd, costBs: i.costBs || 0, costUsd: i.costUsd || 0, isWeight: i.isWeight })),

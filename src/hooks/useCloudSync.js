@@ -3,7 +3,10 @@ import localforage from 'localforage';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { storageService } from '../utils/storageService';
 import { useAuthStore } from './store/useAuthStore';
-import { APP_STORAGE_DB_NAME, APP_STORAGE_STORE_NAME, getScopedStorageKey, setActiveAccountId } from '../config/storageScope';
+import { APP_STORAGE_DB_NAME, APP_STORAGE_STORE_NAME, getActiveAccountId, getScopedStorageKey, setActiveAccountId } from '../config/storageScope';
+import { hashPayload } from '../sync/syncHash';
+import { classifyChangedMeta, cursorQueryFrom, maxIso } from '../sync/syncCursor';
+import { CLEAN_HASH_STORAGE_KEY, DIRTY_KEYS_STORAGE_KEY, clearDirty, isRealChange, localIsNewer, markDirty, readCleanHashes, readDirty, setCleanHash } from '../sync/dirtyKeys';
 
 // Exportado para que SettingsView pueda enviar el broadcast antes de hacer signOut
 export const broadcastFactoryReset = async (userId) => {
@@ -66,6 +69,15 @@ const SYNC_KEYS = [
     'catalog_use_auto_usdt',
     'street_rate_bs',
     'printer_paper_width',
+    // A5: configuración del negocio que antes no viajaba entre cajas
+    'business_name',
+    'business_rif',
+    'allow_negative_stock',
+    'bodega_rate_mode',
+    'cajero_puede_abrir_caja',
+    'cajero_puede_cerrar_caja',
+    'cajero_max_descuento',
+    'cashea_min_amount',
 ];
 
 // Llaves que van a colección 'local' (localStorage); el resto va a 'store' (IndexedDB)
@@ -88,6 +100,14 @@ const LOCAL_KEYS = [
     'catalog_use_auto_usdt',
     'street_rate_bs',
     'printer_paper_width',
+    'business_name',
+    'business_rif',
+    'allow_negative_stock',
+    'bodega_rate_mode',
+    'cajero_puede_abrir_caja',
+    'cajero_puede_cerrar_caja',
+    'cajero_max_descuento',
+    'cashea_min_amount',
 ];
 
 // ─── Realtime selectivo ────────────────────────────────────────────────────
@@ -111,10 +131,15 @@ const REALTIME_KEYS = [
     'catalog_use_auto_usdt',
     'street_rate_bs',
     'printer_paper_width',
+    'business_name',
+    'business_rif',
+    'allow_negative_stock',
+    'bodega_rate_mode',
+    'cajero_puede_abrir_caja',
+    'cajero_puede_cerrar_caja',
+    'cajero_max_descuento',
+    'cashea_min_amount',
 ];
-
-// Llaves pesadas — solo polling (evita egreso masivo por Realtime)
-const POLLING_ONLY_KEYS = SYNC_KEYS.filter(k => !REALTIME_KEYS.includes(k));
 
 // ─── Llaves que contienen arrays con campo `id` y requieren merge inteligente ──
 // Cuando llegan datos de la nube, en vez de sobreescribir el array completo,
@@ -237,11 +262,8 @@ export function sanitizeForPush(key, value) {
     return sanitizedValue;
 }
 
-function _computePushHash(serialized) {
-    // Hash includes length + start + middle + end to catch changes anywhere in payload
-    const mid = Math.floor(serialized.length / 2);
-    return serialized.length + ':' + serialized.slice(0, 100) + serialized.slice(mid, mid + 100) + serialized.slice(-100);
-}
+// Huella sobre el payload COMPLETO y canónica (ver src/sync/syncHash.js). La versión
+// previa solo miraba longitud + 300 caracteres y dejaba sin subir la mayoría de ediciones.
 
 // ─── Estado Global del Motor ───────────────────────────────────────────────
 let pollIntervalId = null;
@@ -254,17 +276,66 @@ let syncGeneration = 0;
 // Intentional module-level singletons: shared across all hook instances to
 // coordinate cloud-sync echo prevention and debounce timers.
 let isSyncingFromCloud = false; // true mientras aplicamos cambios de la nube → evita eco
-let lastSyncTime = null;        // Timestamp del último pull exitoso
+// Cursor del polling: el MAYOR updated_at recibido del servidor (nunca la hora
+// local). Con relojes desfasados entre equipos la hora local descartaba cambios.
+let syncCursor = null;
+let lastSyncTime = null;        // Hora local del último pull exitoso (solo informativa/UI)
+const CURSOR_MARGIN_MS = 5000;  // Cubre transacciones que confirman fuera de orden
+const _ownUpdatedAt = {};       // doc_id → updated_at que el servidor asignó a NUESTRO push
+const _seenUpdatedAt = {};      // doc_id → último updated_at ya aplicado localmente
+
 let initialSyncReady = false;   // Bloquea pushes hasta hidratar la cuenta activa
 let activeSyncUserId = null;    // Evita reutilizar el estado de otra cuenta
 
 // Keep a reference to the native setItem for _applyFromCloud to bypass any interceptor
 const _nativeSetItem = localStorage.setItem.bind(localStorage);
 
+// ─── Llaves sucias (A4) ────────────────────────────────────────────────────
+// Cambios locales aún no confirmados por la nube, persistidos por cuenta.
+// Sin cuenta activa no se puede atribuir el cambio: no se marca.
+const _dirtyStorage = {
+    getItem: (k) => localStorage.getItem(k),
+    setItem: (k, v) => _nativeSetItem(k, v),
+    removeItem: (k) => localStorage.removeItem(k),
+};
+function _dirtyScopedKey() {
+    return getActiveAccountId() ? getScopedStorageKey(DIRTY_KEYS_STORAGE_KEY) : null;
+}
+function _readDirtyMap() {
+    const scoped = _dirtyScopedKey();
+    return scoped ? readDirty(_dirtyStorage, scoped) : {};
+}
+/** Recuerda que la nube tiene exactamente este contenido para la llave. */
+function _rememberCloudHash(key, hash) {
+    if (!getActiveAccountId() || !hash) return;
+    try { setCleanHash(_dirtyStorage, getScopedStorageKey(CLEAN_HASH_STORAGE_KEY), key, hash); } catch { /* sin cuota */ }
+}
+
+/** Estado legible para la UI (SyncStatus): último sync, cambios sin subir y si el motor está listo. */
+export function getSyncDiagnostics() {
+    return {
+        ready: initialSyncReady,
+        lastSyncTime,
+        cursor: syncCursor,
+        userId: activeSyncUserId,
+        dirtyCount: Object.keys(_readDirtyMap()).length,
+    };
+}
+
 // Cache de hashes y temporizadores para evitar saturación y envíos redundantes
 const _lastPushHash = {};
 const _pushDebounceTimers = {};
 const _pendingPushValues = {}; // último valor pendiente por llave, para flush al ocultar
+const _failedPushValues = {};  // llaves cuyo push falló (red/RLS) → se reintentan en el siguiente ciclo
+
+/** Reintenta los pushes que fallaron (se llama en cada ciclo de polling y al volver online). */
+export const retryFailedPushes = () => {
+    for (const key of Object.keys(_failedPushValues)) {
+        const value = _failedPushValues[key];
+        delete _failedPushValues[key];
+        pushCloudSync(key, value, true).catch(() => {});
+    }
+};
 
 // Llaves con payloads grandes: debounce largo para agrupar ráfagas (ej. hora
 // pico de ventas) en un solo upsert y reducir el Disk I/O de Supabase.
@@ -277,6 +348,11 @@ const HEAVY_KEYS = [
 ];
 const DEBOUNCE_MS = 3000;
 const DEBOUNCE_MS_HEAVY = 30000;
+// Ventas, productos y clientes: la otra caja debe verlos pronto (cierre, stock,
+// deudas). 10 s aún agrupa ráfagas de hora pico; los documentos miden <600 KB.
+// Lo inmediato real llega con filas por entidad (Fase C).
+const FAST_HEAVY_KEYS = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1'];
+const DEBOUNCE_MS_FAST_HEAVY = 10000;
 
 /**
  * Empuja una llave al sincronizador de Supabase.
@@ -286,18 +362,51 @@ const DEBOUNCE_MS_HEAVY = 30000;
 export const pushCloudSync = async (key, value, bypassDebounce = false) => {
     if (isSyncingFromCloud) return;          // Nunca re-emitir lo que llegó de la nube
     if (!SYNC_KEYS.includes(key)) return;
+
+    // A4: el cambio queda pendiente (persistido) hasta que la nube lo confirme.
+    // Antes, lo guardado antes del pull inicial o en un push que nunca llegó a
+    // ejecutarse (pestaña cerrada) se perdía.
+    // Solo cuenta como cambio si el contenido difiere de lo que la nube ya tiene:
+    // los re-guardados idénticos (auto-guardado al abrir) no deben ganarle a la nube.
+    const dirtyScoped = _dirtyScopedKey();
+    const localTsScoped = dirtyScoped ? getScopedStorageKey('_sync_local_ts_' + key) : null;
+    if (dirtyScoped) {
+        try {
+            const hash = hashPayload(sanitizeForPush(key, value));
+            const cleanHash = readCleanHashes(_dirtyStorage, getScopedStorageKey(CLEAN_HASH_STORAGE_KEY))[key];
+            if (isRealChange({ hash, cleanHash, ready: initialSyncReady })) {
+                // Antes del pull, una llave ya pendiente conserva su hora: un
+                // re-guardado al abrir no debe hacer "más nuevo" un cambio viejo.
+                const alreadyDirty = !initialSyncReady && readDirty(_dirtyStorage, dirtyScoped)[key];
+                if (!alreadyDirty) markDirty(_dirtyStorage, dirtyScoped, key);
+            }
+        } catch { /* sin cuota o payload ilegible → comportamiento anterior */ }
+    }
+
     // Nunca enviar datos locales antes de terminar el pull inicial de la cuenta.
     // Esto evita que otro sistema o la cuenta anterior contamine la nube activa.
+    // La llave queda sucia y se sube al terminar el pull (catch-up push).
     if (!initialSyncReady) return;
 
     const performUpsert = async () => {
+        // Marca vigente al empezar: si la llave cambia mientras se sube, sigue sucia.
+        let dirtyTs;
+        try { dirtyTs = dirtyScoped ? readDirty(_dirtyStorage, dirtyScoped)[key] : undefined; } catch { /* ignorar */ }
+        const confirmClean = (serverUpdatedAt) => {
+            if (!dirtyScoped || dirtyTs === undefined) return;
+            try {
+                const cleared = clearDirty(_dirtyStorage, dirtyScoped, key, dirtyTs);
+                // Confirmado: la versión local pasa a fecharse con la hora del SERVIDOR,
+                // así un reloj local adelantado no bloquea después cambios de otro equipo.
+                if (cleared && serverUpdatedAt) _nativeSetItem(localTsScoped, serverUpdatedAt);
+            } catch { /* ignorar */ }
+        };
         try {
             const sanitizedValue = sanitizeForPush(key, value);
 
             // Deduplicación: generar hash rápido del payload para no resubir datos idénticos.
-            const serialized = typeof sanitizedValue === 'string' ? sanitizedValue : JSON.stringify(sanitizedValue);
-            const hash = _computePushHash(serialized);
-            if (_lastPushHash[key] === hash) return; // Sin cambios reales → skip
+            const hash = hashPayload(sanitizedValue);
+            if (_lastPushHash[key] === hash) { _rememberCloudHash(key, hash); confirmClean(); return; } // La nube ya lo tiene
             // NOTA: hash se actualiza DESPUÉS del push exitoso para garantizar reintentos si falla
 
             const { data: { session } } = await supabaseCloud.auth.getSession();
@@ -305,16 +414,30 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
 
             const collectionType = LOCAL_KEYS.includes(key) ? 'local' : 'store';
 
-            await supabaseCloud.from('sync_documents').upsert({
-                user_id: session.user.id,
-                collection: collectionType,
-                doc_id: key,
-                data: { payload: sanitizedValue },
-                updated_at: new Date().toISOString()
-            }, { onConflict: 'user_id,collection,doc_id' });
+            // updated_at lo fija el servidor (trigger de la migración 009): el reloj
+            // de este dispositivo no interviene en el orden de los cambios.
+            const { data: upserted, error: upsertError } = await supabaseCloud
+                .from('sync_documents')
+                .upsert({
+                    user_id: session.user.id,
+                    collection: collectionType,
+                    doc_id: key,
+                    data: { payload: sanitizedValue },
+                }, { onConflict: 'user_id,collection,doc_id' })
+                .select('updated_at');
+            // supabase-js NO lanza en errores de RLS/red: devuelve { error }. Antes se
+            // ignoraba y el hash se marcaba como enviado aunque el push hubiera fallado,
+            // con lo que el cambio no se reintentaba nunca.
+            if (upsertError) throw upsertError;
 
             // Solo marcar como enviado si el push fue exitoso
             _lastPushHash[key] = hash;
+            delete _failedPushValues[key];
+            _rememberCloudHash(key, hash);
+            confirmClean(upserted?.[0]?.updated_at);
+            // Recordar el updated_at que asignó el servidor a NUESTRO push, para que el
+            // polling no vuelva a descargar lo que este mismo dispositivo acaba de subir.
+            if (upserted?.[0]?.updated_at) _ownUpdatedAt[key] = upserted[0].updated_at;
 
             // Broadcast ligero para llaves de Realtime (tasas/config < 1KB)
             // Usa canal Broadcast en vez de postgres_changes para NO activar
@@ -330,10 +453,21 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
                     // No crítico: el otro dispositivo lo verá en el próximo pull
                     console.warn('[CloudSync] Broadcast falló (no crítico):', bcastErr?.message);
                 }
+            } else if (realtimeChannel) {
+                // Documentos pesados (ventas, inventario, clientes…): no viajan por
+                // Realtime, solo un aviso de pocos bytes para que los otros equipos
+                // revisen la nube YA, en vez de esperar su próximo polling de 60 s.
+                realtimeChannel.send({
+                    type: 'broadcast',
+                    event: 'sync_ping',
+                    payload: { doc_id: key },
+                }).catch(() => { /* el polling lo cubre */ });
             }
 
         } catch (e) {
             console.warn('[CloudSync] Error al enviar a la nube:', e.message ?? e);
+            // Conservar el valor para reintentarlo (antes se perdía hasta el próximo cambio).
+            _failedPushValues[key] = value;
         }
     };
 
@@ -347,7 +481,8 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
     } else {
         _pendingPushValues[key] = value;
         if (_pushDebounceTimers[key]) clearTimeout(_pushDebounceTimers[key]);
-        const delay = HEAVY_KEYS.includes(key) ? DEBOUNCE_MS_HEAVY : DEBOUNCE_MS;
+        const delay = FAST_HEAVY_KEYS.includes(key) ? DEBOUNCE_MS_FAST_HEAVY
+            : HEAVY_KEYS.includes(key) ? DEBOUNCE_MS_HEAVY : DEBOUNCE_MS;
         _pushDebounceTimers[key] = setTimeout(() => {
             delete _pushDebounceTimers[key];
             delete _pendingPushValues[key];
@@ -382,23 +517,56 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
     // pisar el estado local (ej. el audit log, que ahora vive en la tabla audit_log)
     if (PULL_IGNORE_KEYS.includes(docId)) return;
 
+    // Deduplicación de pull: si la nube tiene exactamente lo que ya sabemos que tiene
+    // (p. ej. el eco de nuestro propio push), no hay nada que aplicar.
+    let incomingHash = null;
+    try { incomingHash = payload === undefined ? null : hashPayload(payload); } catch { /* sin hash → aplicar */ }
+    if (incomingHash && _lastPushHash[docId] === incomingHash) return;
+
     // El inventario de la cuenta activa es autoritativo: no se mezcla ni se
     // bloquea por timestamps locales heredados de otro sistema.
     const isInventory = docId === 'bodega_products_v1' && collection === 'store';
     // Para llaves mergeables (excepto inventario), se conserva el merge por ID.
     const isMergeable = MERGEABLE_KEYS.includes(docId) && collection === 'store';
+    // Cambio local pendiente de subir (A4), leído una sola vez para todo el apply.
+    let pendingLocalTs;
+    try { pendingLocalTs = _readDirtyMap()[docId]; } catch { /* sin marca */ }
 
-    // Protección contra sobreescritura para llaves NO mergeables/no inventario.
-    if (!isMergeable && !isInventory && cloudUpdatedAt) {
+    // Protección contra sobreescritura para llaves NO mergeables. Un cambio local
+    // pendiente (llave sucia, A4) más nuevo que la nube gana y se re-sube. El
+    // inventario solo se protege por llave sucia: su `_sync_local_ts_` puede venir
+    // de datos heredados y la cuenta activa sigue siendo la fuente de verdad.
+    if (!isMergeable && cloudUpdatedAt) {
         try {
-            const localTs = localStorage.getItem(getScopedStorageKey('_sync_local_ts_' + docId));
-            if (localTs && localTs > cloudUpdatedAt) {
+            const dirtyTs = pendingLocalTs;
+            const savedTs = isInventory ? null : localStorage.getItem(getScopedStorageKey('_sync_local_ts_' + docId));
+            const localTs = localIsNewer(dirtyTs, savedTs) ? dirtyTs : (savedTs || dirtyTs);
+            if (localIsNewer(localTs, cloudUpdatedAt)) {
+                // H-15: las llaves 'local' viven en localStorage, no en IndexedDB.
+                let localData = null;
+                if (collection === 'local') {
+                    localData = localStorage.getItem(docId);
+                } else {
+                    const { default: lf } = await import('localforage');
+                    lf.config({ name: APP_STORAGE_DB_NAME, storeName: APP_STORAGE_STORE_NAME });
+                    localData = await lf.getItem(getScopedStorageKey(docId));
+                }
+                // Mismo contenido que la nube: la fecha local era de un re-guardado
+                // idéntico, no de un cambio. Nada que subir; se re-fecha con la hora
+                // del servidor para que no vuelva a "ganar" en cada arranque.
+                if (localData !== null && incomingHash && hashPayload(sanitizeForPush(docId, localData)) === incomingHash) {
+                    _lastPushHash[docId] = incomingHash;
+                    _rememberCloudHash(docId, incomingHash);
+                    if (!isInventory) _nativeSetItem(getScopedStorageKey('_sync_local_ts_' + docId), cloudUpdatedAt);
+                    const scoped = _dirtyScopedKey();
+                    if (scoped && pendingLocalTs) clearDirty(_dirtyStorage, scoped, docId, pendingLocalTs);
+                    return;
+                }
                 console.log(`[CloudSync] Skip ${docId}: local (${localTs}) más reciente que nube (${cloudUpdatedAt}). Resubiendo...`);
-                const { default: lf } = await import('localforage');
-                lf.config({ name: APP_STORAGE_DB_NAME, storeName: APP_STORAGE_STORE_NAME });
-                const localData = await lf.getItem(getScopedStorageKey(docId));
                 if (localData !== null) {
                     delete _lastPushHash[docId];
+                    // Antes del fin del pull inicial esto solo deja la llave sucia;
+                    // el catch-up push la sube después.
                     pushCloudSync(docId, localData).catch(() => {});
                 }
                 return;
@@ -460,7 +628,9 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
                         // tiene más historial que la nube (ventana de N días) y comparar
                         // el array completo causaría re-push infinito en cada poll.
                         const pushable = docId === 'bodega_sales_v1' ? _trimSalesForSync(finalData) : finalData;
-                        if (pushable.length > payload.length) {
+                        // También si había un cambio local sin confirmar: editar un
+                        // elemento existente no cambia la cantidad y no se subiría nunca.
+                        if (pushable.length > payload.length || pendingLocalTs) {
                             setTimeout(() => {
                                 delete _lastPushHash[docId];
                                 pushCloudSync(docId, finalData).catch(() => {});
@@ -476,6 +646,17 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
 
             // Notificar a los componentes React que lean este store
             window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId, source: 'cloud' } }));
+        }
+        // Lo que la nube tiene ya es conocido: evita re-subirlo o re-aplicarlo.
+        if (incomingHash) {
+            _lastPushHash[docId] = incomingHash;
+            _rememberCloudHash(docId, incomingHash);
+        }
+        // Llave no mergeable: la versión de la nube reemplazó al cambio local
+        // pendiente (era más viejo), así que ya no hay nada que subir.
+        if (!isMergeable && pendingLocalTs) {
+            const scoped = _dirtyScopedKey();
+            try { if (scoped) clearDirty(_dirtyStorage, scoped, docId, pendingLocalTs); } catch { /* ignorar */ }
         }
     } finally {
         isSyncingFromCloud = false;
@@ -509,8 +690,17 @@ export function useCloudSync() {
         // Interceptor de localStorage — solo para llaves 'local'
         const originalSetItem = localStorage.setItem.bind(localStorage);
         localStorage.setItem = function (key, value) {
+            const tracked = !isSyncingFromCloud && LOCAL_KEYS.includes(key);
+            const previous = tracked ? localStorage.getItem(key) : null;
             originalSetItem(key, value);
-            if (!isSyncingFromCloud && LOCAL_KEYS.includes(key)) {
+            if (tracked) {
+                // H-15: fechar el cambio local, igual que storageService con las llaves
+                // 'store'; sin esto la protección contra sobreescritura nunca aplicaba.
+                // Solo si el valor cambió: varios efectos re-escriben la misma tasa o
+                // configuración al montar y no deben ganarle a un cambio de otro equipo.
+                if (getActiveAccountId() && previous !== String(value)) {
+                    try { originalSetItem(getScopedStorageKey('_sync_local_ts_' + key), new Date().toISOString()); } catch { /* sin cuota */ }
+                }
                 pushCloudSync(key, value).catch(() => {});
             }
         };
@@ -548,6 +738,98 @@ export function useCloudSync() {
             return () => { localStorage.setItem = originalSetItem; removeFlushListeners(); };
         }
 
+        // ── Reintento de inicialización + polling (nivel de efecto) ───────────
+        let retryTimer = null;
+        let retryAttempt = 0;
+        let visibilityListener = null;
+        let lastVisibilityPoll = 0;
+        const POLL_INTERVAL_MS = 60 * 1000;
+        const VISIBILITY_COOLDOWN_MS = 5 * 1000; // anti-rebote al volver a la pestaña
+        let pollInFlight = false;
+        let pollAgain = false; // llegó un aviso durante un polling: repetir al terminar
+
+        const scheduleInitRetry = () => {
+            if (retryTimer) return;
+            const delay = Math.min(5 * 60 * 1000, 5000 * (2 ** Math.min(retryAttempt, 6)));
+            retryAttempt++;
+            retryTimer = setTimeout(() => {
+                retryTimer = null;
+                if (isCurrent() && !initialSyncReady) initSync();
+            }, delay);
+        };
+
+        const pollForChanges = async () => {
+            if (pollInFlight) { pollAgain = true; return; }
+            if (!initialSyncReady || isSyncingFromCloud) return;
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+            pollInFlight = true;
+            try {
+                retryFailedPushes();
+                const currentSession = (await supabaseCloud.auth.getSession()).data.session;
+                const uid = currentSession?.user?.id;
+                if (!uid || uid !== activeSyncUserId) return;
+
+                // ── Fase 1: solo metadatos (doc_id + updated_at) ──────────────
+                let metaQuery = supabaseCloud
+                    .from('sync_documents')
+                    .select('doc_id, collection, updated_at')
+                    .eq('user_id', uid)
+                    .in('doc_id', SYNC_KEYS);
+                const queryFrom = cursorQueryFrom(syncCursor, CURSOR_MARGIN_MS);
+                if (queryFrom) metaQuery = metaQuery.gte('updated_at', queryFrom);
+                const { data: changedMeta, error: metaError } = await metaQuery;
+                if (metaError) throw metaError;
+
+                // Lo que subimos nosotros o ya aplicamos no se vuelve a bajar.
+                const classified = classifyChangedMeta(changedMeta, {
+                    cursor: syncCursor, ownUpdatedAt: _ownUpdatedAt, seenUpdatedAt: _seenUpdatedAt,
+                });
+                Object.assign(_seenUpdatedAt, classified.ownSeen);
+                const { foreignIds } = classified;
+                let newCursor = classified.newCursor;
+
+                // ── Fase 2: bajar solo los docs que otro dispositivo cambió ───
+                if (foreignIds.length > 0) {
+                    const { data: changed, error: dataError } = await supabaseCloud
+                        .from('sync_documents')
+                        .select('collection, doc_id, data, updated_at')
+                        .eq('user_id', uid)
+                        .in('doc_id', foreignIds);
+                    if (dataError) throw dataError;
+                    for (const doc of changed || []) {
+                        console.log(`[CloudSync] Polling: ${doc.doc_id} actualizado`);
+                        await _applyFromCloud(doc.doc_id, doc.collection, doc.data.payload, doc.updated_at);
+                        _seenUpdatedAt[doc.doc_id] = doc.updated_at;
+                        newCursor = maxIso(newCursor, doc.updated_at);
+                    }
+                }
+
+                // El cursor solo avanza si TODO se aplicó (un fallo se reintenta en el
+                // siguiente ciclo; la deduplicación evita reaplicar lo ya aplicado).
+                syncCursor = newCursor;
+                lastSyncTime = new Date().toISOString();
+            } catch (err) {
+                console.warn('[CloudSync] Error en polling:', err?.message ?? err);
+            } finally {
+                pollInFlight = false;
+                if (pollAgain) {
+                    pollAgain = false;
+                    pollForChanges().catch(() => {});
+                }
+            }
+        };
+
+        const onBackOnline = () => {
+            if (!initialSyncReady) {
+                retryAttempt = 0;
+                if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+                if (isCurrent()) initSync();
+            } else {
+                pollForChanges().catch(() => {});
+            }
+        };
+        window.addEventListener('online', onBackOnline);
+
         const initSync = async () => {
             try {
                 let session = (await supabaseCloud.auth.getSession()).data.session;
@@ -583,6 +865,9 @@ export function useCloudSync() {
                 if (skipPull) {
                     sessionStorage.removeItem('skip_cloud_pull');
                     console.log('[CloudSync] Pull inicial omitido (importación reciente).');
+                    // Caso raro: sin pull no hay cursor de servidor; usar la hora local para
+                    // que el primer poll no sobrescriba los datos recién importados.
+                    syncCursor = new Date().toISOString();
                 } else {
                     const { data, error } = await supabaseCloud
                         .from('sync_documents')
@@ -592,17 +877,19 @@ export function useCloudSync() {
                     if (error) throw error;
                     docs = data;
 
+                    syncCursor = null;
                     if (docs?.length > 0) {
                         for (const doc of docs) {
                             await _applyFromCloud(doc.doc_id, doc.collection, doc.data.payload, doc.updated_at);
                             // Seed del hash-cache con lo que la nube ya tiene: el catch-up
                             // push de abajo salta las llaves idénticas en vez de re-subir
-                            // los ~26 documentos completos en cada arranque.
+                            // los ~26 documentos completos en cada arranque. El hash es
+                            // canónico, así que el reordenamiento de llaves de jsonb no lo rompe.
                             try {
-                                const p = doc.data.payload;
-                                const serialized = typeof p === 'string' ? p : JSON.stringify(p);
-                                _lastPushHash[doc.doc_id] = _computePushHash(serialized);
+                                _lastPushHash[doc.doc_id] = hashPayload(doc.data.payload);
                             } catch { /* sin seed → push normal, como antes */ }
+                            _seenUpdatedAt[doc.doc_id] = doc.updated_at;
+                            syncCursor = maxIso(syncCursor, doc.updated_at);
                         }
                         console.log(`[CloudSync] Pull inicial: ${docs.length} documentos procesados.`);
                     }
@@ -620,14 +907,24 @@ export function useCloudSync() {
                 // El hash deduplication evita resubir lo que ya está igual en la nube.
                 // Set de doc_ids que la nube ya tiene (del pull inicial)
                 const cloudDocIds = new Set(docs?.map(d => d.doc_id) || []);
+                // Llaves con cambios locales sin confirmar, ya resueltas contra la nube
+                // en el pull (las que perdieron contra una versión más nueva se limpiaron).
+                const dirtyAtCatchUp = _readDirtyMap();
 
                 (async () => {
                     const { default: lf } = await import('localforage');
                     lf.config({ name: APP_STORAGE_DB_NAME, storeName: APP_STORAGE_STORE_NAME });
+                    // Marca pendiente de algo que ya no hay que subir (llave borrada
+                    // localmente, o vacío que no debe pisar datos de la nube).
+                    const dropPending = (key) => {
+                        const scoped = _dirtyScopedKey();
+                        if (scoped && dirtyAtCatchUp[key]) clearDirty(_dirtyStorage, scoped, key, dirtyAtCatchUp[key]);
+                    };
                     for (const key of SYNC_KEYS) {
                         if (LOCAL_KEYS.includes(key)) {
                             const val = localStorage.getItem(key);
                             if (val != null) pushCloudSync(key, val, true).catch(() => {});
+                            else dropPending(key);
                         } else {
                             const val = await lf.getItem(getScopedStorageKey(key));
                             // No subir arrays vacíos si la nube ya tiene datos para esta llave.
@@ -635,12 +932,17 @@ export function useCloudSync() {
                             if (val != null) {
                                 // El inventario ya fue hidratado desde la nube; no volver a
                                 // subir el arreglo local ni mezclarlo con otra fuente.
-                                if (key === 'bodega_products_v1' && cloudDocIds.has(key)) continue;
+                                // Excepción (A4): cambios hechos en este equipo que la nube aún no
+                                // confirmó (p. ej. ajustes hechos sin internet) sí se suben.
+                                if (key === 'bodega_products_v1' && cloudDocIds.has(key) && !dirtyAtCatchUp[key]) continue;
                                 if (Array.isArray(val) && val.length === 0 && cloudDocIds.has(key)) {
                                     console.log(`[CloudSync] Skip push ${key}: local vacío, nube ya tiene datos`);
+                                    dropPending(key);
                                     continue;
                                 }
                                 pushCloudSync(key, val, true).catch(() => {});
+                            } else {
+                                dropPending(key);
                             }
                         }
                         // Pausa entre keys para no saturar Supabase con burst
@@ -705,96 +1007,49 @@ export function useCloudSync() {
                                 await _applyFromCloud(doc_id, collection, data);
                             }
                         )
+                        .on('broadcast', { event: 'sync_ping' }, () => {
+                            // Otro equipo subió un documento pesado: bajar solo lo cambiado.
+                            pollForChanges().catch(() => {});
+                        })
                         .subscribe((status) => {
                             console.log(`[CloudSync] Realtime Broadcast canal: ${status}`);
                         });
                 }
 
-                // ── Polling cada 60 min: solo datos pesados ──────────────────
-                // Productos, ventas, clientes, cuentas — payloads grandes que
-                // no necesitan ser instantáneos. 60 min optimiza egress para 5GB/mes.
-                if (!pollIntervalId) {
-                    const POLL_INTERVAL = 60 * 60 * 1000; // 60 minutos — optimizado para egress
-
-                    const pollForChanges = async () => {
-                        if (isSyncingFromCloud) return;
-                        try {
-                            const currentSession = (await supabaseCloud.auth.getSession()).data.session;
-                            if (!currentSession?.user?.id) return;
-
-                            // ── Fase 1: solo metadatos (doc_id + updated_at) ──────────
-                            // Costo: ~1 KB en vez de 218 KB. Solo bajamos data si algo cambió.
-                            let metaQuery = supabaseCloud
-                                .from('sync_documents')
-                                .select('doc_id, collection, updated_at')
-                                .eq('user_id', currentSession.user.id)
-                                .in('doc_id', POLLING_ONLY_KEYS);
-
-                            if (lastSyncTime) {
-                                metaQuery = metaQuery.gt('updated_at', lastSyncTime);
-                            }
-
-                            const { data: changedMeta } = await metaQuery;
-
-                            // ── Fase 2: bajar solo los docs que realmente cambiaron ───
-                            if (changedMeta?.length > 0) {
-                                const changedIds = changedMeta.map(d => d.doc_id);
-                                const { data: changed } = await supabaseCloud
-                                    .from('sync_documents')
-                                    .select('collection, doc_id, data, updated_at')
-                                    .eq('user_id', currentSession.user.id)
-                                    .in('doc_id', changedIds);
-
-                                if (changed?.length > 0) {
-                                    for (const doc of changed) {
-                                        console.log(`[CloudSync] Polling: ${doc.doc_id} actualizado`);
-                                        await _applyFromCloud(doc.doc_id, doc.collection, doc.data.payload, doc.updated_at);
-                                    }
-                                }
-                            }
-
-                            lastSyncTime = new Date().toISOString();
-                        } catch (err) {
-                            console.warn('[CloudSync] Error en polling:', err.message ?? err);
-                        }
-                    };
-
-                    pollIntervalId = setInterval(pollForChanges, POLL_INTERVAL);
-                    console.log('[CloudSync] Híbrido iniciado: Realtime (config) + Polling 60min (datos)');
-
-                    // ── Pausar polling con pestaña oculta — ahorra egress ────────
-                    // Si la pestaña no está visible, pausamos el interval.
-                    // Al volver visible, hacemos un poll inmediato (con cooldown) y reiniciamos el interval.
-                    let lastVisibilityPoll = 0;
-                    const VISIBILITY_COOLDOWN_MS = 10 * 60 * 1000; // mínimo 10 min entre polls por visibilidad
-
-                    const onVisible = () => {
+                // ── Polling de METADATOS cada 60 s (todas las llaves) ────────
+                // Solo se consulta doc_id + updated_at (~1 KB). La data pesada se baja
+                // únicamente de los documentos que OTRO dispositivo modificó. Antes el
+                // polling era cada 60 min y excluía las llaves de Realtime, de modo que un
+                // broadcast perdido (equipo dormido/offline) no se recuperaba jamás.
+                if (!pollIntervalId && document.visibilityState !== 'hidden') {
+                    pollIntervalId = setInterval(pollForChanges, POLL_INTERVAL_MS);
+                    console.log('[CloudSync] Híbrido iniciado: Realtime (config) + Polling 60 s (metadatos)');
+                }
+                if (!visibilityListener) {
+                    visibilityListener = () => {
                         if (document.visibilityState === 'visible') {
-                            // Reactivar polling
-                            if (!pollIntervalId) {
-                                pollIntervalId = setInterval(pollForChanges, POLL_INTERVAL);
-                            }
+                            if (!pollIntervalId) pollIntervalId = setInterval(pollForChanges, POLL_INTERVAL_MS);
                             const now = Date.now();
                             if (now - lastVisibilityPoll >= VISIBILITY_COOLDOWN_MS) {
                                 lastVisibilityPoll = now;
                                 pollForChanges().catch(() => {});
                             }
-                        } else {
+                        } else if (pollIntervalId) {
                             // Pestaña oculta — pausar polling para ahorrar egress
-                            if (pollIntervalId) {
-                                clearInterval(pollIntervalId);
-                                pollIntervalId = null;
-                            }
+                            clearInterval(pollIntervalId);
+                            pollIntervalId = null;
                         }
                     };
-                    document.addEventListener('visibilitychange', onVisible);
-                    // Guardar referencia para cleanup
-                    window.__cloudSyncVisibilityListener = onVisible;
+                    document.addEventListener('visibilitychange', visibilityListener);
                 }
 
             } catch (err) {
                 console.error('[CloudSync] Fallo en inicialización P2P:', err);
-                initialSyncReady = false; // Permitir reintento
+                initialSyncReady = false;
+                // Reintentar con backoff (y de inmediato al volver la conexión). Antes
+                // no había reintento: abrir la app sin internet dejaba el sync apagado
+                // toda la sesión y todo lo que se guardaba se quedaba solo en este equipo.
+                if (isCurrent()) scheduleInitRetry();
             }
         };
 
@@ -811,6 +1066,12 @@ export function useCloudSync() {
             // la sesión desaparece.
             localStorage.setItem = originalSetItem;
             removeFlushListeners();
+            window.removeEventListener('online', onBackOnline);
+            if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+            if (visibilityListener) {
+                document.removeEventListener('visibilitychange', visibilityListener);
+                visibilityListener = null;
+            }
             // Empujar (no descartar) los cambios pendientes antes de desmontar
             flushPendingPushes();
             if (pollIntervalId) {
@@ -824,10 +1085,6 @@ export function useCloudSync() {
             if (factoryResetChannel) {
                 supabaseCloud.removeChannel(factoryResetChannel);
                 factoryResetChannel = null;
-            }
-            if (window.__cloudSyncVisibilityListener) {
-                document.removeEventListener('visibilitychange', window.__cloudSyncVisibilityListener);
-                delete window.__cloudSyncVisibilityListener;
             }
         };
     // La sesión de Supabase, no las credenciales persistidas localmente, controla

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Package, CreditCard, ShieldAlert, EyeOff, Percent, ShieldOff, RotateCcw, DollarSign } from 'lucide-react';
 import { SectionCard, Toggle } from '../../SettingsShared';
 import PaymentMethodsManager from '../PaymentMethodsManager';
@@ -41,6 +41,26 @@ export default function SettingsTabVentas({
     const [voidCierreRevertMoney, setVoidCierreRevertMoney] = useState(
         localStorage.getItem(VOID_CIERRE_REVERT_MONEY_KEY) === 'true'
     );
+
+    // Cambios que llegan de otra caja (sync, evento 'storage'): reflejarlos para
+    // que la pantalla no muestre ni re-guarde un valor viejo.
+    useEffect(() => {
+        const onStorage = (e) => {
+            if (e.key === 'cashea_enabled') setCasheaEnabled(e.newValue === 'true');
+            if (e.key === 'cashea_min_amount') {
+                setCasheaMinAmount(parseFloat(e.newValue || '0') || 0);
+                setMinInput(e.newValue || '');
+            }
+            if (e.key === 'cajero_puede_abrir_caja') setCajeroAbrirCaja(e.newValue !== 'false');
+            if (e.key === 'cajero_puede_cerrar_caja') setCajeroCerrarCaja(e.newValue === 'true');
+            if (e.key === 'cajero_max_descuento') {
+                setCajeroMaxDescuento(e.newValue ?? '100');
+                setDescuentoInput(e.newValue ?? '100');
+            }
+        };
+        window.addEventListener('storage', onStorage);
+        return () => window.removeEventListener('storage', onStorage);
+    }, []);
 
     return (
         <>

@@ -1,4 +1,19 @@
 export const MAX_QUEUE_ATTEMPTS = 10;
+
+// Fase 1 (idempotencia): el operation_id identifica la venta desde ANTES del
+// primer intento online y se reutiliza tal cual en fallback/offline/reintentos.
+export function newOperationId() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    return `op-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * Un payload que ya trae su operation_id (queue_id u operation_id) NUNCA
+ * recibe otro distinto: el reintento debe ser la misma operación.
+ */
+export function resolveOperationId(payload, generateId = newOperationId) {
+    return payload?.queue_id || payload?.operation_id || generateId();
+}
 export const RETRY_BASE_MS = 2000;
 export const RETRY_MAX_MS = 5 * 60 * 1000;
 

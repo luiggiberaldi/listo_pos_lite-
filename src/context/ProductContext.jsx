@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { storageService } from '../utils/storageService';
 import { BODEGA_CATEGORIES } from '../config/categories';
+import { runStockOperation } from '../services/inventoryOperationService';
+import { getActiveAccountId } from '../config/storageScope';
+import { resolveLocalStock, isUnknownProductResult } from '../sync/stockResolution';
 
 const ProductContext = createContext();
 
@@ -146,8 +149,15 @@ export function ProductProvider({ children, rates }) {
                 setRateMode(e.newValue);
             }
             if (e.key === 'bodega_use_auto_rate') {
+                // bodega_rate_mode (A5) llega por su lado y es el dato preciso; esta
+                // llave vieja solo dice auto/manual, así que no debe pisar 'euro'.
                 const isAuto = !!JSON.parse(e.newValue);
-                setRateMode(isAuto ? 'bcv' : 'manual');
+                setRateMode(prev => {
+                    if (!isAuto) return 'manual';
+                    if (prev !== 'manual') return prev;
+                    const stored = localStorage.getItem('bodega_rate_mode');
+                    return stored && stored !== 'manual' ? stored : 'bcv';
+                });
             }
             if (e.key === 'cop_enabled') {
                 setCopEnabled(e.newValue === 'true');
@@ -192,39 +202,107 @@ export function ProductProvider({ children, rates }) {
         };
     }, []);
 
-    const adjustStock = (productId, delta) => {
-        setProducts(prevProducts => {
-            const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
-            const updated = prevProducts.map(p => {
-                if (p.id === productId) {
-                    const newStock = (p.stock ?? 0) + delta;
-                    return { ...p, stock: allowNeg ? newStock : Math.max(0, newStock) };
-                }
-                return p;
+    // Fase 3: el stock lo decide el CONTRATO de operación de inventario, no el
+    // reemplazo del array local. Estados del resultado:
+    //   confirmed → el stock_after del servidor es la única ley (sin clamps);
+    //   conflict/invalid → el stock local NO se toca (explicado al usuario);
+    //   pending (offline) → cambio optimista marcado como pendiente, jamás
+    //   confirmado hasta que el contrato lo acepte.
+    // A7 (mitigación): mientras public.products del servidor no tenga el stock real
+    // por cuenta (Fase C), el saldo del servidor NO se copia sobre el stock local.
+    // La operación se aplica sobre el stock del dispositivo (ver sync/stockResolution).
+    //   confirmed → aplicada en el servidor (o ya procesada): se refleja localmente;
+    //   producto desconocido en el servidor → se aplica solo localmente (local_only);
+    //   conflict/invalid → el stock local NO se toca (explicado al usuario);
+    //   pending (offline) → cambio optimista marcado como pendiente.
+    const applyStockResultToProduct = (productId, rawResult) => {
+        const product = products.find(p => p.id === productId);
+        let result = rawResult;
+        if (isUnknownProductResult(result)) {
+            result = { ...result, outcome: 'confirmed', status: 'local_only' };
+        }
+
+        if (result.outcome === 'confirmed' || result.outcome === 'pending') {
+            const target = resolveLocalStock({
+                currentStock: product?.stock,
+                operation: result.operation,
+                status: result.status,
+                unit: product?.unit || 'unidad',
             });
-            // Persistir inmediatamente para no depender del debounce (evita pérdida al cambiar pestaña rápido)
-            storageService.setItem('bodega_products_v1', updated).catch(() => {});
-            return updated;
-        });
+            const stockSync = result.outcome === 'pending'
+                ? 'pending'
+                : (result.status === 'local_only' ? 'local_only' : 'synced');
+            setProducts(prevProducts => {
+                const updated = prevProducts.map(p => p.id === productId
+                    ? {
+                        ...p,
+                        stock: target,
+                        stockSync,
+                        ...(result.outcome === 'confirmed' && Number.isFinite(result.stockAfter)
+                            ? { stockServer: result.stockAfter }
+                            : {}),
+                    }
+                    : p);
+                storageService.setItem('bodega_products_v1', updated).catch(() => {});
+                return updated;
+            });
+            return result.outcome === 'confirmed' ? { ...result, stockAfter: target } : result;
+        }
+        return result;
     };
 
-    const setProductStock = (productId, exactStock) => {
-        setProducts(prevProducts => {
-            const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
-            const updated = prevProducts.map(p => {
-                if (p.id === productId) {
-                    const parsed = typeof exactStock === 'number' ? exactStock : parseFloat(exactStock) || 0;
-                    const cleanStock = ['kg', 'litro'].includes(p.unit)
-                        ? Math.round(parsed * 1000) / 1000
-                        : Math.round(parsed);
-                    const finalStock = allowNeg ? cleanStock : Math.max(0, cleanStock);
-                    return { ...p, stock: finalStock };
-                }
-                return p;
-            });
-            storageService.setItem('bodega_products_v1', updated).catch(() => {});
-            return updated;
+    // Optimista: la cantidad elegida se ve en el acto (sin "volver" al valor
+    // anterior mientras responde el servidor). Si el contrato la rechaza
+    // (conflicto/inválida), se revierte — solo si nadie la cambió entretanto.
+    const showOptimisticStock = (product, operation) => {
+        const unit = product.unit || 'unidad';
+        const optimistic = resolveLocalStock({ currentStock: product.stock, operation, status: 'pending', unit });
+        setProducts(prev => prev.map(p => p.id === product.id ? { ...p, stock: optimistic, stockSync: 'pending' } : p));
+        return () => setProducts(prev => prev.map(p => (p.id === product.id && p.stock === optimistic)
+            ? { ...p, stock: product.stock, stockSync: product.stockSync }
+            : p));
+    };
+    const finishStockOperation = (productId, result, revert) => {
+        const applied = applyStockResultToProduct(productId, result);
+        if (applied.outcome === 'conflict' || applied.outcome === 'invalid') revert();
+        return applied;
+    };
+
+    const adjustStock = async (productId, delta, meta = {}) => {
+        const product = products.find(p => p.id === productId);
+        if (!product) return { outcome: 'invalid', status: 'invalid', error: 'producto no encontrado' };
+        const revert = showOptimisticStock(product, { mode: 'delta', quantity: delta });
+        const result = await runStockOperation({
+            productId,
+            quantity: delta,
+            mode: 'delta',
+            operationType: 'AJUSTE_DIRECTO',
+            unitMode: product.unit || 'unidad',
+            reason: meta.reason || 'AJUSTE_DIRECTO',
+            accountId: getActiveAccountId(),
+            deviceId: meta.deviceId || null,
+            actor: meta.actor || null,
         });
+        return finishStockOperation(productId, result, revert);
+    };
+
+    const setProductStock = async (productId, exactStock, meta = {}) => {
+        const product = products.find(p => p.id === productId);
+        if (!product) return { outcome: 'invalid', status: 'invalid', error: 'producto no encontrado' };
+        const parsed = typeof exactStock === 'number' ? exactStock : parseFloat(exactStock) || 0;
+        const revert = showOptimisticStock(product, { mode: 'count', quantity: parsed });
+        const result = await runStockOperation({
+            productId,
+            quantity: parsed,
+            mode: 'count',
+            operationType: 'CONTEO',
+            unitMode: product.unit || 'unidad',
+            reason: meta.reason || 'CONTEO',
+            accountId: getActiveAccountId(),
+            deviceId: meta.deviceId || null,
+            actor: meta.actor || null,
+        });
+        return finishStockOperation(productId, result, revert);
     };
 
     return (

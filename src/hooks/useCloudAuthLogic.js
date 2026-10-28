@@ -152,7 +152,8 @@ export function useCloudAuthLogic() {
         const idbKeys = [
             'bodega_products_v1', 'bodega_customers_v1',
             'bodega_sales_v1', 'bodega_payment_methods_v1',
-            'bodega_accounts_v2'
+            'bodega_accounts_v2', 'bodega_cierres_v1', 'my_categories_v1',
+            'bodega_suppliers_v1', 'bodega_supplier_invoices_v1'
         ];
         const idbData = {};
         for (const key of idbKeys) {
@@ -165,7 +166,11 @@ export function useCloudAuthLogic() {
             'monitor_rates_v12', 'business_name', 'business_phone', 'business_rif',
             'printer_paper_width', 'allow_negative_stock', 'cop_enabled',
             'auto_cop_enabled', 'tasa_cop', 'bodega_use_auto_rate',
-            'bodega_custom_rate', 'bodega_inventory_view', 'abasto-auth-storage'
+            'bodega_custom_rate', 'bodega_inventory_view', 'abasto-auth-storage',
+            'bodega_rate_mode', 'cashea_enabled', 'cashea_min_amount',
+            'business_address', 'business_instagram', 'admin_auto_lock_minutes',
+            'theme', 'cajero_puede_abrir_caja', 'cajero_puede_cerrar_caja',
+            'cajero_max_descuento'
         ];
         const lsData = {};
         for (const key of lsKeys) {

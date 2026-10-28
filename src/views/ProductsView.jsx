@@ -17,7 +17,9 @@ import ConfirmModal from '../components/ConfirmModal';
 import CategoryManagerModal from '../components/Products/CategoryManagerModal';
 import BulkPriceAdjustModal from '../components/Products/BulkPriceAdjustModal';
 import ZeroStockModal from '../components/Products/ZeroStockModal';
-import { bulkZeroProductStock } from '../utils/stockUtils';
+import { filterProductsByZeroScope } from '../utils/stockUtils';
+import { applyStockOperation, buildBulkZeroOperations } from '../services/inventoryOperationService';
+import { isUnknownProductResult } from '../sync/stockResolution';
 import { useProductContext } from '../context/ProductContext';
 import EmptyState from '../components/EmptyState';
 import Skeleton from '../components/Skeleton';
@@ -51,13 +53,29 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     const [quickStockProduct, setQuickStockProduct] = useState(null);
 
     const handleQuickStockSave = async (productId, newStock, mode, delta) => {
-        setProductStock(productId, newStock);
         triggerHaptic && triggerHaptic();
 
         const product = products.find(p => p.id === productId);
         const prodName = product?.name || 'Producto';
 
-        // Registro de movimiento si hubo cambio real
+        // Fase 3: la mutación de stock pasa por el contrato de operación de
+        // inventario. Solo lo CONFIRMADO por el servidor se muestra como éxito.
+        const result = mode === 'add'
+            ? await adjustStock(productId, delta, { reason: 'AJUSTE_DIRECTO', silent: true })
+            : await setProductStock(productId, newStock, { reason: 'CONTEO' });
+
+        if (result.outcome === 'conflict') {
+            const available = result.result?.current_stock ?? result.result?.conflicts?.[0]?.available_stock;
+            showToast(`Stock insuficiente para "${prodName}" (disponible: ${available ?? 0}). Requiere resolución.`, 'error');
+            return;
+        }
+        if (result.outcome === 'invalid') {
+            showToast(`Operación inválida: ${result.error || result.result?.message || 'revisa la cantidad'}`, 'error');
+            return;
+        }
+
+        const pending = result.outcome === 'pending';
+        // Registro de movimiento si hubo cambio real (dominio de caja, legado)
         if (delta !== 0) {
             try {
                 const record = {
@@ -67,7 +85,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                     items: [{ id: productId, name: prodName, qty: Math.abs(delta) }],
                     totalUsd: 0,
                     totalBs: 0,
-                    status: 'COMPLETADA',
+                    status: pending ? 'PENDIENTE_SYNC' : 'COMPLETADA',
                 };
                 const sales = await storageService.getItem('bodega_sales_v1', []);
                 sales.push(record);
@@ -78,61 +96,101 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         const descAction = mode === 'add'
             ? `+${delta} ${product?.unit || 'uds'}`
             : `Fijado en ${newStock} ${product?.unit || 'uds'} (Δ ${delta >= 0 ? '+' : ''}${delta})`;
-        auditLog('INVENTARIO', 'AJUSTE_DIRECTO', `Stock de "${prodName}": ${descAction}`);
+        auditLog('INVENTARIO', mode === 'add' ? 'AJUSTE_DIRECTO' : 'CONTEO', `Stock de "${prodName}": ${descAction}${pending ? ' [PENDIENTE_SYNC]' : ''}`);
 
-        const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
-        const updated = products.map(p => {
-            if (p.id === productId) {
-                const cleanStock = ['kg', 'litro'].includes(p.unit)
-                    ? Math.round(newStock * 1000) / 1000
-                    : Math.round(newStock);
-                return { ...p, stock: allowNeg ? cleanStock : Math.max(0, cleanStock) };
-            }
-            return p;
-        });
+        if (pending) {
+            showToast(`Servidor sin confirmar: ajuste de "${prodName}" guardado y PENDIENTE de sincronizar`, 'warning');
+            return;
+        }
+        const updated = products.map(p => p.id === productId ? { ...p, stock: result.stockAfter } : p);
         pushCloudSync('bodega_products_v1', updated).catch(() => {});
         showToast(`Stock de "${prodName}" actualizado`, 'success');
     };
 
     const handleExecuteZeroStock = async ({ scope, category, selectedIds: targetSelectedIds }) => {
         triggerHaptic && triggerHaptic();
-        const { updatedProducts, affectedCount } = bulkZeroProductStock(products, {
-            scope,
-            category,
-            selectedIds: targetSelectedIds,
-        });
+        const targets = filterProductsByZeroScope(products, { scope, category, selectedIds: targetSelectedIds })
+            .filter(p => Number(p.stock ?? 0) !== 0);
 
-        if (affectedCount === 0) {
+        if (targets.length === 0) {
             showToast('No se encontraron productos para actualizar', 'info');
             return;
         }
 
-        // 1. Persistir inmediatamente en local
+        // Fase 3: UNA operación explícita por producto (VACIADO) con su delta
+        // real, aplicada por el contrato. Solo lo confirmado se muestra como éxito.
+        const operations = buildBulkZeroOperations(targets);
+        const outcomes = [];
+        for (const operation of operations) {
+            const outcome = await applyStockOperation(operation);
+            // A7: producto aún desconocido para el servidor → se aplica solo localmente.
+            outcomes.push(isUnknownProductResult(outcome)
+                ? { ...outcome, outcome: 'confirmed', status: 'local_only' }
+                : outcome);
+        }
+        const confirmed = outcomes.filter(o => o.outcome === 'confirmed');
+        const pendingOps = outcomes.filter(o => o.outcome === 'pending');
+        const failed = outcomes.filter(o => o.outcome === 'conflict' || o.outcome === 'invalid');
+
+        const confirmedByProduct = new Map(confirmed.map(o => [o.operation.product_id, o]));
+        const pendingIds = new Set(pendingOps.map(o => o.operation.product_id));
+        const updatedProducts = products.map(p => {
+            const ok = confirmedByProduct.get(p.id);
+            // El vaciado deja el stock LOCAL en 0; el saldo del servidor (aún no
+            // autoritativo) solo se guarda como diagnóstico.
+            if (ok) return {
+                ...p,
+                stock: 0,
+                stockSync: ok.status === 'local_only' ? 'local_only' : 'synced',
+                ...(Number.isFinite(ok.stockAfter) ? { stockServer: ok.stockAfter } : {}),
+            };
+            if (pendingIds.has(p.id)) return { ...p, stock: 0, stockSync: 'pending' };
+            return p;
+        });
         await storageService.setItem('bodega_products_v1', updatedProducts);
-        // 2. Actualizar estado react
         setProducts(updatedProducts);
-        // 3. Sincronizar en la nube
         pushCloudSync('bodega_products_v1', updatedProducts).catch(() => {});
-        // 4. Bitácora de auditoría
+
         const scopeDesc = scope === 'all'
             ? 'todo el inventario'
             : scope === 'category'
             ? `categoría "${category}"`
             : `${targetSelectedIds instanceof Set ? targetSelectedIds.size : (targetSelectedIds?.length || 0)} seleccionados`;
-        auditLog('INVENTARIO', 'STOCK_CERO_MASIVO', `Stock puesto en 0 para ${affectedCount} productos (${scopeDesc})`);
-        // 5. Limpiar selección y resetear página
+        auditLog('INVENTARIO', 'STOCK_CERO_MASIVO', `Stock en 0: ${confirmed.length}/${operations.length} confirmados${pendingOps.length ? `, ${pendingOps.length} pendientes` : ''}${failed.length ? `, ${failed.length} requieren resolución` : ''} (${scopeDesc})`);
+
         setSelectedIds(new Set());
         setCurrentPage(1);
-        // 6. Notificación al usuario
-        showToast(`Stock puesto en 0 para ${affectedCount} ${affectedCount === 1 ? 'producto' : 'productos'}`, 'success');
+
+        if (failed.length > 0) {
+            showToast(`${failed.length} productos requieren resolución (conflicto de stock)`, 'error');
+        } else if (pendingOps.length > 0) {
+            showToast(`${confirmed.length} confirmados; ${pendingOps.length} pendientes de sincronizar`, 'warning');
+        } else {
+            showToast(`Stock puesto en 0 para ${confirmed.length} ${confirmed.length === 1 ? 'producto' : 'productos'}`, 'success');
+        }
     };
 
-    // Envolver adjustStock para incluir registro de movimiento + haptic
-    const adjustStock = async (productId, delta) => {
-        baseAdjustStock(productId, delta);
+    // Envolver adjustStock para incluir registro de movimiento + haptic + feedback
+    // de los estados del contrato (Fase 3).
+    const adjustStock = async (productId, delta, meta = {}) => {
         triggerHaptic && triggerHaptic();
+        const result = await baseAdjustStock(productId, delta, meta);
 
-        // Registro silencioso del ajuste de inventario
+        if (result.outcome === 'conflict' || result.outcome === 'invalid') {
+            if (!meta.silent) {
+                const available = result.result?.current_stock ?? result.result?.conflicts?.[0]?.available_stock;
+                showToast(
+                    result.outcome === 'conflict'
+                        ? `Stock insuficiente (disponible: ${available ?? 0}). Requiere resolución.`
+                        : `Operación inválida: ${result.error || result.result?.message || 'revisa la cantidad'}`,
+                    'error'
+                );
+            }
+            return result;
+        }
+
+        const pending = result.outcome === 'pending';
+        // Registro silencioso del ajuste de inventario (dominio de caja, legado)
         try {
             const product = products.find(p => p.id === productId);
             const record = {
@@ -142,12 +200,17 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 items: [{ id: productId, name: product?.name || 'Producto', qty: Math.abs(delta) }],
                 totalUsd: 0,
                 totalBs: 0,
-                status: 'COMPLETADA',
+                status: pending ? 'PENDIENTE_SYNC' : 'COMPLETADA',
             };
             const sales = await storageService.getItem('bodega_sales_v1', []);
             sales.push(record);
             await storageService.setItem('bodega_sales_v1', sales);
         } catch (e) { /* silencioso */ }
+
+        if (pending && !meta.silent) {
+            showToast('Servidor sin confirmar: ajuste guardado y PENDIENTE de sincronizar', 'warning');
+        }
+        return result;
     }
 
     // Modal UI States

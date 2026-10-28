@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import localforage from 'localforage';
 import {
     Store, CreditCard, Database, Users,
@@ -90,6 +90,19 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
     const effectiveAdmin = isAdmin || !pinLoginEnabled;
     const [showPostImportCloud, setShowPostImportCloud] = useState(false);
     const [importedBackup, setImportedBackup] = useState(null);
+
+    // Cambios que llegan de otra caja (sync, evento 'storage'): reflejarlos para
+    // que "Guardar" no devuelva estos datos a un valor viejo.
+    useEffect(() => {
+        const onStorage = (e) => {
+            if (e.key === 'business_name') setBusinessName(e.newValue || '');
+            if (e.key === 'business_rif') setBusinessRif(e.newValue || '');
+            if (e.key === 'printer_paper_width') setPaperWidth(e.newValue || '58');
+            if (e.key === 'allow_negative_stock') setAllowNegativeStock(e.newValue !== 'false');
+        };
+        window.addEventListener('storage', onStorage);
+        return () => window.removeEventListener('storage', onStorage);
+    }, []);
 
     const handleSaveBusinessData = () => {
         localStorage.setItem('business_name', businessName);

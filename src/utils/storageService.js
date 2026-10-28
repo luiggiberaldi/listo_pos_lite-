@@ -109,8 +109,11 @@ export const storageService = {
             if (typeof window !== "undefined") {
                 window.dispatchEvent(new CustomEvent("app_storage_update", { detail: { key } }));
             }
-            // Sincronizar borrado a la nube (enviar array vacío para que no restaure datos viejos)
-            pushCloudSync(key, []);
+            // H-17: borrar una llave local NO vacía la nube. Antes se subía [] y un
+            // borrado local (o de una colección que solo vive en este equipo) dejaba
+            // sin datos a todos los dispositivos. El borrado intencional de una
+            // colección en la nube lo hace quien lo pide (p. ej. "BORRAR" ventas en
+            // Dashboard) o el factory reset.
         } catch (error) {
             console.error(`[Storage Error] Borrando ${key}:`, error);
         }

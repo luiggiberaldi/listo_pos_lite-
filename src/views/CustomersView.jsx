@@ -99,6 +99,17 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         if (isActive) loadData();
     }, [isActive]);
 
+    // Clientes/proveedores/facturas que llegan de otra caja (sync) se reflejan sin recargar.
+    useEffect(() => {
+        if (!isActive) return;
+        const KEYS = ['bodega_customers_v1', 'bodega_suppliers_v1', 'bodega_supplier_invoices_v1'];
+        const onStorageUpdate = (e) => {
+            if (KEYS.includes(e.detail?.key)) loadData();
+        };
+        window.addEventListener('app_storage_update', onStorageUpdate);
+        return () => window.removeEventListener('app_storage_update', onStorageUpdate);
+    }, [isActive]);
+
     const saveCustomers = async (updatedCustomers) => {
         setCustomers(updatedCustomers);
         await storageService.setItem('bodega_customers_v1', updatedCustomers);
