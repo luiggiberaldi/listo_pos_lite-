@@ -21,6 +21,7 @@ import {
     normalizeSaleLineQuantity,
     normalizeStockQuantity,
     resolveDelta,
+    lineUnitsPerPackage,
     toInventoryQuantity,
 } from '../utils/quantityRules.js';
 
@@ -134,7 +135,7 @@ export function saleLineToInventoryQuantity(qty, line) {
     return toInventoryQuantity(qty, {
         isWeight: Boolean(line?.isWeight),
         mode: line?._mode === 'unit' ? 'unit' : 'product',
-        unitsPerPackage: line?.unitsPerPackage || 1,
+        unitsPerPackage: lineUnitsPerPackage(line),
     });
 }
 

@@ -168,7 +168,9 @@ export async function processSaleTransaction({
         tipo: tipoVenta,
         status: saleMode === 'online' ? 'COMPLETADA' : (saleMode === 'conflict' ? conflictSaleStatus(conflictData) : 'PENDIENTE_SYNC'),
         stockConflict: conflictData,
-        items: cart.map(i => ({ id: i.id, name: i.name, qty: i.qty, priceUsd: i.priceUsd, costBs: i.costBs || 0, costUsd: i.costUsd || 0, isWeight: i.isWeight })),
+        // _originalId/_mode/stockQty: la anulación repone exactamente lo que
+        // esta venta descontó (sin depender del producto en ese momento).
+        items: cart.map(i => ({ id: i.id, _originalId: i._originalId || null, _mode: i._mode || null, stockQty: saleLineStockQuantity(i), name: i.name, qty: i.qty, priceUsd: i.priceUsd, costBs: i.costBs || 0, costUsd: i.costUsd || 0, isWeight: i.isWeight })),
         cartSubtotalUsd: cartSubtotalUsd,
         discountType: discountData?.type || null,
         discountValue: discountData?.value || 0,
@@ -215,14 +217,8 @@ export async function processSaleTransaction({
     const updatedProducts = products.map(p => {
         const cartItemsForThisProduct = cart.filter(i => (i._originalId || i.id) === p.id);
         if (cartItemsForThisProduct.length > 0) {
-            const totalDeducted = cartItemsForThisProduct.reduce((sum, item) => {
-                if (item.isWeight) return sum + item.qty;
-                if (item._mode === 'unit') {
-                    const pkg = item._unitsPerPackage > 0 ? item._unitsPerPackage : 1;
-                    return sum + (item.qty / pkg);
-                }
-                return sum + item.qty;
-            }, 0);
+            // Misma cantidad que viaja al servidor como stock_qty.
+            const totalDeducted = cartItemsForThisProduct.reduce((sum, item) => sum + saleLineStockQuantity(item), 0);
 
             const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
             const newStock = (p.stock ?? 0) - totalDeducted;

@@ -25,11 +25,16 @@ test('normalización única: kg/litro con 3 decimales, unidad/paquete enteros', 
     assert.equal(normalizeStockQuantity('no-numérico', 'unidad'), 0);
 });
 
-test('conversión de unidad de venta a unidad de inventario', () => {
-    assert.equal(toInventoryQuantity(3, { mode: 'unit', unitsPerPackage: 6 }), 0.5);
+test('conversión de unidad de venta a unidad de inventario (stock de lotes en unidades)', () => {
+    // Unidad suelta: tal cual. Caja: × unidades por caja.
+    assert.equal(toInventoryQuantity(3, { mode: 'unit', unitsPerPackage: 6 }), 3);
+    assert.equal(toInventoryQuantity(2, { mode: 'package', unitsPerPackage: 6 }), 12);
     assert.equal(toInventoryQuantity(1.25, { isWeight: true }), 1.25);
     assert.equal(toInventoryQuantity(4, {}), 4);
-    assert.equal(saleLineToInventoryQuantity(3, { _mode: 'unit', unitsPerPackage: 6 }), 0.5);
+    assert.equal(saleLineToInventoryQuantity(3, { _mode: 'unit', unit: 'paquete', unitsPerPackage: 6 }), 3);
+    assert.equal(saleLineToInventoryQuantity(2, { _mode: 'package', unit: 'paquete', unitsPerPackage: 6 }), 12);
+    // Producto que no es lote: unitsPerPackage se ignora.
+    assert.equal(saleLineToInventoryQuantity(2, { _mode: 'package', unit: 'unidad', unitsPerPackage: 6 }), 2);
     assert.equal(saleLineToInventoryQuantity(1.25, { isWeight: true }), 1.25);
 });
 

@@ -41,17 +41,30 @@ export function normalizeSaleLineQuantity(value) {
 }
 
 /**
- * Convierte una cantidad vendida a unidad de inventario:
+ * Unidades por caja de una línea o producto. Solo los productos por lote
+ * (packagingType 'lote' / unit 'paquete') tienen caja; el resto cuenta 1.
+ */
+export function lineUnitsPerPackage(item) {
+    const isLote = item?.packagingType === 'lote' || item?.unit === 'paquete';
+    if (!isLote) return 1;
+    const upp = Number(item?._unitsPerPackage ?? item?.unitsPerPackage);
+    return Number.isFinite(upp) && upp > 0 ? upp : 1;
+}
+
+/**
+ * Convierte una cantidad vendida a unidad de inventario. El stock de los
+ * productos por lote se guarda en UNIDADES sueltas (productProcessor:
+ * lotes × unidadesPorPaquete), así que:
  *  - item por peso (isWeight): suma directa;
- *  - item con _mode 'unit' (venta por paquete): qty ÷ unidadesPorPaquete;
- *  - resto: tal cual.
+ *  - item con _mode 'unit' (unidad suelta): qty tal cual;
+ *  - caja/bulto (resto): qty × unidadesPorPaquete (1 si no es lote).
  */
 export function toInventoryQuantity(qty, { isWeight = false, mode = 'product', unitsPerPackage = 1 } = {}) {
     const num = typeof qty === 'number' ? qty : parseFloat(qty);
     if (!Number.isFinite(num)) return 0;
     if (isWeight) return num;
-    if (mode === 'unit') return num / (unitsPerPackage > 0 ? unitsPerPackage : 1);
-    return num;
+    if (mode === 'unit') return num;
+    return num * (unitsPerPackage > 0 ? unitsPerPackage : 1);
 }
 
 /**
@@ -60,10 +73,15 @@ export function toInventoryQuantity(qty, { isWeight = false, mode = 'product', u
  * local y que la restitución de la anulación, con la precisión del servidor.
  */
 export function saleLineStockQuantity(item) {
+    // Ventas guardadas desde esta versión traen la cantidad ya calculada.
+    const stored = Number(item?.stockQty);
+    if (item?.stockQty !== undefined && item?.stockQty !== null && Number.isFinite(stored)) {
+        return normalizeSaleLineQuantity(stored);
+    }
     return normalizeSaleLineQuantity(toInventoryQuantity(item?.qty, {
         isWeight: Boolean(item?.isWeight),
-        mode: item?._mode,
-        unitsPerPackage: item?._unitsPerPackage,
+        mode: item?._mode === 'unit' || String(item?.id ?? '').endsWith('_unit') ? 'unit' : item?._mode,
+        unitsPerPackage: lineUnitsPerPackage(item),
     }));
 }
 

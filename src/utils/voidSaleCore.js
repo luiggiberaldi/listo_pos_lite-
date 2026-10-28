@@ -1,6 +1,6 @@
 import { round2 } from './dinero.js';
 import { getLocalISODate, getLocalISOTime } from './dateHelpers.js';
-import { normalizeSaleLineQuantity } from './quantityRules.js';
+import { lineUnitsPerPackage, normalizeSaleLineQuantity } from './quantityRules.js';
 import { buildInventoryOperation, deterministicOperationId } from '../services/inventoryOperationService.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -38,20 +38,35 @@ function resolveCustomerId(sale) {
 }
 
 /**
- * Cantidad a reponer por producto (unidad de inventario): peso suma directo,
- * venta por paquete divide entre unidadesPorPaquete, resto tal cual.
- * Misma fórmula que consume el checkout al descontar.
+ * Cantidad a reponer por producto (unidad de inventario): exactamente lo que
+ * la venta descontó.
+ *  - Ventas desde esta versión guardan `stockQty` por línea (misma regla que
+ *    el checkout: suelta = qty, caja = qty × unidadesPorPaquete).
+ *  - Ventas anteriores (sin `stockQty`) se descontaron con la regla vieja:
+ *    caja = qty y suelta = qty ÷ unidadesPorPaquete; se repone eso mismo para
+ *    no inventar existencias. La línea suelta guardaba id `…_unit` sin
+ *    `_originalId`: se resuelve al producto real.
  */
-export function computeRestockByProduct(sale) {
+export function computeRestockByProduct(sale, currentProducts = []) {
+    const productById = new Map((currentProducts || []).map(p => [p.id, p]));
     const restock = new Map();
     for (const item of sale?.items || []) {
-        const productId = item._originalId || item.id;
+        const rawId = String(item._originalId || item.id || '');
+        const isUnitLine = item._mode === 'unit' || rawId.endsWith('_unit');
+        const productId = rawId.endsWith('_unit') ? rawId.slice(0, -'_unit'.length) : rawId;
         if (!productId) continue;
-        const qty = item.isWeight
-            ? item.qty
-            : item._mode === 'unit'
-                ? item.qty / (item._unitsPerPackage || 1)
-                : item.qty;
+        const stored = Number(item.stockQty);
+        let qty;
+        if (item.stockQty !== undefined && item.stockQty !== null && Number.isFinite(stored)) {
+            qty = stored;
+        } else if (item.isWeight) {
+            qty = Number(item.qty) || 0;
+        } else if (isUnitLine) {
+            const upp = Number(item._unitsPerPackage) || lineUnitsPerPackage(productById.get(productId));
+            qty = (Number(item.qty) || 0) / (upp > 0 ? upp : 1);
+        } else {
+            qty = Number(item.qty) || 0;
+        }
         restock.set(productId, (restock.get(productId) || 0) + qty);
     }
     return restock;
@@ -70,7 +85,7 @@ export function buildVoidRestockOperations(sale, currentProducts = [], {
     actor = null,
 } = {}) {
     if (!sale) throw new Error('Sale object is required to build restock operations.');
-    const restock = computeRestockByProduct(sale);
+    const restock = computeRestockByProduct(sale, currentProducts);
     const productById = new Map((currentProducts || []).map(p => [p.id, p]));
     const operations = [];
 
@@ -191,7 +206,7 @@ export function buildVoidMutation({
     // ── 2. Revertir stock (saltar si skipRestock) ──
     let updatedProducts = [...currentProducts];
     if (!skipRestock && sale.items && sale.items.length > 0) {
-        const restock = computeRestockByProduct(sale);
+        const restock = computeRestockByProduct(sale, currentProducts);
         updatedProducts = currentProducts.map(p => {
             if (!restock.has(p.id)) return p;
             const totalToRestore = restock.get(p.id);
