@@ -319,10 +319,11 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
 
             {/* ── Body ── */}
             <div className="flex-1 overflow-y-auto pb-4">
-                <div className="max-w-lg mx-auto p-4 lg:p-3 space-y-4 lg:space-y-3">
+                {/* Escritorio (lg): tarjetas en dos columnas, el título a todo el ancho. */}
+                <div className="max-w-lg lg:max-w-5xl mx-auto p-4 lg:p-3 space-y-4 lg:space-y-0 lg:columns-2 lg:gap-4 lg:[&>*]:mb-4 lg:[&>*]:break-inside-avoid">
 
                     {/* Section header accent */}
-                    <div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl ${colors.iconBg}`}>
+                    <div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl lg:[column-span:all] ${colors.iconBg}`}>
                         {React.createElement(currentTab?.icon || Store, { size: 16, className: colors.icon })}
                         <span className={`text-xs font-black tracking-wide uppercase ${colors.icon}`}>
                             {currentTab?.label}
