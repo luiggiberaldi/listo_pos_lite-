@@ -52,6 +52,10 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     const isCajero = usuarioActivo?.rol === 'CAJERO';
     const { log: auditLog } = useAudit();
 
+    // Valores de stock con que se abrió el formulario de edición: si no
+    // cambian, guardar NO toca el stock.
+    const editStockRef = useRef(null);
+
     // Modal para ajuste rápido numérico de stock
     const [quickStockProduct, setQuickStockProduct] = useState(null);
 
@@ -436,12 +440,34 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         }, effectiveRate);
 
         if (editingId) {
+            // Editar el producto NO cambia el stock: el formulario podía traer
+            // un valor viejo (lotes guardados al crear) o truncado (kg). Solo si
+            // el usuario tocó el campo se aplica, como CONTEO (queda en el Kardex).
+            const original = products.find(p => p.id === editingId);
+            const { stock: formStock, ...meta } = productData;
             const updated = products.map(p =>
-                p.id === editingId ? { ...p, ...productData, image } : p
+                p.id === editingId ? { ...p, ...meta, image } : p
             );
             setProducts(updated);
             pushCloudSync('bodega_products_v1', updated).catch(() => {});
             auditLog('INVENTARIO', 'PRODUCTO_EDITADO', `Producto "${name}" editado`);
+
+            const initial = editStockRef.current;
+            const touched = initial && (String(stock) !== initial.stock || String(stockInLotes) !== initial.lotes);
+            const target = packagingType === 'lote' ? formStock : parseFloat(stock);
+            if (touched && original && Number.isFinite(target) && target !== Number(original.stock)) {
+                const productId = editingId;
+                setProductStock(productId, target, { reason: 'CONTEO', actor: usuarioActivo?.nombre || null })
+                    .then(async (result) => {
+                        if (result.outcome === 'conflict' || result.outcome === 'invalid') {
+                            showToast(`No se cambió el stock de "${name}": ${result.outcome === 'conflict' ? 'stock insuficiente' : 'cantidad inválida'}`, 'error');
+                            return;
+                        }
+                        auditLog('INVENTARIO', 'CONTEO', `Stock de "${name}" fijado en ${target} al editar${result.outcome === 'pending' ? ' [PENDIENTE_SYNC]' : ''}`);
+                        const saved = await storageService.getItem('bodega_products_v1', []);
+                        pushCloudSync('bodega_products_v1', saved).catch(() => {});
+                    });
+            }
         } else {
             const updated = [{
                 id: crypto.randomUUID(),
@@ -494,14 +520,16 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
             setPackagingType('suelto');
         }
 
-        // Stock in lotes
-        if (product.stockInLotes) {
-            setStockInLotes(product.stockInLotes.toString());
-        } else if (u === 'paquete' && product.unitsPerPackage && product.stock) {
-            setStockInLotes(Math.floor(product.stock / (product.unitsPerPackage || 1)).toString());
-        } else {
-            setStockInLotes('');
+        // Stock in lotes: siempre desde el stock ACTUAL (en unidades). El
+        // stockInLotes guardado es el de cuando se creó y queda viejo con ventas.
+        let lotesText = '';
+        if ((product.packagingType === 'lote' || u === 'paquete') && product.unitsPerPackage > 0 && product.stock != null) {
+            lotesText = Math.floor(Number(product.stock) / product.unitsPerPackage).toString();
+        } else if (product.stockInLotes) {
+            lotesText = product.stockInLotes.toString();
         }
+        setStockInLotes(lotesText);
+        editStockRef.current = { stock: String(product.stock ?? ''), lotes: lotesText };
 
         if (u === 'kg' || u === 'litro') setGranelUnit(u);
 
@@ -520,6 +548,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     const handleClose = () => {
         setName(''); setBarcode(''); setPriceUsd(''); setPriceBs(''); setCostUsd(''); setCostBs(''); setStock(''); setUnit('unidad'); setUnitsPerPackage(''); setSellByUnit(false); setUnitPriceUsd(''); setCategory('otros'); setLowStockAlert('5'); setImage(null); setEditingId(null); setIsModalOpen(false);
         setPackagingType('suelto'); setStockInLotes(''); setGranelUnit('kg');
+        editStockRef.current = null;
     };
 
     // Gestionar Categorias

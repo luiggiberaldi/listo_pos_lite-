@@ -1,4 +1,4 @@
-import { round2, mulR, divR } from './dinero';
+import { round2, mulR, divR } from './dinero.js';
 
 export function buildProductPayload(formData, effectiveRate) {
     const {
@@ -35,7 +35,9 @@ export function buildProductPayload(formData, effectiveRate) {
     const finalUnitPrice = sellByUnit && unitPriceUsd ? parseFloat(unitPriceUsd) : autoUnitPrice;
 
     // Stock: for lote, convert lotes → units
-    let finalStock = stock ? parseInt(stock) : 0;
+    // Granel admite decimales (kg/litros); unidades y lotes son enteros.
+    let finalStock = stock ? (packagingType === 'granel' ? parseFloat(stock) : parseInt(stock)) : 0;
+    if (!Number.isFinite(finalStock)) finalStock = 0;
     if (isLote && stockInLotes && parsedUnitsPerPkg > 0) {
         finalStock = parseInt(stockInLotes) * parsedUnitsPerPkg;
     }

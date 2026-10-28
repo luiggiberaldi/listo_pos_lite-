@@ -27,7 +27,8 @@ export default function KardexOpenButton({ products, actor, triggerHaptic, showT
 
     if (!status.checked) return null;
 
-    if (status.opening) {
+    // Con la ventana abierta se sigue mostrando el resultado de la apertura.
+    if (status.opening && !isOpen) {
         return (
             <span className="hidden sm:flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded-full" title="Kardex iniciado">
                 <BookOpen size={12} /> Kardex desde {fmtDate(status.opening.opened_at)}

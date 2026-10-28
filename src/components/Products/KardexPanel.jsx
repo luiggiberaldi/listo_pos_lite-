@@ -13,7 +13,14 @@ function fmtDate(iso) {
     return `${d.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: '2-digit' })} ${d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
 }
 
-const STATUS_LABEL = { pending: 'pendiente', failed: 'falló, reintentando', conflicted: 'por revisar' };
+// El motivo solo se muestra si agrega algo (no "Conteo · CONTEO" ni "Venta · Venta").
+const showReason = (r) => {
+    if (!r.reason || r.type === 'VENTA') return false;
+    const reason = r.reason.trim().toLowerCase();
+    return reason !== r.label.toLowerCase() && reason !== String(r.type || '').toLowerCase();
+};
+
+const STATUS_LABEL ={ pending: 'pendiente', failed: 'falló, reintentando', conflicted: 'por revisar' };
 
 /**
  * Libreta (Kardex) de un producto: movimientos confirmados por el servidor
@@ -93,7 +100,7 @@ export default function KardexPanel({ productId }) {
                                 {rows.map(r => (
                                     <div key={r.id} className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 items-center px-3 py-1.5">
                                         <div className="min-w-0">
-                                            <p className="font-bold text-slate-600 dark:text-slate-300 truncate">{r.label}{r.reason && r.reason !== r.label && r.type !== 'VENTA' ? <span className="font-medium text-slate-400"> · {r.reason}</span> : null}</p>
+                                            <p className="font-bold text-slate-600 dark:text-slate-300 truncate">{r.label}{showReason(r) ?<span className="font-medium text-slate-400"> · {r.reason}</span> : null}</p>
                                             <p className="text-[9px] text-slate-400">{fmtDate(r.createdAt)}{r.actor ? ` · ${r.actor}` : ''}</p>
                                         </div>
                                         <span className="text-right font-bold text-emerald-600">{r.entra != null ? `+${fmtQty(r.entra)}` : ''}</span>
