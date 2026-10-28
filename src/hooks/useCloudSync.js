@@ -348,9 +348,11 @@ const HEAVY_KEYS = [
 ];
 const DEBOUNCE_MS = 3000;
 const DEBOUNCE_MS_HEAVY = 30000;
-// Ventas: la otra caja debe verlas pronto (cierre, totales del turno). 10 s aún
-// agrupa ráfagas de hora pico; lo inmediato real llega con filas por venta (Fase C).
-const DEBOUNCE_MS_SALES = 10000;
+// Ventas, productos y clientes: la otra caja debe verlos pronto (cierre, stock,
+// deudas). 10 s aún agrupa ráfagas de hora pico; los documentos miden <600 KB.
+// Lo inmediato real llega con filas por entidad (Fase C).
+const FAST_HEAVY_KEYS = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1'];
+const DEBOUNCE_MS_FAST_HEAVY = 10000;
 
 /**
  * Empuja una llave al sincronizador de Supabase.
@@ -479,7 +481,7 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
     } else {
         _pendingPushValues[key] = value;
         if (_pushDebounceTimers[key]) clearTimeout(_pushDebounceTimers[key]);
-        const delay = key === 'bodega_sales_v1' ? DEBOUNCE_MS_SALES
+        const delay = FAST_HEAVY_KEYS.includes(key) ? DEBOUNCE_MS_FAST_HEAVY
             : HEAVY_KEYS.includes(key) ? DEBOUNCE_MS_HEAVY : DEBOUNCE_MS;
         _pushDebounceTimers[key] = setTimeout(() => {
             delete _pushDebounceTimers[key];
