@@ -20,3 +20,22 @@ export function computePushHash(serialized) {
     }
     return `${s.length}:${(h1 >>> 0).toString(16)}:${(h2 >>> 0).toString(16)}`;
 }
+
+/**
+ * JSON canónico (llaves ordenadas). Postgres jsonb reordena las llaves de los
+ * objetos, así que el JSON que vuelve de la nube nunca coincide byte a byte con
+ * el local; sin canonizar, la deduplicación por hash jamás reconocía lo que la
+ * nube ya tenía y todo se re-subía en cada arranque.
+ */
+export function canonicalStringify(value) {
+    if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+    if (Array.isArray(value)) return '[' + value.map(canonicalStringify).join(',') + ']';
+    const keys = Object.keys(value).filter(k => value[k] !== undefined).sort();
+    return '{' + keys.map(k => JSON.stringify(k) + ':' + canonicalStringify(value[k])).join(',') + '}';
+}
+
+/** Huella de un payload (string crudo u objeto) independiente del orden de llaves. */
+export function hashPayload(value) {
+    if (typeof value === 'string') return computePushHash(value);
+    return computePushHash(canonicalStringify(value));
+}

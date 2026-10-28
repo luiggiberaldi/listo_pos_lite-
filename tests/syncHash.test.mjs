@@ -35,3 +35,23 @@ test('el hash es estable para el mismo contenido', () => {
   const a = JSON.stringify(makeProducts(50));
   assert.equal(computePushHash(a), computePushHash(String(a)));
 });
+
+import { canonicalStringify, hashPayload } from '../src/sync/syncHash.js';
+
+test('hashPayload ignora el orden de las llaves (jsonb reordena)', () => {
+  const a = [{ id: 1, name: 'x', price: 2, stock: 3 }];
+  const b = [{ stock: 3, price: 2, name: 'x', id: 1 }];
+  assert.equal(hashPayload(a), hashPayload(b));
+  assert.equal(canonicalStringify(a), canonicalStringify(b));
+});
+
+test('hashPayload sigue detectando cambios de valor con llaves reordenadas', () => {
+  const a = [{ id: 1, stock: 3 }];
+  const b = [{ stock: 4, id: 1 }];
+  assert.notEqual(hashPayload(a), hashPayload(b));
+});
+
+test('hashPayload de strings usa el string crudo', () => {
+  assert.equal(hashPayload('true'), hashPayload('true'));
+  assert.notEqual(hashPayload('true'), hashPayload('false'));
+});
