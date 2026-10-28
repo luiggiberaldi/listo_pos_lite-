@@ -85,7 +85,9 @@ export async function processSaleTransaction({
       })),
       fiadoUsd: fiadoAmountUsd,
       queue_id: operationId,
-      account_id: getActiveAccountId()
+      account_id: getActiveAccountId(),
+      // Quién cobró: queda en el movimiento VENTA del Kardex.
+      actor: useAuthStore.getState().usuarioActivo?.nombre || null
     };
 
     let saleMode = 'online';

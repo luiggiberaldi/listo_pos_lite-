@@ -10,7 +10,9 @@
 --      (modo conteo) desde el saldo del servidor al saldo del dispositivo.
 --   3. sync_product_catalog registra un APERTURA "Alta de producto" al
 --      crear un producto (account_id lo pone /api/catalog-sync).
--- ADITIVA: una tabla nueva, una función nueva y dos cuerpos reemplazados.
+--   4. kardex_summary: totales de un rango para la pantalla Movimientos.
+-- ADITIVA: una tabla, un índice, dos funciones nuevas y dos cuerpos
+-- reemplazados.
 -- No borra filas. Solo open_kardex (acción explícita del dueño) cambia
 -- products.stock, y deja la diferencia anotada en la libreta.
 -- Disciplina de no-destrucción: snapshot -> migración -> data:verify.
@@ -263,6 +265,8 @@ BEGIN
             -- Kardex (013): movimiento VENTA en la misma transacción que el
             -- saldo. operation_id determinista por venta y línea: la venta ya
             -- es idempotente por queue_id, y ON CONFLICT nunca bloquea un cobro.
+            -- origin_ref = queue_id (el id que guarda el dispositivo), para
+            -- poder mostrar el número de venta local.
             INSERT INTO public.inventory_operations
                 (operation_id, account_id, device_id, actor, product_id, operation_type,
                  mode, quantity, unit_mode, delta, stock_before, stock_after, reason, origin_ref)
@@ -270,7 +274,7 @@ BEGIN
                 (md5('venta:' || new_sale_id::text || ':' || v_line::text)::uuid,
                  v_account_id, v_device_id, v_actor, v_product_id, 'VENTA',
                  'delta', v_stock_qty, NULLIF(item->>'_mode', ''), -v_stock_qty,
-                 v_current_stock, v_new_stock, 'Venta', new_sale_id::text)
+                 v_current_stock, v_new_stock, 'Venta', COALESCE(v_queue_id::text, new_sale_id::text))
             ON CONFLICT (operation_id) DO NOTHING;
 
             v_inventory := v_inventory || jsonb_build_object(
@@ -586,6 +590,34 @@ BEGIN
 END;
 $function$;
 
+-- ── Resumen de movimientos (pantalla Movimientos) ─────────────────────────
+-- Totales de un rango para una cuenta: entradas y salidas (sin contar las
+-- aperturas, que son saldo inicial y no movimiento) y número de filas.
+CREATE OR REPLACE FUNCTION public.kardex_summary(payload jsonb)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = public
+AS $function$
+    SELECT jsonb_build_object(
+        'count', COUNT(*),
+        'entradas', COALESCE(SUM(delta) FILTER (WHERE delta > 0 AND operation_type <> 'APERTURA'), 0),
+        'salidas', COALESCE(-SUM(delta) FILTER (WHERE delta < 0 AND operation_type <> 'APERTURA'), 0)
+    )
+    FROM public.inventory_operations
+    WHERE account_id = NULLIF(payload->>'account_id', '')
+      AND (payload->>'from' IS NULL OR created_at >= (payload->>'from')::timestamptz)
+      AND (payload->>'to' IS NULL OR created_at < (payload->>'to')::timestamptz)
+      AND (jsonb_typeof(payload->'types') IS DISTINCT FROM 'array'
+           OR operation_type IN (SELECT jsonb_array_elements_text(payload->'types')))
+      AND (jsonb_typeof(payload->'product_ids') IS DISTINCT FROM 'array'
+           OR product_id::text IN (SELECT jsonb_array_elements_text(payload->'product_ids')));
+$function$;
+
+CREATE INDEX IF NOT EXISTS idx_inventory_operations_account_created
+    ON public.inventory_operations (account_id, created_at);
+
 -- Ejecución solo para service_role (mismo criterio que 006-012).
 REVOKE ALL ON FUNCTION public.process_checkout(jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.process_checkout(jsonb) TO service_role;
@@ -593,5 +625,7 @@ REVOKE ALL ON FUNCTION public.sync_product_catalog(jsonb) FROM PUBLIC, anon, aut
 GRANT EXECUTE ON FUNCTION public.sync_product_catalog(jsonb) TO service_role;
 REVOKE ALL ON FUNCTION public.open_kardex(jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.open_kardex(jsonb) TO service_role;
+REVOKE ALL ON FUNCTION public.kardex_summary(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.kardex_summary(jsonb) TO service_role;
 
 COMMIT;

@@ -25,8 +25,9 @@ const STATUS_LABEL ={ pending: 'pendiente', failed: 'falló, reintentando', conf
 /**
  * Libreta (Kardex) de un producto: movimientos confirmados por el servidor
  * desde la apertura, y aparte los del dispositivo que aún no se sincronizan.
+ * Muestra los últimos 5; "Ver todos" abre la pantalla Movimientos.
  */
-export default function KardexPanel({ productId }) {
+export default function KardexPanel({ productId, onViewAll }) {
     const [open, setOpen] = useState(false);
     const [state, setState] = useState({ loading: false, error: null, opening: null, view: null, pending: [] });
 
@@ -54,7 +55,9 @@ export default function KardexPanel({ productId }) {
     useEffect(() => { if (open) load(); }, [open, load]);
 
     const { loading, error, opening, view, pending } = state;
-    const rows = view?.rows ? [...view.rows].reverse() : [];
+    const LAST = 5;
+    const rows = view?.rows ? [...view.rows].reverse().slice(0, LAST) : [];
+    const hidden = view?.rows ? Math.max(view.rows.length - LAST, 0) : 0;
 
     return (
         <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
@@ -116,6 +119,12 @@ export default function KardexPanel({ productId }) {
                                     {view.consistent ? ' ✓' : ` · ${view.gaps.length} cambio(s) de stock sin movimiento anotado`}
                                 </span>
                             </div>
+                            {onViewAll && (
+                                <button onClick={onViewAll}
+                                    className="w-full px-3 py-2 border-t border-slate-100 dark:border-slate-800 text-xs font-bold text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
+                                    {hidden > 0 ? `Ver todos los movimientos (${hidden} más)` : 'Ver en Movimientos'}
+                                </button>
+                            )}
                         </>
                     )}
 

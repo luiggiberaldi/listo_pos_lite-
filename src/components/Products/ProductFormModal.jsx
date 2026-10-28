@@ -41,7 +41,8 @@ export default function ProductFormModal({
     handleImageUpload,
     handleSave,
     categories,
-    kardexProductId
+    kardexProductId,
+    onViewAllMovements
 }) {
     const fileInputRef = useRef(null);
     const [showSummary, setShowSummary] = useState(false);
@@ -419,7 +420,7 @@ export default function ProductFormModal({
                     )}
 
                     {/* ─── KARDEX: libreta de movimientos del servidor ─── */}
-                    {isEditing && kardexProductId && <KardexPanel productId={kardexProductId} />}
+                    {isEditing && kardexProductId && <KardexPanel productId={kardexProductId} onViewAll={onViewAllMovements} />}
                 </div>
 
                 <button onClick={handleSave} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-4 rounded-2xl font-black uppercase tracking-wider shadow-lg shadow-emerald-500/20 active:scale-95 transition-all">

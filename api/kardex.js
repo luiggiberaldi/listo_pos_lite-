@@ -1,6 +1,7 @@
 // Vercel Serverless Function — Kardex (Fase 5): libreta de movimientos.
 // GET  /api/kardex                   → estado de la apertura de la cuenta
 // GET  /api/kardex?product_id=<uuid>  → apertura + movimientos del producto
+// GET  /api/kardex?list=1&from&to&types&product_ids&before_id → pantalla Movimientos
 // POST /api/kardex {products,actor}   → open_kardex (una sola vez por cuenta)
 // Todo filtrado por la cuenta del token; nunca por un dato del cliente.
 
@@ -43,7 +44,35 @@ async function authenticateRequest(req, serviceKey) {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const KARDEX_FIELDS = 'id,operation_id,operation_type,mode,quantity,unit_mode,delta,stock_before,stock_after,reason,origin_ref,actor,device_id,created_at';
+const KARDEX_FIELDS = 'id,operation_id,product_id,operation_type,mode,quantity,unit_mode,delta,stock_before,stock_after,reason,origin_ref,actor,device_id,created_at';
+const KARDEX_TYPES = ['VENTA', 'AJUSTE_DIRECTO', 'CONTEO', 'VACIADO', 'ANULACION', 'APERTURA'];
+
+// Pantalla Movimientos: filtros validados → consulta REST (página por id
+// descendente) + parámetros del resumen. Nunca se pasa texto libre a la URL.
+// El Kardex empieza en la apertura: nada anterior a openedAt se muestra.
+function parseMovementFilters(get, openedAt) {
+    const iso = v => (v && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : null);
+    const requested = iso(get('from'));
+    const start = iso(openedAt);
+    const from = requested && start ? (requested > start ? requested : start) : (requested || start);
+    const to = iso(get('to'));
+    const types = (get('types') || '').split(',').filter(t => KARDEX_TYPES.includes(t));
+    const productIds = (get('product_ids') || '').split(',').filter(id => UUID_RE.test(id)).slice(0, 100);
+    const beforeId = Number.parseInt(get('before_id') || '', 10);
+    const limit = Math.min(Math.max(Number.parseInt(get('limit') || '50', 10) || 50, 1), 100);
+    let query = `select=${KARDEX_FIELDS}&order=id.desc&limit=${limit}`;
+    if (from) query += `&created_at=gte.${encodeURIComponent(from)}`;
+    if (to) query += `&created_at=lt.${encodeURIComponent(to)}`;
+    if (types.length) query += `&operation_type=in.(${types.join(',')})`;
+    if (productIds.length) query += `&product_id=in.(${productIds.join(',')})`;
+    if (Number.isFinite(beforeId) && beforeId > 0) query += `&id=lt.${beforeId}`;
+    return {
+        query,
+        firstPage: !(Number.isFinite(beforeId) && beforeId > 0),
+        limit,
+        summary: { from, to, types: types.length ? types : null, product_ids: productIds.length ? productIds : null },
+    };
+}
 
 export default async function handler(req, res) {
     const origin = req.headers['origin'] || '';
@@ -84,6 +113,25 @@ export default async function handler(req, res) {
         });
         const result = await rpcRes.json();
         return res.status(rpcRes.ok ? 200 : rpcRes.status).json(result);
+    }
+
+    if (req.query?.list !== undefined) {
+        const openRes = await fetch(`${SUPABASE_URL}/rest/v1/kardex_openings?account_id=eq.${account}&select=opened_at&limit=1`, { headers: dbHeaders });
+        if (!openRes.ok) return res.status(502).json({ error: 'No se pudo leer el Kardex' });
+        const openedAt = (await openRes.json())[0]?.opened_at;
+        if (!openedAt) return res.status(200).json({ movements: [], summary: { count: 0, entradas: 0, salidas: 0 }, hasMore: false });
+        const f = parseMovementFilters(k => (typeof req.query?.[k] === 'string' ? req.query[k] : null), openedAt);
+        const listRes = await fetch(`${SUPABASE_URL}/rest/v1/inventory_operations?account_id=eq.${account}&${f.query}`, { headers: dbHeaders });
+        if (!listRes.ok) return res.status(502).json({ error: 'No se pudo leer el Kardex' });
+        const movements = await listRes.json();
+        let summary = null;
+        if (f.firstPage) {
+            const sumRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/kardex_summary`, {
+                method: 'POST', headers: dbHeaders, body: JSON.stringify({ payload: { account_id: user.id, ...f.summary } }),
+            });
+            summary = sumRes.ok ? await sumRes.json() : null;
+        }
+        return res.status(200).json({ movements, summary, hasMore: movements.length === f.limit });
     }
 
     const productId = typeof req.query?.product_id === 'string' ? req.query.product_id : null;

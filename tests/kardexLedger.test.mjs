@@ -116,3 +116,69 @@ test('Kardex: un error HTTP al leer se informa, no se presenta como libreta vac�
     const fetchImpl = async () => ({ ok: false, status: 401, json: async () => ({ error: 'No autorizado' }) });
     await assert.rejects(fetchProductKardex(P, { fetchImpl, authHeaders: {} }), /No autorizado/);
 });
+
+// ── Pantalla Movimientos ──
+import {
+    dateRangeFor, buildSaleNumberIndex, describeMovement, formatUnits, groupByDay, movementsToCsv,
+} from '../src/utils/kardexLedger.js';
+import { fetchMovements } from '../src/services/kardexService.js';
+
+test('Movimientos: rangos de fecha en hora local [desde, hasta)', () => {
+    const now = new Date(2026, 9, 28, 15, 30); // 28-oct-2026 15:30 local
+    const iso = (y, m, d) => new Date(y, m, d).toISOString();
+    assert.deepEqual(dateRangeFor('hoy', now), { from: iso(2026, 9, 28), to: iso(2026, 9, 29) });
+    assert.deepEqual(dateRangeFor('ayer', now), { from: iso(2026, 9, 27), to: iso(2026, 9, 28) });
+    assert.deepEqual(dateRangeFor('7dias', now), { from: iso(2026, 9, 22), to: iso(2026, 9, 29) });
+    assert.deepEqual(dateRangeFor('mes', now), { from: iso(2026, 9, 1), to: iso(2026, 9, 29) });
+    assert.deepEqual(dateRangeFor('custom', now, { from: '2026-10-01', to: '2026-10-03' }), { from: iso(2026, 9, 1), to: iso(2026, 9, 4) });
+    assert.deepEqual(dateRangeFor('todo', now), { from: null, to: null });
+});
+
+test('Movimientos: número de venta local por id del servidor o id de operación', () => {
+    const idx = buildSaleNumberIndex([{ id: 'srv-1', syncQueueId: 'q-1', saleNumber: 1023 }, { id: 'q-2', syncQueueId: 'q-2', saleNumber: 1024 }, { id: 'x' }]);
+    assert.equal(describeMovement({ operation_type: 'VENTA', origin_ref: 'q-1' }, { saleNumbers: idx }), 'Venta #0001023');
+    assert.equal(describeMovement({ operation_type: 'ANULACION', origin_ref: 'srv-1' }, { saleNumbers: idx }), 'Anulación de venta #0001023');
+    assert.equal(describeMovement({ operation_type: 'VENTA', origin_ref: 'otra' }, { saleNumbers: idx }), 'Venta');
+    assert.equal(describeMovement({ operation_type: 'CONTEO', reason: 'CONTEO' }), 'Conteo');
+    assert.equal(describeMovement({ operation_type: 'CONTEO', reason: 'Conteo físico' }), 'Conteo · Conteo físico');
+    assert.equal(describeMovement({ operation_type: 'APERTURA', reason: 'Alta de producto' }), 'Saldo inicial (producto nuevo)');
+    assert.equal(describeMovement({ operation_type: 'APERTURA', reason: 'Corte de apertura' }), 'Saldo inicial (inicio del Kardex)');
+});
+
+test('Movimientos: cajas y kilos legibles', () => {
+    assert.equal(formatUnits(36, { packagingType: 'lote', unitsPerPackage: 12 }), '36 uds (3 cajas)');
+    assert.equal(formatUnits(12, { unit: 'paquete', unitsPerPackage: 12 }), '12 uds (1 caja)');
+    assert.equal(formatUnits(37.25, { unit: 'kg' }), '37,25 kg');
+    assert.equal(formatUnits(5, { unit: 'unidad' }), '5');
+});
+
+test('Movimientos: agrupa por día local conservando el orden', () => {
+    const d = (day, h) => new Date(2026, 9, day, h).toISOString();
+    const groups = groupByDay([{ id: 3, created_at: d(28, 10) }, { id: 2, created_at: d(28, 9) }, { id: 1, created_at: d(27, 18) }]);
+    assert.deepEqual(groups.map(g => [g.day, g.rows.map(r => r.id)]), [['2026-10-28', [3, 2]], ['2026-10-27', [1]]]);
+});
+
+test('Movimientos: CSV para Excel con BOM, ; y comas decimales', () => {
+    const csv = movementsToCsv([
+        { product_id: P, operation_type: 'VENTA', delta: -1.5, stock_after: 10.25, origin_ref: 'q', actor: 'Ana; caja 1', created_at: new Date(2026, 9, 28, 9, 5).toISOString() },
+        { product_id: 'x', operation_type: 'APERTURA', delta: 4, stock_after: 4, created_at: new Date(2026, 9, 28, 8, 0).toISOString() },
+    ], { productsById: new Map([[P, { name: 'Queso "llanero"' }]]), saleNumbers: new Map([['q', 7]]) });
+    assert.equal(csv.charCodeAt(0), 0xFEFF);
+    const lines = csv.slice(1).split('\r\n');
+    assert.equal(lines[0], 'Fecha;Hora;Producto;Movimiento;Entra;Sale;Saldo;Usuario');
+    assert.ok(lines[1].endsWith(';"Queso ""llanero""";Venta #0000007;;1,5;10,25;"Ana; caja 1"'), lines[1]);
+    assert.ok(lines[2].includes(';Producto eliminado;Saldo inicial (inicio del Kardex);;;4;'), lines[2]);
+});
+
+test('Movimientos: la consulta envía solo filtros válidos', async () => {
+    let url = null;
+    const fetchImpl = async u => { url = u; return { ok: true, status: 200, json: async () => ({ movements: [], summary: null, hasMore: false }) }; };
+    await fetchMovements({ from: '2026-10-28T04:00:00.000Z', types: ['VENTA', 'ANULACION'], productIds: [P], beforeId: 99, limit: 50 }, { fetchImpl, authHeaders: {} });
+    const q = new URL(url, 'http://x').searchParams;
+    assert.equal(q.get('list'), '1');
+    assert.equal(q.get('from'), '2026-10-28T04:00:00.000Z');
+    assert.equal(q.get('to'), null);
+    assert.equal(q.get('types'), 'VENTA,ANULACION');
+    assert.equal(q.get('product_ids'), P);
+    assert.equal(q.get('before_id'), '99');
+});

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
-import { Package, Plus, Trash2, X, Store, Tag, Pencil, Banknote, Search, ChevronLeft, ChevronRight, AlertTriangle, Box, LayoutGrid, List, Minus, ArrowUpDown, Clock, Percent, Printer, CheckSquare, Check, RotateCcw } from 'lucide-react';
+import { Package, Plus, Trash2, X, Store, Tag, Pencil, Banknote, Search, ChevronLeft, ChevronRight, AlertTriangle, Box, LayoutGrid, List, Minus, ArrowUpDown, Clock, Percent, Printer, CheckSquare, Check, RotateCcw, ArrowRightLeft } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { ProductShareModal } from '../components/ProductShareModal';
 
@@ -18,6 +18,7 @@ import CategoryManagerModal from '../components/Products/CategoryManagerModal';
 import BulkPriceAdjustModal from '../components/Products/BulkPriceAdjustModal';
 import ZeroStockModal from '../components/Products/ZeroStockModal';
 import KardexOpenButton from '../components/Products/KardexOpenButton';
+import MovementsScreen from '../components/Products/MovementsScreen';
 import { filterProductsByZeroScope } from '../utils/stockUtils';
 import { applyStockOperation, buildBulkZeroOperations } from '../services/inventoryOperationService';
 import { isUnknownProductResult } from '../sync/stockResolution';
@@ -55,6 +56,9 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     // Valores de stock con que se abrió el formulario de edición: si no
     // cambian, guardar NO toca el stock.
     const editStockRef = useRef(null);
+
+    // Pantalla Movimientos (Kardex completo); productId = abrir filtrada.
+    const [movements, setMovements] = useState({ open: false, productId: null });
 
     // Modal para ajuste rápido numérico de stock
     const [quickStockProduct, setQuickStockProduct] = useState(null);
@@ -611,6 +615,13 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                         <h2 className="text-lg sm:text-2xl font-black text-slate-800 dark:text-white tracking-tight truncate">Inventario</h2>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                        {products.length > 0 && (
+                            <button onClick={() => { triggerHaptic && triggerHaptic(); setMovements({ open: true, productId: null }); }}
+                                className="flex items-center gap-1.5 px-2.5 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl transition-all active:scale-95 text-xs font-bold" title="Movimientos (Kardex)">
+                                <ArrowRightLeft size={16} strokeWidth={2.5} />
+                                <span className="hidden sm:inline">Movimientos</span>
+                            </button>
+                        )}
                         {products.length > 0 && !isCajero && (
                             <>
                                 <KardexOpenButton products={products} actor={usuarioActivo?.nombre || null} triggerHaptic={triggerHaptic} showToast={showToast} />
@@ -999,6 +1010,14 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 </>
             )}
 
+            {/* ─── Movimientos (Kardex completo) ─────────────────── */}
+            <MovementsScreen
+                isOpen={movements.open}
+                initialProductId={movements.productId}
+                products={products}
+                onClose={() => setMovements({ open: false, productId: null })}
+            />
+
             {/* ─── Modal Añadir / Editar ───────────────────────── */}
             <ProductFormModal
                 isOpen={isModalOpen} onClose={handleClose} isEditing={!!editingId}
@@ -1027,6 +1046,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 handleSave={handleSave}
                 categories={categories}
                 kardexProductId={editingId}
+                onViewAllMovements={() => { const id = editingId; handleClose(); setMovements({ open: true, productId: id }); }}
             />
 
             {/* Share Modal */}

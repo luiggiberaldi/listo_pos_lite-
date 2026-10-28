@@ -49,3 +49,34 @@ Para cada producto: **saldo final = saldo de apertura + suma de movimientos conf
 ## Fuera de alcance
 
 Compras/facturas de proveedor como entradas, costo promedio, exportar a Excel/PDF, filtros por fecha y reconstrucción del pasado anterior a la apertura.
+
+## Pantalla Movimientos (añadida a pedido del usuario, 28-oct)
+
+- **Inventario → Movimientos**: todos los movimientos de la cuenta desde la apertura, agrupados por día. Filtros: Hoy / Ayer / 7 días / Este mes / Todo / elegir fechas; buscar producto (nombre o código); tipo (ventas, anulaciones, ajustes y conteos, saldos iniciales). Resumen del rango (entradas, salidas, n.º de movimientos) calculado en el servidor (`kardex_summary`), páginas de 50 con "Ver más" y descarga a Excel (CSV con `;`, BOM y coma decimal).
+- Tocar un producto filtra por él y muestra su libreta: saldo inicial + entradas − salidas = saldo hoy, en unidades y cajas, con la marca "La libreta cuadra".
+- La ficha del producto muestra solo los **últimos 5** y "Ver todos" abre Movimientos filtrada por ese producto.
+- Lo pendiente del dispositivo (colas) aparece aparte en amarillo y no suma.
+- El movimiento VENTA guarda `origin_ref = queue_id` (para mostrar el n.º de venta local) y quién cobró (`actor`).
+- Regla de UI del usuario: desplegables siempre redondeados (`src/components/ui/RoundedSelect.jsx`).
+
+## Correcciones encontradas en la prueba
+
+- Editar un producto cambiaba el stock a escondidas (lotes con el n.º de cajas viejo: 48 → 60; granel truncado: 37.25 → 37). Ahora solo cambia si se toca el campo, y como CONTEO (queda en el Kardex).
+- El resumen de "Iniciar Kardex" se cerraba solo.
+- Dos pruebas de la cola de inventario dependían de la fecha real (fallaban desde el 28-oct).
+
+## Estado en staging (2026-10-28)
+
+- 013 aplicada (texto verificado por SHA-256 `bad5fa9f…` antes de ejecutar). Huellas `md5(prosrc)`:
+  - `process_checkout` = `2312573529de4df66a6617bfc6f85100`
+  - `sync_product_catalog` = `44d3590da4a06bc0a39981ea8e8ee3e6`
+  - `open_kardex` = `0d23447ae844367962d82d88889c9ab7`
+  - `kardex_summary` = `26f5b01079c3ae6ba17eaa403885364a`
+  - `apply_inventory_operation` sin cambios = `2154af97adb1b7b2827aafa506f082c3`
+- Aceptación en vivo `staging/scripts/acceptance-kardex.mjs`: **29/29**. `data:verify` contra la foto previa: 0 violaciones.
+- Navegador (app de la rama contra staging): Iniciar Kardex (9 productos, 6 ajustados), venta de 1 caja (48 → 36), editar sin tocar stock (sigue 36), cambiar lotes 3 → 4 (Conteo +12), granel 37.25 intacto, Movimientos con filtros y "Ver todos" desde la ficha. `staging/scripts/kardex-check.mjs`: 9/9 productos cuadran.
+- `npm test` 196/196, `npm run build` ✓.
+
+## Publicación en producción (pendiente, requiere OK)
+
+Mismo procedimiento que 010-012: respaldo → 013 con `apply_migration` → comprobar las huellas de arriba → `data:verify` → unir el PR. 013 es compatible con la app actual (misma firma y respuesta de `process_checkout`), así que va antes que el código. Vuelta atrás del código: Instant Rollback en Vercel; la base puede quedarse con 013.

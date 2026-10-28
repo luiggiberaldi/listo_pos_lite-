@@ -47,6 +47,23 @@ export async function fetchProductKardex(productId, { fetchImpl, authHeaders } =
 }
 
 /**
+ * Pantalla Movimientos: una página (más recientes primero) con filtros.
+ * Devuelve { movements, summary (solo 1.ª página), hasMore }.
+ */
+export async function fetchMovements({ from = null, to = null, types = [], productIds = [], beforeId = null, limit = 50 } = {}, { fetchImpl, authHeaders } = {}) {
+    const doFetch = fetchImpl || fetch;
+    const auth = authHeaders || (fetchImpl ? {} : await getAuthHeaders());
+    const params = new URLSearchParams({ list: '1', limit: String(limit) });
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (types.length) params.set('types', types.join(','));
+    if (productIds.length) params.set('product_ids', productIds.slice(0, 100).join(','));
+    if (beforeId) params.set('before_id', String(beforeId));
+    const res = await doFetch(`/api/kardex?${params.toString()}`, { headers: { ...auth }, signal: timeoutSignal(15000) });
+    return readJson(res);
+}
+
+/**
  * Corte de apertura. Primero registra el catálogo (para que el servidor
  * conozca todos los productos) y luego envía el stock que ve el usuario.
  * El servidor lo hace una sola vez por cuenta (already_opened si se repite).
