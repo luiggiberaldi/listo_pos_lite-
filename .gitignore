@@ -40,6 +40,7 @@ api/*.js
 !api/update-profile.js
 !api/rates.js
 !api/inventory-operation.js
+!api/catalog-sync.js
 
 # Backups y datos locales
 backup_*.json
@@ -100,3 +101,8 @@ capacitor.config.json
 
 # Clon de pruebas staging (sandbox aislado; nunca entra a Git ni sus credenciales)
 staging/
+
+# Respaldos locales con datos de clientes (scripts/backup-export.mjs): nunca versionar
+/backups/
+# Foto de no-destrucción por defecto (con producción trae nombres y ventas reales)
+docs/backups/no-destruction/latest.json

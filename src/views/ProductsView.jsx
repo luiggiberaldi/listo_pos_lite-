@@ -20,6 +20,7 @@ import ZeroStockModal from '../components/Products/ZeroStockModal';
 import { filterProductsByZeroScope } from '../utils/stockUtils';
 import { applyStockOperation, buildBulkZeroOperations } from '../services/inventoryOperationService';
 import { isUnknownProductResult } from '../sync/stockResolution';
+import { inventoryQueueService } from '../services/inventoryQueueService';
 import { useProductContext } from '../context/ProductContext';
 import EmptyState from '../components/EmptyState';
 import Skeleton from '../components/Skeleton';
@@ -75,23 +76,9 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         }
 
         const pending = result.outcome === 'pending';
-        // Registro de movimiento si hubo cambio real (dominio de caja, legado)
-        if (delta !== 0) {
-            try {
-                const record = {
-                    id: `adj_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-                    timestamp: new Date().toISOString(),
-                    tipo: delta > 0 ? 'AJUSTE_ENTRADA' : 'AJUSTE_SALIDA',
-                    items: [{ id: productId, name: prodName, qty: Math.abs(delta) }],
-                    totalUsd: 0,
-                    totalBs: 0,
-                    status: pending ? 'PENDIENTE_SYNC' : 'COMPLETADA',
-                };
-                const sales = await storageService.getItem('bodega_sales_v1', []);
-                sales.push(record);
-                await storageService.setItem('bodega_sales_v1', sales);
-            } catch (e) { /* silencioso */ }
-        }
+        // Fase 3: los ajustes de inventario ya NO se registran en
+        // bodega_sales_v1 (caja y libro de stock son dominios distintos); la
+        // trazabilidad vive en el contrato de operación (inventory_operations).
 
         const descAction = mode === 'add'
             ? `+${delta} ${product?.unit || 'uds'}`
@@ -134,6 +121,16 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
         const confirmedByProduct = new Map(confirmed.map(o => [o.operation.product_id, o]));
         const pendingIds = new Set(pendingOps.map(o => o.operation.product_id));
+
+        // Fase 4: cada operación pendiente queda PERSISTIDA en la cola offline con
+        // su operation_id (el reintento será la MISMA operación, nunca una nueva).
+        const stockById = new Map(targets.map(t => [t.id, Number(t.stock ?? 0)]));
+        for (const o of pendingOps) {
+            inventoryQueueService
+                .addOperationToQueue(o.operation, { referenceStock: stockById.get(o.operation.product_id) ?? null })
+                .catch(err => console.warn('[Inventory Queue] No se pudo persistir la operación pendiente:', err?.message || err));
+        }
+
         const updatedProducts = products.map(p => {
             const ok = confirmedByProduct.get(p.id);
             // El vaciado deja el stock LOCAL en 0; el saldo del servidor (aún no
@@ -190,22 +187,8 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         }
 
         const pending = result.outcome === 'pending';
-        // Registro silencioso del ajuste de inventario (dominio de caja, legado)
-        try {
-            const product = products.find(p => p.id === productId);
-            const record = {
-                id: `adj_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-                timestamp: new Date().toISOString(),
-                tipo: delta > 0 ? 'AJUSTE_ENTRADA' : 'AJUSTE_SALIDA',
-                items: [{ id: productId, name: product?.name || 'Producto', qty: Math.abs(delta) }],
-                totalUsd: 0,
-                totalBs: 0,
-                status: pending ? 'PENDIENTE_SYNC' : 'COMPLETADA',
-            };
-            const sales = await storageService.getItem('bodega_sales_v1', []);
-            sales.push(record);
-            await storageService.setItem('bodega_sales_v1', sales);
-        } catch (e) { /* silencioso */ }
+        // (Fase 3: sin registro legado en bodega_sales_v1; el ajuste queda en
+        // inventory_operations vía el contrato.)
 
         if (pending && !meta.silent) {
             showToast('Servidor sin confirmar: ajuste guardado y PENDIENTE de sincronizar', 'warning');

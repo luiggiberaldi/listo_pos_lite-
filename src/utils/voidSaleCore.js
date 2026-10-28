@@ -1,5 +1,7 @@
 import { round2 } from './dinero.js';
 import { getLocalISODate, getLocalISOTime } from './dateHelpers.js';
+import { lineUnitsPerPackage, normalizeSaleLineQuantity } from './quantityRules.js';
+import { buildInventoryOperation, deterministicOperationId } from '../services/inventoryOperationService.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -33,6 +35,83 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function resolveCustomerId(sale) {
     return sale.customerId ?? sale.clienteId ?? null;
+}
+
+/**
+ * Cantidad a reponer por producto (unidad de inventario): exactamente lo que
+ * la venta descontó.
+ *  - Ventas desde esta versión guardan `stockQty` por línea (misma regla que
+ *    el checkout: suelta = qty, caja = qty × unidadesPorPaquete).
+ *  - Ventas anteriores (sin `stockQty`) se descontaron con la regla vieja:
+ *    caja = qty y suelta = qty ÷ unidadesPorPaquete; se repone eso mismo para
+ *    no inventar existencias. La línea suelta guardaba id `…_unit` sin
+ *    `_originalId`: se resuelve al producto real.
+ */
+export function computeRestockByProduct(sale, currentProducts = []) {
+    const productById = new Map((currentProducts || []).map(p => [p.id, p]));
+    const restock = new Map();
+    for (const item of sale?.items || []) {
+        const rawId = String(item._originalId || item.id || '');
+        const isUnitLine = item._mode === 'unit' || rawId.endsWith('_unit');
+        const productId = rawId.endsWith('_unit') ? rawId.slice(0, -'_unit'.length) : rawId;
+        if (!productId) continue;
+        const stored = Number(item.stockQty);
+        let qty;
+        if (item.stockQty !== undefined && item.stockQty !== null && Number.isFinite(stored)) {
+            qty = stored;
+        } else if (item.isWeight) {
+            qty = Number(item.qty) || 0;
+        } else if (isUnitLine) {
+            const upp = Number(item._unitsPerPackage) || lineUnitsPerPackage(productById.get(productId));
+            qty = (Number(item.qty) || 0) / (upp > 0 ? upp : 1);
+        } else {
+            qty = Number(item.qty) || 0;
+        }
+        restock.set(productId, (restock.get(productId) || 0) + qty);
+    }
+    return restock;
+}
+
+/**
+ * Operaciones de restitución de stock de una anulación (Fase 3): UNA
+ * operación ANULACION por producto, con `origin_ref = venta original` y un
+ * operation_id DETERMINISTA derivado de (venta, producto). Un reintento o una
+ * re-ejecución tras un cuelgue reenvía el MISMO ID: el servidor responde
+ * already_processed y jamás repone dos veces.
+ */
+export function buildVoidRestockOperations(sale, currentProducts = [], {
+    accountId = null,
+    deviceId = null,
+    actor = null,
+} = {}) {
+    if (!sale) throw new Error('Sale object is required to build restock operations.');
+    const restock = computeRestockByProduct(sale, currentProducts);
+    const productById = new Map((currentProducts || []).map(p => [p.id, p]));
+    const operations = [];
+
+    for (const [productId, qty] of restock) {
+        const product = productById.get(productId);
+        if (!product) continue; // sin producto en el catálogo local no hay saldo que reponer
+        const unit = product.unit || 'unidad';
+        // Fracción exacta: la restitución es el espejo del descuento de la venta.
+        const amount = normalizeSaleLineQuantity(qty);
+        if (!Number.isFinite(amount) || amount === 0) continue;
+        operations.push(buildInventoryOperation({
+            productId,
+            quantity: amount,
+            mode: 'delta',
+            operationType: 'ANULACION',
+            unitMode: unit,
+            reason: 'ANULACION_VENTA',
+            originRef: sale.id,
+            accountId,
+            deviceId,
+            actor,
+            operationId: deterministicOperationId(`void:${sale.id}:${productId}`),
+            exactQuantity: true,
+        }));
+    }
+    return operations;
 }
 
 function resolveVoidBusinessDate(sale, sessionDate, fallbackDate = null) {
@@ -127,17 +206,11 @@ export function buildVoidMutation({
     // ── 2. Revertir stock (saltar si skipRestock) ──
     let updatedProducts = [...currentProducts];
     if (!skipRestock && sale.items && sale.items.length > 0) {
+        const restock = computeRestockByProduct(sale, currentProducts);
         updatedProducts = currentProducts.map(p => {
-            const itemsInSale = sale.items.filter(i => (i._originalId || i.id) === p.id);
-            if (itemsInSale.length > 0) {
-                const totalToRestore = itemsInSale.reduce((sum, item) => {
-                    if (item.isWeight) return sum + item.qty;
-                    if (item._mode === 'unit') return sum + (item.qty / (item._unitsPerPackage || 1));
-                    return sum + item.qty;
-                }, 0);
-                return { ...p, stock: (p.stock || 0) + totalToRestore };
-            }
-            return p;
+            if (!restock.has(p.id)) return p;
+            const totalToRestore = restock.get(p.id);
+            return { ...p, stock: (p.stock || 0) + totalToRestore };
         });
     }
 

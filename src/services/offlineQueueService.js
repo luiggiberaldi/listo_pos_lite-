@@ -11,8 +11,13 @@ import {
   nextRetryAt,
   pruneSyncedItems,
   resolveOperationId,
+  resolveConflictForRetry,
+  toConflictedState,
+  isResolvableConflictStatus,
+  conflictSaleStatus,
 } from './offlineQueuePolicy';
 import { getAuthHeaders } from './authHeaders';
+import { resyncLocalCatalog } from './catalogSyncService';
 
 const QUEUE_KEY = 'offline_sales_queue';
 const SALES_KEY = 'bodega_sales_v1';
@@ -23,7 +28,12 @@ localforage.config({
   storeName: APP_STORAGE_STORE_NAME,
 });
 
-let syncInFlight = false;
+// Seguro contra sincronizaciones simultáneas. Si una corrida queda colgada
+// (petición sin respuesta), el seguro se libera solo tras SYNC_LOCK_MAX_MS
+// para que la cola no quede bloqueada hasta recargar la app.
+const SYNC_LOCK_MAX_MS = 60000;
+let syncStartedAt = 0;
+let syncRun = 0;
 
 function getQueueStorageKey() {
   const accountId = getActiveAccountId();
@@ -33,6 +43,35 @@ function getQueueStorageKey() {
 function getDeviceId() {
   if (typeof localStorage === 'undefined') return 'unknown-device';
   return localStorage.getItem(DEVICE_KEY) || 'unknown-device';
+}
+
+async function markLocalSaleConflict(item, conflict) {
+  const key = getActiveAccountId() ? getScopedStorageKey(SALES_KEY) : null;
+  if (!key) return;
+
+  const sales = await localforage.getItem(key);
+  if (!Array.isArray(sales)) return;
+
+  const updated = sales.map(sale => {
+    const matches = sale.syncQueueId === item.queue_id || sale.id === item.queue_id;
+    if (!matches) return sale;
+    return {
+      ...sale,
+      // Fase 2: venta ya cobrada en conflicto funcional (stock o catálogo).
+      // Visible y pendiente de resolución: ni COMPLETADA ni descartada.
+      status: conflictSaleStatus(conflict),
+      stockConflict: conflict || null,
+    };
+  });
+
+  if (JSON.stringify(updated) !== JSON.stringify(sales)) {
+    await localforage.setItem(key, updated);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('app_storage_update', {
+        detail: { key: SALES_KEY, source: 'offline_queue_conflict' },
+      }));
+    }
+  }
 }
 
 function notifyQueueChanged() {
@@ -129,15 +168,18 @@ export const offlineQueueService = {
       pending: queue.filter(item => item.sync_status === 'pending').length,
       failed: queue.filter(item => item.sync_status === 'failed').length,
       synced: queue.filter(item => item.sync_status === 'synced').length,
+      conflicted: queue.filter(item => item.sync_status === 'conflicted').length,
     };
   },
 
   async syncPendingSales() {
-    if (syncInFlight || typeof navigator !== 'undefined' && !navigator.onLine) return;
+    if (syncStartedAt && Date.now() - syncStartedAt < SYNC_LOCK_MAX_MS) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
     const accountId = getActiveAccountId();
     if (!accountId) return;
 
-    syncInFlight = true;
+    syncStartedAt = Date.now();
+    const run = ++syncRun;
     try {
       let queue = pruneSyncedItems(await readQueue());
       const now = Date.now();
@@ -156,14 +198,23 @@ export const offlineQueueService = {
 
           // El token se obtiene en CADA reintento (nunca se guarda en la cola):
           // así una venta encolada hace días usa la sesión vigente.
-          const authHeaders = await getAuthHeaders();
-          const res = await fetch('/api/checkout', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...authHeaders },
-            body: JSON.stringify(payloadWithOrigin),
-            signal: AbortSignal.timeout(10000),
-          });
-          const data = await res.json().catch(() => ({}));
+          const postCheckout = async () => {
+            const authHeaders = await getAuthHeaders();
+            const res = await fetch('/api/checkout', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...authHeaders },
+              body: JSON.stringify(payloadWithOrigin),
+              signal: AbortSignal.timeout(10000),
+            });
+            return { res, data: await res.json().catch(() => ({})) };
+          };
+          let { res, data } = await postCheckout();
+
+          // Producto aún no registrado en el catálogo del servidor: se sube el
+          // catálogo local y se reintenta la MISMA operación (mismo queue_id).
+          if (data.status === 'unknown_product' && await resyncLocalCatalog()) {
+            ({ res, data } = await postCheckout());
+          }
 
           if (res.status === 401) {
             // Sesión vencida o ausente: la venta NO está mal, solo falta iniciar
@@ -173,6 +224,19 @@ export const offlineQueueService = {
               next_attempt_at: nextRetryAt(3),
               last_error: 'Sesión expirada: vuelve a iniciar sesión para sincronizar.',
             } : q);
+            await writeQueue(queue);
+            continue;
+          }
+
+          if (isResolvableConflictStatus(data.status)) {
+            // Conflicto funcional explícito y recuperable (Fase 2): stock negativo
+            // prohibido o producto no vinculado. La venta ya cobrada se conserva
+            // como 'conflicted' — ni sincronizada ni descartada. Solo una
+            // resolución explícita (retryConflicted) reactiva este operation_id.
+            // (En staging faltaba este continue: el conflicto se sobrescribía
+            // como 'synced' en las líneas siguientes.)
+            queue = queue.map(q => q.id === item.id ? toConflictedState(q, data) : q);
+            await markLocalSaleConflict(item, data);
             await writeQueue(queue);
             continue;
           }
@@ -205,8 +269,29 @@ export const offlineQueueService = {
 
       await writeQueue(pruneSyncedItems(queue));
     } finally {
-      syncInFlight = false;
+      if (run === syncRun) syncStartedAt = 0;
     }
+  },
+
+  // Marca como conflicto una entrada recién creada cuyo primer intento online
+  // ya fue bloqueado por la política de negativos.
+  async markQueueConflict(queueId, conflict) {
+    const queue = await readQueue();
+    const entry = queue.find(item => item.queue_id === queueId);
+    if (!entry) return null;
+    const updated = queue.map(item => item.queue_id === queueId ? toConflictedState(item, conflict) : item);
+    await writeQueue(updated);
+    await markLocalSaleConflict(entry, conflict);
+    return updated.find(item => item.queue_id === queueId);
+  },
+
+  // Recuperación explícita tras resolver la causa (stock corregido o política
+  // cambiada): reactiva los conflictos con su MISMO operation_id.
+  async retryConflicted() {
+    const queue = await readQueue();
+    const reset = queue.map(item => item.sync_status === 'conflicted' ? resolveConflictForRetry(item) : item);
+    await writeQueue(reset);
+    await this.syncPendingSales();
   },
 
   async retryFailed() {

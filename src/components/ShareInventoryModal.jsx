@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
 import { storageService } from '../utils/storageService';
 import { Share2, Download, X, Copy, Check, Loader2, AlertTriangle, Package, Users, ShoppingBag, Database } from 'lucide-react';
+import { buildImportOpeningOperations, applyStockOperation, foldStockOutcome } from '../services/inventoryOperationService';
+import { inventoryQueueService } from '../services/inventoryQueueService';
+import { pushCatalogSync } from '../services/catalogSyncService';
+import { asLocalOnlyIfUnknown } from '../sync/stockResolution';
 
 // IDB keys per group
 const SHARE_GROUPS = {
@@ -46,6 +50,9 @@ export default function ShareInventoryModal({ isOpen, onClose }) {
     const [shareCode, setShareCode] = useState('');
     const [importCode, setImportCode] = useState('');
     const [importResult, setImportResult] = useState(null);
+    // Fase 3: modo de importación de cantidades, EXPLÍCITO (nunca silencioso).
+    const [importMode, setImportMode] = useState('keep');
+    const [currentProducts, setCurrentProducts] = useState([]);
     const [copied, setCopied] = useState(false);
     const [selected, setSelected] = useState({ inventory: true, customers: false, sales: false });
     const [counts, setCounts] = useState({ inventory: 0, customers: 0, sales: 0 });
@@ -129,6 +136,10 @@ export default function ShareInventoryModal({ isOpen, onClose }) {
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Error al importar');
             setImportResult(data);
+            // Saldo local actual para calcular el plan de cantidades (advertencia
+            // previa a la confirmación, jamás una sobrescritura silenciosa).
+            const current = await storageService.getItem('bodega_products_v1', []);
+            setCurrentProducts(Array.isArray(current) ? current : []);
         } catch (err) {
             setError(err.message);
         } finally {
@@ -140,8 +151,69 @@ export default function ShareInventoryModal({ isOpen, onClose }) {
         if (!importResult) return;
         setLoading(true);
         try {
+            const batchId = importCode.replace(/\D/g, '');
+
+            // ── 1. Catálogo: metadatos upsert. Las cantidades JAMÁS se
+            // sobrescriben aquí (Fase 2: metadatos no mutan existencias); el
+            // saldo local se conserva (o arranca en 0 si el producto es nuevo)
+            // hasta que el contrato confirme cada operación. ──
+            const currentList = Array.isArray(currentProducts) && currentProducts.length > 0
+                ? currentProducts
+                : await storageService.getItem('bodega_products_v1', []);
+            const currentListSafe = Array.isArray(currentList) ? currentList : [];
+            const importedList = Array.isArray(importProducts) ? importProducts : [];
+
+            let mergedProducts = currentListSafe;
+            if (importedList.length > 0) {
+                const upserted = new Map(currentListSafe.map(p => [p.id, p]));
+                for (const imported of importedList) {
+                    if (!imported?.id) continue;
+                    const existing = upserted.get(imported.id) || null;
+                    upserted.set(imported.id, {
+                        ...(existing || {}),
+                        ...imported,
+                        stock: existing ? Number(existing.stock ?? 0) : 0,
+                    });
+                }
+                mergedProducts = [...upserted.values()];
+                await storageService.setItem('bodega_products_v1', mergedProducts);
+                // Registrar el catálogo en el servidor para que las operaciones
+                // APERTURA encuentren los productos importados.
+                await pushCatalogSync(mergedProducts).catch(() => {});
+            }
+
+            // ── 2. Cantidades vía el contrato de operación: UNA operación
+            // explícita (APERTURA) por producto, con operation_id determinista
+            // por (lote, modo, producto) — reimportar el mismo lote es
+            // idempotente (already_processed, sin doble efecto). Lo no
+            // confirmado queda PENDIENTE en la cola offline con su operation_id.
+            // ──
+            let finalProducts = mergedProducts;
+            if (importPlan && importPlan.operations.length > 0) {
+                const targetById = new Map(importPlan.changes.map(c => [c.id, c.to]));
+                const referenceById = new Map(currentListSafe.map(p => [p.id, Number(p.stock ?? 0)]));
+                for (const operation of importPlan.operations) {
+                    const outcome = asLocalOnlyIfUnknown(await applyStockOperation(operation));
+                    finalProducts = foldStockOutcome(
+                        finalProducts,
+                        operation.product_id,
+                        outcome,
+                        targetById.get(operation.product_id)
+                    );
+                    if (outcome.outcome !== 'confirmed') {
+                        inventoryQueueService
+                            .addOperationToQueue(operation, { referenceStock: referenceById.get(operation.product_id) ?? null })
+                            .catch(err => console.warn('[Import Inventory] No se pudo encolar la operación pendiente:', err?.message || err));
+                    }
+                }
+                await storageService.setItem('bodega_products_v1', finalProducts);
+            }
+
+            // ── 3. Resto de grupos (caja, clientes, etc.) tal cual. El
+            // inventario ya quedó gestionado por el contrato. ──
             if (importResult.idb && typeof importResult.idb === 'object') {
                 for (const [key, value] of Object.entries(importResult.idb)) {
+                    if (key === 'bodega_products_v1') continue;
                     await storageService.setItem(key, value);
                 }
                 if (importResult.ls && typeof importResult.ls === 'object') {
@@ -150,8 +222,6 @@ export default function ShareInventoryModal({ isOpen, onClose }) {
                     }
                 }
             } else {
-                if (Array.isArray(importResult.products) && importResult.products.length > 0)
-                    await storageService.setItem('bodega_products_v1', importResult.products);
                 if (Array.isArray(importResult.categories) && importResult.categories.length > 0)
                     await storageService.setItem('my_categories_v1', importResult.categories);
                 if (Array.isArray(importResult.customers) && importResult.customers.length > 0)
@@ -203,6 +273,17 @@ export default function ShareInventoryModal({ isOpen, onClose }) {
     const importProducts = importResult?.idb?.['bodega_products_v1'] ?? importResult?.products;
     const importCustomers = importResult?.idb?.['bodega_customers_v1'] ?? importResult?.customers;
     const importSales = importResult?.idb?.['bodega_sales_v1'] ?? importResult?.sales;
+
+    // Fase 3: plan de cantidades de la importación (alimenta la advertencia
+    // previa). El mismo lote+modo produce las MISMAS operaciones (idempotente).
+    const importPlan = (importResult && Array.isArray(importProducts) && importProducts.length > 0)
+        ? buildImportOpeningOperations({
+            importedProducts: importProducts,
+            currentProducts,
+            mode: importMode,
+            batchId: importCode.replace(/\D/g, ''),
+        })
+        : null;
 
     return (
         <div
@@ -400,9 +481,51 @@ export default function ShareInventoryModal({ isOpen, onClose }) {
                                     )}
                                 </div>
 
-                                <p className="text-[10px] text-amber-500 font-medium mb-4">
-                                    ⚠️ Los datos existentes serán reemplazados por los importados.
-                                </p>
+                                {/* Fase 3: modo de cantidades EXPLÍCITO + advertencia
+                                    calculada. Nunca se sobrescribe stock en silencio. */}
+                                <div className="text-left space-y-2 mb-3">
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                        ¿Cómo tratar las cantidades?
+                                    </p>
+                                    {[
+                                        { id: 'keep', label: 'Mantener saldos', desc: 'Solo metadatos del catálogo. Las cantidades locales NO cambian.' },
+                                        { id: 'opening', label: 'Corte de apertura', desc: 'Los productos sin saldo (nuevos o en 0) reciben la cantidad importada.' },
+                                        { id: 'replace', label: 'Reemplazar cantidades', desc: 'Toda diferencia se aplica vía el contrato de inventario.' },
+                                    ].map(opt => (
+                                        <button
+                                            key={opt.id}
+                                            onClick={() => setImportMode(opt.id)}
+                                            className={`w-full text-left p-2.5 rounded-xl border-2 transition-all ${importMode === opt.id
+                                                ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-900/20'
+                                                : 'border-slate-200 dark:border-slate-700'}`}
+                                        >
+                                            <p className={`text-xs font-bold ${importMode === opt.id ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                                                {opt.label}
+                                            </p>
+                                            <p className="text-[9px] text-slate-400">{opt.desc}</p>
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {importPlan && (
+                                    <div className={`text-[10px] font-medium rounded-xl p-2.5 mb-4 ${importPlan.changes.length > 0
+                                        ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400'
+                                        : 'bg-slate-50 dark:bg-slate-800 text-slate-500'}`}>
+                                        {importPlan.changes.length > 0
+                                            ? <>⚠️ {importPlan.changes.length === 1 ? '1 cantidad cambiará' : `${importPlan.changes.length} cantidades cambiarán`} vía el contrato{importPlan.changes[0] ? ` (ej: ${importPlan.changes[0].name} ${importPlan.changes[0].from} → ${importPlan.changes[0].to})` : ''}.</>
+                                            : 'Las cantidades no cambiarán.'}
+                                        {importPlan.ignored.length > 0 && (
+                                            <span className="block mt-1">
+                                                {importPlan.ignored.length === 1 ? '1 diferencia se conserva' : `${importPlan.ignored.length} diferencias se conservan`} con el saldo local.
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                                {(importCustomers?.length > 0 || importSales?.length > 0) && (
+                                    <p className="text-[10px] text-amber-500 font-medium mb-4">
+                                        ⚠️ Los clientes/ventas importados reemplazan los registros existentes de esos grupos.
+                                    </p>
+                                )}
                                 <div className="flex gap-3">
                                     <button
                                         onClick={() => setImportResult(null)}

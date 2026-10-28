@@ -14,6 +14,45 @@ export function newOperationId() {
 export function resolveOperationId(payload, generateId = newOperationId) {
     return payload?.queue_id || payload?.operation_id || generateId();
 }
+// Fase 2 (conflicto de stock): una venta ya cobrada que encuentra el servidor
+// con stock negativo prohibido se conserva como 'conflicted'. NUNCA se marca
+// sincronizada ni se descarta; solo una resolución explícita la reactiva.
+export function isConflictItem(item) {
+    return item?.sync_status === 'conflicted';
+}
+
+export function toConflictedState(item, conflict) {
+    return {
+        ...item,
+        sync_status: 'conflicted',
+        conflict: conflict || null,
+        last_error: conflict?.message || 'Conflicto de stock (requiere resolución)',
+        next_attempt_at: null,
+    };
+}
+
+/**
+ * Recuperación explícita: solo una acción administrativa (corregir el stock o
+ * la política) reactiva el reintento — con el MISMO operation_id.
+ */
+export function resolveConflictForRetry(item) {
+    if (!isConflictItem(item)) return item;
+    return { ...item, sync_status: 'pending', attempts: 0, next_attempt_at: null };
+}
+
+// Conflictos FUNCIONALES del servidor (nunca transitorios): 'stock_conflict'
+// (política de negativos) y 'unknown_product' (producto no vinculado al
+// catálogo). Ambos preservan la venta, no se marcan sincronizados ni se
+// descartan, y requieren resolución explícita antes del reintento.
+export function isResolvableConflictStatus(status) {
+    return status === 'stock_conflict' || status === 'unknown_product';
+}
+
+// Estado local de la venta según el tipo de conflicto (visible en historial).
+export function conflictSaleStatus(conflict) {
+    return conflict?.status === 'unknown_product' ? 'CONFLICTO_CATALOGO' : 'CONFLICTO_STOCK';
+}
+
 export const RETRY_BASE_MS = 2000;
 export const RETRY_MAX_MS = 5 * 60 * 1000;
 

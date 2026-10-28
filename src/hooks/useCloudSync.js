@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import localforage from 'localforage';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { storageService } from '../utils/storageService';
+import { pushCatalogSync } from '../services/catalogSyncService';
 import { useAuthStore } from './store/useAuthStore';
 import { APP_STORAGE_DB_NAME, APP_STORAGE_STORE_NAME, getActiveAccountId, getScopedStorageKey, setActiveAccountId } from '../config/storageScope';
 import { hashPayload } from '../sync/syncHash';
@@ -438,6 +439,18 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
             // Recordar el updated_at que asignó el servidor a NUESTRO push, para que el
             // polling no vuelva a descargar lo que este mismo dispositivo acaba de subir.
             if (upserted?.[0]?.updated_at) _ownUpdatedAt[key] = upserted[0].updated_at;
+
+            // Fase 2: el documento de sync (estado local) viaja SEPARADO del
+            // catálogo canónico. Los metadatos del catálogo se registran/
+            // actualizan sin mutar existencias — el servidor ignora el campo
+            // stock en actualizaciones, así una lista desactualizada jamás
+            // sobrescribe el saldo central.
+            if (key === 'bodega_products_v1') {
+                const catalogList = Array.isArray(sanitizedValue)
+                    ? sanitizedValue
+                    : (typeof sanitizedValue === 'string' ? JSON.parse(sanitizedValue) : []);
+                pushCatalogSync(catalogList).catch(() => {});
+            }
 
             // Broadcast ligero para llaves de Realtime (tasas/config < 1KB)
             // Usa canal Broadcast en vez de postgres_changes para NO activar

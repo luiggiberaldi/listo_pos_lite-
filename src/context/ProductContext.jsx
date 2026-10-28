@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { storageService } from '../utils/storageService';
 import { BODEGA_CATEGORIES } from '../config/categories';
 import { runStockOperation } from '../services/inventoryOperationService';
+import { inventoryQueueService } from '../services/inventoryQueueService';
 import { getActiveAccountId } from '../config/storageScope';
 import { resolveLocalStock, isUnknownProductResult } from '../sync/stockResolution';
 
@@ -232,6 +233,13 @@ export function ProductProvider({ children, rates }) {
             const stockSync = result.outcome === 'pending'
                 ? 'pending'
                 : (result.status === 'local_only' ? 'local_only' : 'synced');
+            if (result.outcome === 'pending' && result.operation) {
+                // Fase 4: el comando queda PERSISTIDO en la cola offline con su
+                // operation_id; el reintento será la MISMA operación, nunca una nueva.
+                inventoryQueueService
+                    .addOperationToQueue(result.operation, { referenceStock: Number(product?.stock ?? 0) })
+                    .catch(err => console.warn('[Inventory Queue] No se pudo persistir la operación pendiente:', err?.message || err));
+            }
             setProducts(prevProducts => {
                 const updated = prevProducts.map(p => p.id === productId
                     ? {

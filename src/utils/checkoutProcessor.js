@@ -5,10 +5,12 @@ import { useAuthStore } from '../hooks/store/useAuthStore';
 import { round2, subR, sumR, mulR } from './dinero';
 import { supabase } from '../core/supabaseClient';
 import { offlineQueueService } from '../services/offlineQueueService';
-import { newOperationId } from '../services/offlineQueuePolicy';
+import { getActiveAccountId } from '../config/storageScope';
+import { newOperationId, isResolvableConflictStatus, conflictSaleStatus } from '../services/offlineQueuePolicy';
 import { getAuthHeaders } from '../services/authHeaders';
 import { PrinterSerial } from '../services/PrinterSerial';
 import { getLocalISODate, getLocalISOTime } from './dateHelpers';
+import { saleLineStockQuantity } from './quantityRules.js';
 
 const SALES_KEY = 'bodega_sales_v1';
 
@@ -59,8 +61,10 @@ export async function processSaleTransaction({
     // Preparar el Payload para la validación centralizada
     // Se envía currency y methodLabel para que el RPC pueda mapear cuentas contables
     // correctamente sin depender del methodId hardcodeado.
-    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const toUuid = id => (id && UUID_RE.test(id) ? id : crypto.randomUUID());
+    // Fase 2 (fin): el ID del carrito viaja TAL CUAL (identidad canónica del
+    // catálogo local). Nada se renombra aquí: un ID no vinculado se rechaza
+    // en el servidor con 'unknown_product' explícito y resoluble — jamás se
+    // crea un producto fantasma con un UUID distinto al catálogo.
 
     // Fase 1 (idempotencia): el operation_id se asigna ANTES del primer
     // intento online y viaja como queue_id en todos los caminos (online,
@@ -70,7 +74,9 @@ export async function processSaleTransaction({
 
     const rpcPayload = {
       total: cartTotalUsd,
-      cart: cart.map(i => ({ id: toUuid(i._originalId || i.id), qty: i.qty, priceUsd: i.priceUsd, name: i.name || '' })),
+      // qty/priceUsd: lo cobrado (en la unidad vendida). stock_qty: lo que se
+      // descuenta del inventario (6 uds de una caja de 12 → 0.5 caja).
+      cart: cart.map(i => ({ id: i._originalId || i.id, qty: i.qty, stock_qty: saleLineStockQuantity(i), priceUsd: i.priceUsd, name: i.name || '' })),
       payments: payments.map(p => ({
         methodId: p.methodId,
         amountUsd: p.amountUsd,
@@ -78,11 +84,14 @@ export async function processSaleTransaction({
         methodLabel: p.methodLabel || p.methodId // Nombre legible: "Pago Móvil", "Binance", etc.
       })),
       fiadoUsd: fiadoAmountUsd,
-      queue_id: operationId
+      queue_id: operationId,
+      account_id: getActiveAccountId()
     };
 
     let saleMode = 'online';
     let finalSaleId = null;
+    let conflictData = null;
+    let catalogPending = false;
 
     if (navigator.onLine) {
        try {
@@ -97,12 +106,32 @@ export async function processSaleTransaction({
          const data = await checkoutPromise;
          if (data.error || data.code) throw new Error(data.message || data.error || 'RPC error');
 
-         // data.sale_id es SIEMPRE el ID canónico: si el servidor ya conocía
-         // esta operación (respuesta previa perdida), responde duplicate:true
-         // con el sale_id de la venta existente, sin descontar de nuevo.
-         finalSaleId = data.sale_id;
-         if (data.duplicate) {
-            console.info(`[Checkout] Operación ${operationId} ya procesada; venta canónica ${data.sale_id}.`);
+         if (data.status === 'unknown_product') {
+            // Producto aún no registrado en el catálogo del servidor (antes el
+            // proxy lo creaba al vuelo). No se bloquea al cajero: la venta va a
+            // la cola como pendiente y la cola registra el catálogo local y
+            // reintenta la MISMA operación; solo si sigue sin vincularse queda
+            // como conflicto visible.
+            saleMode = 'offline';
+            catalogPending = true;
+         } else if (isResolvableConflictStatus(data.status)) {
+            // Venta ya cobrada bloqueada por un conflicto funcional (Fase 2):
+            // stock negativo prohibido o producto no vinculado. Conflicto
+            // EXPLÍCITO y recuperable: se preserva en la cola como 'conflicted'
+            // — nunca sincronizada ni descartada — con el mismo operation_id
+            // para reintentar tras la resolución.
+            conflictData = data;
+            await offlineQueueService.addSaleToQueue(rpcPayload);
+            await offlineQueueService.markQueueConflict(operationId, data);
+            saleMode = 'conflict';
+         } else {
+            // data.sale_id es SIEMPRE el ID canónico: si el servidor ya conocía
+            // esta operación (respuesta previa perdida), responde duplicate:true
+            // con el sale_id de la venta existente, sin descontar de nuevo.
+            finalSaleId = data.sale_id;
+            if (data.duplicate) {
+               console.info(`[Checkout] Operación ${operationId} ya procesada; venta canónica ${data.sale_id}.`);
+            }
          }
        } catch (err) {
          console.warn("[Checkout] Fallo en /api/checkout, cambiando a MODO OFFLINE", err);
@@ -118,6 +147,7 @@ export async function processSaleTransaction({
        // reintento posterior será idéntico para el servidor, que devolverá la
        // venta canónica si este primer intento ya la había procesado.
        await offlineQueueService.addSaleToQueue(rpcPayload);
+       if (catalogPending) offlineQueueService.syncPendingSales().catch(() => {});
     }
 
     // ── GESTIÓN DE CACHÉ LOCAL (Para no bloquear al usuario) ──
@@ -136,8 +166,11 @@ export async function processSaleTransaction({
         id: finalSaleId || operationId,
         syncQueueId: operationId,
         tipo: tipoVenta,
-        status: saleMode === 'online' ? 'COMPLETADA' : 'PENDIENTE_SYNC',
-        items: cart.map(i => ({ id: i.id, name: i.name, qty: i.qty, priceUsd: i.priceUsd, costBs: i.costBs || 0, costUsd: i.costUsd || 0, isWeight: i.isWeight })),
+        status: saleMode === 'online' ? 'COMPLETADA' : (saleMode === 'conflict' ? conflictSaleStatus(conflictData) : 'PENDIENTE_SYNC'),
+        stockConflict: conflictData,
+        // _originalId/_mode/stockQty: la anulación repone exactamente lo que
+        // esta venta descontó (sin depender del producto en ese momento).
+        items: cart.map(i => ({ id: i.id, _originalId: i._originalId || null, _mode: i._mode || null, stockQty: saleLineStockQuantity(i), name: i.name, qty: i.qty, priceUsd: i.priceUsd, costBs: i.costBs || 0, costUsd: i.costUsd || 0, isWeight: i.isWeight })),
         cartSubtotalUsd: cartSubtotalUsd,
         discountType: discountData?.type || null,
         discountValue: discountData?.value || 0,
@@ -184,14 +217,8 @@ export async function processSaleTransaction({
     const updatedProducts = products.map(p => {
         const cartItemsForThisProduct = cart.filter(i => (i._originalId || i.id) === p.id);
         if (cartItemsForThisProduct.length > 0) {
-            const totalDeducted = cartItemsForThisProduct.reduce((sum, item) => {
-                if (item.isWeight) return sum + item.qty;
-                if (item._mode === 'unit') {
-                    const pkg = item._unitsPerPackage > 0 ? item._unitsPerPackage : 1;
-                    return sum + (item.qty / pkg);
-                }
-                return sum + item.qty;
-            }, 0);
+            // Misma cantidad que viaja al servidor como stock_qty.
+            const totalDeducted = cartItemsForThisProduct.reduce((sum, item) => sum + saleLineStockQuantity(item), 0);
 
             const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
             const newStock = (p.stock ?? 0) - totalDeducted;

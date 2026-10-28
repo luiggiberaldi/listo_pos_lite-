@@ -33,6 +33,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import Confetti from '../components/Confetti';
 import { processSaleTransaction } from '../utils/checkoutProcessor';
 import { useSalesKeyboard } from '../hooks/useSalesKeyboard';
+import { lineUnitsPerPackage, saleLineStockQuantity } from '../utils/quantityRules';
 
 const SALES_KEY = 'bodega_sales_v1';
 
@@ -398,12 +399,11 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
             const addingQty = existingInCart ? (qtyOverride || 1) : qtyToAdd;
             const existingQtyForThis = existingInCart ? existingInCart.qty : 0;
             const newQty = existingQtyForThis + addingQty;
-            const stockNeeded = forceMode === 'unit' ? newQty / (product.unitsPerPackage || 1) : newQty;
+            const stockNeeded = forceMode === 'unit' ? newQty : newQty * lineUnitsPerPackage(product);
 
             const otherCartItems = currentCart.filter(i => (i._originalId || i.id) === product.id && i.id !== cartId);
             const otherStockUsed = otherCartItems.reduce((sum, item) => {
-                if (item._mode === 'unit') return sum + (item.qty / (item._unitsPerPackage || 1));
-                return sum + item.qty;
+                return sum + saleLineStockQuantity(item);
             }, 0);
 
             if (stockNeeded + otherStockUsed > currentStock) {
@@ -419,12 +419,11 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
             const existingInCart = currentCart.find(i => i.id === cartId && i.priceUsd === priceToUse);
             const existingQtyForThis = existingInCart ? existingInCart.qty : 0;
             const newQty = existingQtyForThis + (qtyOverride || 1);
-            const stockNeeded = forceMode === 'unit' ? newQty / (product.unitsPerPackage || 1) : newQty;
+            const stockNeeded = forceMode === 'unit' ? newQty : newQty * lineUnitsPerPackage(product);
 
             const otherCartItems = currentCart.filter(i => (i._originalId || i.id) === product.id && i.id !== cartId);
             const otherStockUsed = otherCartItems.reduce((sum, item) => {
-                if (item._mode === 'unit') return sum + (item.qty / (item._unitsPerPackage || 1));
-                return sum + item.qty;
+                return sum + saleLineStockQuantity(item);
             }, 0);
 
             if (stockNeeded + otherStockUsed > currentStock) {
@@ -476,10 +475,9 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                     const totalUsed = currentCart.reduce((sum, item) => {
                         if ((item._originalId || item.id) !== originalId) return sum;
                         if (item.id === id) return sum;
-                        if (item._mode === 'unit') return sum + (item.qty / (item._unitsPerPackage || 1));
-                        return sum + item.qty;
+                        return sum + saleLineStockQuantity(item);
                     }, 0);
-                    const thisItemStock = cartItem._mode === 'unit' ? newQty / (cartItem._unitsPerPackage || 1) : newQty;
+                    const thisItemStock = saleLineStockQuantity({ ...cartItem, qty: newQty });
                     if (totalUsed + thisItemStock > availableStock) {
                         playError();
                         showToast(`${cartItem.name}: stock maximo alcanzado`, 'warning');

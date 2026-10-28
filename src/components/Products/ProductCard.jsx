@@ -124,7 +124,7 @@ export default function ProductCard({
                             title={!readOnly ? "Clic para ingresar cantidad directa o fijar conteo" : undefined}
                         >
                             <span className={`text-base font-black leading-none mb-0.5 ${pendingDelta !== 0 ? 'text-blue-500' : isLowStock ? 'text-amber-500' : 'text-slate-700 dark:text-slate-200'}`}>
-                                {pendingStock}
+                                {Math.round(pendingStock * 1000) / 1000}
                             </span>
                             <span className="text-[9px] font-bold text-slate-400 group-hover/stock:text-brand uppercase tracking-wider leading-none">
                                 {(p.unit === 'kg' || p.unit === 'litro') ? unitInfo?.short : 'UND'}

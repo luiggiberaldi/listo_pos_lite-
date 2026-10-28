@@ -113,7 +113,7 @@ const SearchBar = forwardRef(function SearchBar({
                                         <span className={`text-[10px] font-medium flex items-center gap-1
                                             ${isOutOfStock ? 'text-red-500' : isLowStock ? 'text-amber-500' : 'text-slate-400'}`}>
                                             {isLowStock && !isOutOfStock && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />}
-                                            {isOutOfStock ? 'Sin stock' : `Stock: ${p.stock ?? 0}`}
+                                            {isOutOfStock ? 'Sin stock' : `Stock: ${Math.round((p.stock ?? 0) * 1000) / 1000}`}
                                         </span>
                                     </div>
                                 </div>
