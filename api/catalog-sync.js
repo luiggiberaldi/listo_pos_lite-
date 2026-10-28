@@ -76,7 +76,8 @@ export default async function handler(req, res) {
             Authorization: `Bearer ${SERVICE_KEY}`,
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ payload: { products } }),
+        // account_id del token: el alta de un producto queda en la libreta de la cuenta.
+        body: JSON.stringify({ payload: { products, account_id: user.id } }),
     });
     const result = await rpcRes.json();
     return res.status(rpcRes.ok ? 200 : rpcRes.status).json(result);

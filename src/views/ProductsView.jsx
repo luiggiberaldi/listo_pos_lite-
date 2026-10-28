@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
-import { Package, Plus, Trash2, X, Store, Tag, Pencil, Banknote, Search, ChevronLeft, ChevronRight, AlertTriangle, Box, LayoutGrid, List, Minus, ArrowUpDown, Clock, Percent, Printer, CheckSquare, Check, RotateCcw } from 'lucide-react';
+import { Package, Plus, Trash2, X, Store, Tag, Pencil, Banknote, Search, ChevronLeft, ChevronRight, AlertTriangle, Box, LayoutGrid, List, Minus, ArrowUpDown, Clock, Percent, Printer, CheckSquare, Check, RotateCcw, ArrowRightLeft } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { ProductShareModal } from '../components/ProductShareModal';
 
@@ -17,6 +17,8 @@ import ConfirmModal from '../components/ConfirmModal';
 import CategoryManagerModal from '../components/Products/CategoryManagerModal';
 import BulkPriceAdjustModal from '../components/Products/BulkPriceAdjustModal';
 import ZeroStockModal from '../components/Products/ZeroStockModal';
+import KardexOpenButton from '../components/Products/KardexOpenButton';
+import MovementsScreen from '../components/Products/MovementsScreen';
 import { filterProductsByZeroScope } from '../utils/stockUtils';
 import { applyStockOperation, buildBulkZeroOperations } from '../services/inventoryOperationService';
 import { isUnknownProductResult } from '../sync/stockResolution';
@@ -47,8 +49,16 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         adjustStock: baseAdjustStock,
         setProductStock
     } = useProductContext();
-    const isCajero = useAuthStore(s => s.usuarioActivo)?.rol === 'CAJERO';
+    const usuarioActivo = useAuthStore(s => s.usuarioActivo);
+    const isCajero = usuarioActivo?.rol === 'CAJERO';
     const { log: auditLog } = useAudit();
+
+    // Valores de stock con que se abrió el formulario de edición: si no
+    // cambian, guardar NO toca el stock.
+    const editStockRef = useRef(null);
+
+    // Pantalla Movimientos (Kardex completo); productId = abrir filtrada.
+    const [movements, setMovements] = useState({ open: false, productId: null });
 
     // Modal para ajuste rápido numérico de stock
     const [quickStockProduct, setQuickStockProduct] = useState(null);
@@ -321,7 +331,6 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     const [deleteId, setDeleteId] = useState(null);
     const [isDeleteAllModalOpen, setIsDeleteAllModalOpen] = useState(false);
     const [deleteAllConfirmText, setDeleteAllConfirmText] = useState('');
-    const [productMovements, setProductMovements] = useState([]);
 
     // ─── SALES VELOCITY (Días de Inventario) ────────────────
     const { salesVelocityMap } = useInventoryVelocity(products.length);
@@ -435,12 +444,34 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         }, effectiveRate);
 
         if (editingId) {
+            // Editar el producto NO cambia el stock: el formulario podía traer
+            // un valor viejo (lotes guardados al crear) o truncado (kg). Solo si
+            // el usuario tocó el campo se aplica, como CONTEO (queda en el Kardex).
+            const original = products.find(p => p.id === editingId);
+            const { stock: formStock, ...meta } = productData;
             const updated = products.map(p =>
-                p.id === editingId ? { ...p, ...productData, image } : p
+                p.id === editingId ? { ...p, ...meta, image } : p
             );
             setProducts(updated);
             pushCloudSync('bodega_products_v1', updated).catch(() => {});
             auditLog('INVENTARIO', 'PRODUCTO_EDITADO', `Producto "${name}" editado`);
+
+            const initial = editStockRef.current;
+            const touched = initial && (String(stock) !== initial.stock || String(stockInLotes) !== initial.lotes);
+            const target = packagingType === 'lote' ? formStock : parseFloat(stock);
+            if (touched && original && Number.isFinite(target) && target !== Number(original.stock)) {
+                const productId = editingId;
+                setProductStock(productId, target, { reason: 'CONTEO', actor: usuarioActivo?.nombre || null })
+                    .then(async (result) => {
+                        if (result.outcome === 'conflict' || result.outcome === 'invalid') {
+                            showToast(`No se cambió el stock de "${name}": ${result.outcome === 'conflict' ? 'stock insuficiente' : 'cantidad inválida'}`, 'error');
+                            return;
+                        }
+                        auditLog('INVENTARIO', 'CONTEO', `Stock de "${name}" fijado en ${target} al editar${result.outcome === 'pending' ? ' [PENDIENTE_SYNC]' : ''}`);
+                        const saved = await storageService.getItem('bodega_products_v1', []);
+                        pushCloudSync('bodega_products_v1', saved).catch(() => {});
+                    });
+            }
         } else {
             const updated = [{
                 id: crypto.randomUUID(),
@@ -493,40 +524,20 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
             setPackagingType('suelto');
         }
 
-        // Stock in lotes
-        if (product.stockInLotes) {
-            setStockInLotes(product.stockInLotes.toString());
-        } else if (u === 'paquete' && product.unitsPerPackage && product.stock) {
-            setStockInLotes(Math.floor(product.stock / (product.unitsPerPackage || 1)).toString());
-        } else {
-            setStockInLotes('');
+        // Stock in lotes: siempre desde el stock ACTUAL (en unidades). El
+        // stockInLotes guardado es el de cuando se creó y queda viejo con ventas.
+        let lotesText = '';
+        if ((product.packagingType === 'lote' || u === 'paquete') && product.unitsPerPackage > 0 && product.stock != null) {
+            lotesText = Math.floor(Number(product.stock) / product.unitsPerPackage).toString();
+        } else if (product.stockInLotes) {
+            lotesText = product.stockInLotes.toString();
         }
+        setStockInLotes(lotesText);
+        editStockRef.current = { stock: String(product.stock ?? ''), lotes: lotesText };
 
         if (u === 'kg' || u === 'litro') setGranelUnit(u);
 
         setIsModalOpen(true);
-
-        // Load product movements (Kardex Lite)
-        try {
-            const allSales = await storageService.getItem('bodega_sales_v1', []);
-            const movements = allSales
-                .filter(s => (s.items || []).some(i => i.id === product.id || i.name === product.name))
-                .map(s => {
-                    const item = (s.items || []).find(i => i.id === product.id || i.name === product.name);
-                    return {
-                        id: s.id,
-                        timestamp: s.timestamp,
-                        tipo: s.tipo || 'VENTA',
-                        qty: item?.qty,
-                        clienteName: s.clienteName || null,
-                    };
-                })
-                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-                .slice(0, 20);
-            setProductMovements(movements);
-        } catch (e) {
-            setProductMovements([]);
-        }
     };
 
     const handleDelete = (id) => { triggerHaptic && triggerHaptic(); setDeleteId(id); };
@@ -541,7 +552,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     const handleClose = () => {
         setName(''); setBarcode(''); setPriceUsd(''); setPriceBs(''); setCostUsd(''); setCostBs(''); setStock(''); setUnit('unidad'); setUnitsPerPackage(''); setSellByUnit(false); setUnitPriceUsd(''); setCategory('otros'); setLowStockAlert('5'); setImage(null); setEditingId(null); setIsModalOpen(false);
         setPackagingType('suelto'); setStockInLotes(''); setGranelUnit('kg');
-        setProductMovements([]);
+        editStockRef.current = null;
     };
 
     // Gestionar Categorias
@@ -604,8 +615,16 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                         <h2 className="text-lg sm:text-2xl font-black text-slate-800 dark:text-white tracking-tight truncate">Inventario</h2>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                        {products.length > 0 && (
+                            <button onClick={() => { triggerHaptic && triggerHaptic(); setMovements({ open: true, productId: null }); }}
+                                className="flex items-center gap-1.5 px-2.5 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl transition-all active:scale-95 text-xs font-bold" title="Movimientos (Kardex)">
+                                <ArrowRightLeft size={16} strokeWidth={2.5} />
+                                <span className="hidden sm:inline">Movimientos</span>
+                            </button>
+                        )}
                         {products.length > 0 && !isCajero && (
                             <>
+                                <KardexOpenButton products={products} actor={usuarioActivo?.nombre || null} triggerHaptic={triggerHaptic} showToast={showToast} />
                                 <button onClick={() => { triggerHaptic && triggerHaptic(); setIsBulkPriceOpen(true); }}
                                     className="p-2 bg-blue-100 dark:bg-blue-900/30 text-blue-500 dark:text-blue-400 rounded-xl transition-all active:scale-95" title="Ajuste Masivo de Precios">
                                     <Percent size={16} strokeWidth={2.5} />
@@ -991,6 +1010,14 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 </>
             )}
 
+            {/* ─── Movimientos (Kardex completo) ─────────────────── */}
+            <MovementsScreen
+                isOpen={movements.open}
+                initialProductId={movements.productId}
+                products={products}
+                onClose={() => setMovements({ open: false, productId: null })}
+            />
+
             {/* ─── Modal Añadir / Editar ───────────────────────── */}
             <ProductFormModal
                 isOpen={isModalOpen} onClose={handleClose} isEditing={!!editingId}
@@ -1018,7 +1045,8 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 handleImageUpload={handleImageUpload}
                 handleSave={handleSave}
                 categories={categories}
-                productMovements={editingId ? productMovements : null}
+                kardexProductId={editingId}
+                onViewAllMovements={() => { const id = editingId; handleClose(); setMovements({ open: true, productId: id }); }}
             />
 
             {/* Share Modal */}
