@@ -1,3 +1,4 @@
+import { formatSaleNumber as formatSaleNumberOf } from './saleNumbering.js';
 /**
  * Kardex (Fase 5) — lectura de la libreta de movimientos de un producto.
  *
@@ -213,13 +214,15 @@ export function buildSaleNumberIndex(sales = []) {
     const index = new Map();
     for (const s of Array.isArray(sales) ? sales : []) {
         if (!s?.saleNumber) continue;
-        if (s.id) index.set(String(s.id), s.saleNumber);
-        if (s.syncQueueId) index.set(String(s.syncQueueId), s.saleNumber);
+        const label = formatSaleNumberOf(s);
+        if (s.id) index.set(String(s.id), label);
+        if (s.syncQueueId) index.set(String(s.syncQueueId), label);
     }
     return index;
 }
 
-export const formatSaleNumber = n => `#${String(n).padStart(7, '0')}`;
+// El índice ya guarda el número formateado ("0001023" o "B-00101", B6).
+export const formatSaleNumber = label => `#${label}`;
 
 /** Cantidad en unidades + equivalente en cajas para productos por lote. */
 export function formatUnits(value, product) {

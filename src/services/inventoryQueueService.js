@@ -41,6 +41,11 @@ import {
 } from './inventoryQueuePolicy.js';
 import { applyInventoryOperation } from './inventoryOperationService.js';
 
+// Carga diferida: storageService arrastra React/Supabase y estos servicios
+// también se usan en pruebas de Node con almacenamiento inyectado.
+const loadStorageService = async () => (await import('../utils/storageService.js')).storageService;
+
+
 const PRODUCTS_KEY = 'bodega_products_v1';
 const DEVICE_KEY = 'pda_device_id';
 
@@ -85,12 +90,9 @@ const localforageStorage = {
   async saveProducts(products) {
     const accountId = getActiveAccountId();
     if (!accountId) return;
-    await localforage.setItem(getScopedStorageKey(PRODUCTS_KEY), products);
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('app_storage_update', {
-        detail: { key: PRODUCTS_KEY, source: 'inventory_queue' },
-      }));
-    }
+    // Por la capa de guardado: marca el producto reconciliado (Fase B) y lo sube
+    // a la nube. Antes la reconciliación quedaba solo en este equipo.
+    await (await loadStorageService()).setItem(PRODUCTS_KEY, products);
   },
 };
 

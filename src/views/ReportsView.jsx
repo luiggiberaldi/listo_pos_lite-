@@ -1,3 +1,4 @@
+import { formatSaleNumber, matchesSaleNumber } from '../utils/saleNumbering';
 import { useState, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { FinancialEngine } from '../core/FinancialEngine';
 import { BarChart3, Calendar, Download, TrendingUp, ShoppingBag, DollarSign, Package, ChevronDown, ChevronUp, Clock, Send, Ban, Shuffle, Receipt, Search, X, Filter, Recycle, LockIcon } from 'lucide-react';
@@ -532,7 +533,7 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                     if ((s.customerName || 'consumidor final').toLowerCase().includes(q)) return true;
                     if (s.items && s.items.some(i => i.name.toLowerCase().includes(q))) return true;
                     if (s.id.toLowerCase().includes(q)) return true;
-                    if (s.saleNumber && String(s.saleNumber).includes(q)) return true;
+                    if (matchesSaleNumber(s, q)) return true;
                     return false;
                 });
                 const completedInList = searchedSales.filter(s => !isVoidedOrReverso(s));
@@ -818,7 +819,7 @@ function TransactionRow({ sale: s, bcvRate, isExpanded, onToggle, onVoidSale, on
                         {s.tipo === 'ANULACION_VENTA' && <span className="text-[9px] bg-red-100 text-red-600 px-1 rounded uppercase">Reverso</span>}
                     </p>
                     <p className="text-[11px] text-slate-500 flex items-center gap-1 flex-wrap">
-                        {s.saleNumber && <span className="font-bold text-indigo-400">#{String(s.saleNumber).padStart(7, '0')}</span>}
+                        {s.saleNumber && <span className="font-bold text-indigo-400">#{formatSaleNumber(s)}</span>}
                         {s.saleNumber && <span>·</span>}
                         <span>{dateLabel}</span> · <span>{d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}</span> · <span>{methodLabel}</span>
                     </p>

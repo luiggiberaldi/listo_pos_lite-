@@ -1,3 +1,4 @@
+import { formatSaleNumber } from './saleNumbering.js';
 import { FinancialEngine } from '../core/FinancialEngine.js';
 import { getLocalISODate } from './dateHelpers.js';
 import { round2, sumR } from './dinero.js';
@@ -270,17 +271,17 @@ export function validateAssignments(allSales, assignments, { requireAllPending =
         if (seen.has(saleId)) errors.push(`La venta ${saleId} está asignada más de una vez.`);
         seen.add(saleId);
         if ((sale.cajaCerrada || sale.cierreId) && !repairIds.has(sale.id)) {
-            errors.push(`La venta ${sale.saleNumber || saleId} ya pertenece a un cierre.`);
+            errors.push(`La venta ${formatSaleNumber(sale) || saleId} ya pertenece a un cierre.`);
         }
 
         const date = assignment.fechaComercial || assignment.businessDate;
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) {
-            errors.push(`La venta ${sale.saleNumber || saleId} no tiene fecha comercial válida.`);
+            errors.push(`La venta ${formatSaleNumber(sale) || saleId} no tiene fecha comercial válida.`);
         }
 
         const rate = parseSafeFloat(assignment.tasaBcv ?? assignment.rateSnapshot);
         if (!Number.isFinite(rate) || rate <= 0) {
-            errors.push(`La venta ${sale.saleNumber || saleId} no tiene una tasa válida.`);
+            errors.push(`La venta ${formatSaleNumber(sale) || saleId} no tiene una tasa válida.`);
         }
     });
 
@@ -291,7 +292,7 @@ export function validateAssignments(allSales, assignments, { requireAllPending =
         const pendingIds = new Set(pending.map(sale => sale.id));
         pending.forEach(sale => {
             if (!seen.has(sale.id)) {
-                errors.push(`Falta asignar la venta ${sale.saleNumber || sale.id}.`);
+                errors.push(`Falta asignar la venta ${formatSaleNumber(sale) || sale.id}.`);
             }
         });
         rows.forEach(assignment => {
@@ -316,9 +317,11 @@ export function buildDocumentBatchAssignments(
     { blockCountsByDate = {}, expectedSaleCount = null } = {}
 ) {
     const orderedSales = [...(Array.isArray(batchSales) ? batchSales : [])].sort((a, b) => {
+        // Números de cajas distintas (B6) no son comparables entre sí: se ordena por hora.
+        const sameRegister = (a.registerCode || '') === (b.registerCode || '');
         const aNum = Number(a.saleNumber || 0);
         const bNum = Number(b.saleNumber || 0);
-        if (aNum !== bNum) return bNum - aNum;
+        if (sameRegister && aNum !== bNum) return bNum - aNum;
         return String(b.timestamp || '').localeCompare(String(a.timestamp || ''));
     });
     const orderedClosures = [...(Array.isArray(closures) ? closures : [])]

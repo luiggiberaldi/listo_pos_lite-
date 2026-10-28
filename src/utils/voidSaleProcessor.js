@@ -1,3 +1,4 @@
+import { formatSaleNumber } from './saleNumbering';
 import { storageService } from './storageService';
 import { logEvent } from '../services/auditService';
 import { useAuthStore } from '../hooks/store/useAuthStore';
@@ -88,11 +89,11 @@ export async function processVoidSale(sale, currentSales, currentProducts, optio
         await storageService.setItem('bodega_products_v1', finalProducts);
     }
 
-    logEvent('VENTA', 'VENTA_ANULADA', `Venta #${sale.saleNumber || '?'} anulada - $${sale.totalUsd?.toFixed(2)}`, user, { saleId: sale.id });
+    logEvent('VENTA', 'VENTA_ANULADA', `Venta #${formatSaleNumber(sale) || '?'} anulada - $${sale.totalUsd?.toFixed(2)}`, user, { saleId: sale.id });
     createNotification(
         NOTIF_TYPES.VENTA_ANULADA,
         'Venta anulada',
-        `Venta #${sale.saleNumber || '?'} — $${sale.totalUsd?.toFixed(2)} anulada por ${user?.nombre || 'Usuario'}`,
+        `Venta #${formatSaleNumber(sale) || '?'} — $${sale.totalUsd?.toFixed(2)} anulada por ${user?.nombre || 'Usuario'}`,
         { saleId: sale.id, totalUsd: sale.totalUsd, userId: user?.id }
     );
 

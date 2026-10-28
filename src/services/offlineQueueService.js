@@ -19,6 +19,11 @@ import {
 import { getAuthHeaders } from './authHeaders';
 import { resyncLocalCatalog } from './catalogSyncService';
 
+// Carga diferida: storageService arrastra React/Supabase y estos servicios
+// también se usan en pruebas de Node con almacenamiento inyectado.
+const loadStorageService = async () => (await import('../utils/storageService.js')).storageService;
+
+
 const QUEUE_KEY = 'offline_sales_queue';
 const SALES_KEY = 'bodega_sales_v1';
 const DEVICE_KEY = 'pda_device_id';
@@ -65,7 +70,8 @@ async function markLocalSaleConflict(item, conflict) {
   });
 
   if (JSON.stringify(updated) !== JSON.stringify(sales)) {
-    await localforage.setItem(key, updated);
+    // Por la capa de guardado: marca la venta cambiada (Fase B) y la sube a la nube.
+    await (await loadStorageService()).setItem(SALES_KEY, updated);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('app_storage_update', {
         detail: { key: SALES_KEY, source: 'offline_queue_conflict' },
@@ -117,7 +123,8 @@ async function markLocalSaleSynced(item, serverData) {
   });
 
   if (JSON.stringify(updated) !== JSON.stringify(sales)) {
-    await localforage.setItem(key, updated);
+    // Por la capa de guardado: marca la venta cambiada (Fase B) y la sube a la nube.
+    await (await loadStorageService()).setItem(SALES_KEY, updated);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('app_storage_update', {
         detail: { key: SALES_KEY, source: 'offline_queue' },

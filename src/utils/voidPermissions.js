@@ -1,3 +1,4 @@
+import { saleNumberLabel } from './saleNumbering.js';
 /**
  * Fuente única de verdad para las reglas de anulación (void) de ventas,
  * en especial las anulaciones después del cierre de caja.
@@ -122,8 +123,5 @@ export function isPostClosureReversal(movement, allSales = []) {
  */
 export function buildVoidModalTitle(sale) {
     if (!sale) return 'Anular venta';
-    const label = sale.saleNumber !== undefined && sale.saleNumber !== null && sale.saleNumber !== ''
-        ? `#${String(sale.saleNumber).padStart(7, '0')}`
-        : `#${String(sale.id || '').substring(0, 6).toUpperCase()}`;
-    return `Anular venta ${label}`;
+    return `Anular venta ${saleNumberLabel(sale)}`;
 }

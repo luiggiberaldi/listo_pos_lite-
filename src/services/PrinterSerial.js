@@ -8,6 +8,7 @@
  * En móvil o Firefox, `isSupported()` retorna false.
  */
 
+import { formatSaleNumber } from '../utils/saleNumbering';
 import { formatOfficialRate } from '../utils/rateResolver';
 
 // ── Comandos ESC/POS ──
@@ -82,7 +83,7 @@ function buildEscPosTicket(sale, rate) {
     if (businessRif) parts.push(encode(`RIF: ${businessRif}\n`));
     parts.push(encode(`${sep}\n`));
     parts.push(CMD.alignLeft);
-    parts.push(encode(`Ticket #${(sale.saleNumber || sale.id?.slice(0,6) || '?').toString().toUpperCase()}\n`));
+    parts.push(encode(`Ticket #${(formatSaleNumber(sale) || sale.id?.slice(0,6) || '?').toString().toUpperCase()}\n`));
     parts.push(encode(`${ts}\n`));
     if (sale.customerName && sale.customerName !== 'Consumidor Final') {
         parts.push(encode(`Cliente: ${sale.customerName}\n`));
