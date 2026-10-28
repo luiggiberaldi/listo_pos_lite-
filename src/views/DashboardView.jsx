@@ -593,14 +593,15 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             )}
 
             {/* ── HEADER ── */}
-            {/* z-[60]: por encima de la zona invisible del acceso de administrador
-                (App.jsx, esquina superior izquierda, z-50), que tapaba el
-                indicador de sincronización y se tragaba sus clics. El acceso
-                sigue disponible en las demás pantallas. */}
+            {/* z-[45]: por encima de la zona invisible del acceso de administrador
+                (App.jsx, esquina superior izquierda, z-40), que si no tapa el
+                indicador de sincronización y se traga sus clics; y por debajo de
+                la barra lateral de escritorio (z-48), cuyo globo de "Inicio"
+                pasa por aquí. El acceso sigue disponible en las demás pantallas. */}
             {/* Rejilla de 3 columnas: los laterales toman lo que necesitan y el logo
                 se achica en el centro, así nunca se monta sobre los botones
                 (antes el logo era absoluto y a 320-375 px tapaba las píldoras). */}
-            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-3 sm:px-5 pt-2 sm:pt-3 lg:pt-2 pb-1 sm:pb-3 lg:pb-1 transition-all z-[60] relative min-h-[56px] sm:min-h-[100px] lg:min-h-[70px]">
+            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-3 sm:px-5 pt-2 sm:pt-3 lg:pt-2 pb-1 sm:pb-3 lg:pb-1 transition-all z-[45] relative min-h-[56px] sm:min-h-[100px] lg:min-h-[70px]">
                 
                 {/* ====== LATERAL IZQUIERDO: Píldoras (PC/Móvil) ====== */}
                 <div className="flex items-center justify-start gap-1.5 sm:gap-3 z-20">

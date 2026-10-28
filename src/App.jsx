@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
-import { Home, ShoppingCart, Store, Users, Download, FlaskConical, Moon, Sun, BarChart3, WifiOff, X, Settings } from 'lucide-react';
+import { Home, ShoppingCart, Store, Users, Download, FlaskConical, Moon, Sun, BarChart3, WifiOff, X, Settings, ChevronsLeft, ChevronsRight } from 'lucide-react';
 
 import SalesView from './views/SalesView';
 import DashboardView from './views/DashboardView';
@@ -349,6 +349,27 @@ export default function App() {
   // contenido termine justo encima de ella en cualquier tamaño de pantalla.
   // Ref de callback: la barra aparece después del PIN o al cerrar el teclado.
   const [bottomNavEl, setBottomNavEl] = useState(null);
+
+  // Barra lateral de escritorio: expandida (ícono + nombre) o contraída (solo
+  // íconos). Se recuerda en este equipo y su ancho se publica en --sidebar-w.
+  const [sidebarExpanded, setSidebarExpanded] = useState(() => localStorage.getItem('sidebar_expanded') !== 'false');
+  useEffect(() => {
+    document.documentElement.style.setProperty('--sidebar-w', sidebarExpanded ? '200px' : '64px');
+    localStorage.setItem('sidebar_expanded', String(sidebarExpanded));
+  }, [sidebarExpanded]);
+  // Ctrl/Cmd + B contrae o expande la barra lateral (fuera de campos de texto).
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'b') return;
+      if (!window.matchMedia('(min-width: 1024px)').matches) return;
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      e.preventDefault();
+      setSidebarExpanded(v => !v);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   useEffect(() => {
     const el = bottomNavEl;
     const root = document.documentElement;
@@ -519,13 +540,13 @@ export default function App() {
       <CartProvider>
       <ProductProvider rates={rates}>
         <main
-          className={`flex-1 min-h-0 w-full max-w-md md:max-w-3xl lg:max-w-none lg:pl-[104px] lg:pr-4 xl:pr-6 mx-auto relative ${isKeyboardOpen ? 'pb-4' : ''} flex flex-col overflow-y-auto`}
+          className={`flex-1 min-h-0 w-full max-w-md md:max-w-3xl lg:max-w-none lg:pl-[calc(var(--sidebar-w,64px)+16px)] lg:transition-[padding] lg:duration-200 lg:pr-4 xl:pr-6 mx-auto relative ${isKeyboardOpen ? 'pb-4' : ''} flex flex-col overflow-y-auto`}
           style={isKeyboardOpen ? undefined : { paddingBottom: 'calc(var(--bottom-nav-space, 80px) + 8px)' }}
         >
 
           {/* Hidden Admin Trigger Area */}
         <div
-          className="absolute top-0 left-0 lg:left-[104px] w-20 h-20 z-50 cursor-pointer opacity-0"
+          className="absolute top-0 left-0 lg:left-[calc(var(--sidebar-w,64px)+16px)] w-20 h-20 z-40 cursor-pointer opacity-0"
           onClick={handleLogoClick}
           title="Ssshh..."
         ></div>
@@ -594,8 +615,8 @@ export default function App() {
       {/* Navegación: barra flotante abajo en celular/tablet; barra lateral fija
           a la izquierda en escritorio (lg), donde la de abajo tapaba contenido. */}
       {!isKeyboardOpen && (
-        <div ref={setBottomNavEl} className="fixed bottom-0 left-0 right-0 px-4 sm:px-6 pb-[env(safe-area-inset-bottom)] pt-0 mb-2 max-w-sm sm:max-w-lg md:max-w-2xl mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300 lg:top-0 lg:right-auto lg:w-[88px] lg:max-w-none lg:mx-0 lg:mb-0 lg:p-3 lg:pr-0 lg:animate-none">
-          <div className="bg-[#1E293B]/95 backdrop-blur-xl rounded-2xl p-1 flex justify-between items-center shadow-2xl shadow-slate-900/30 border border-white/10 ring-1 ring-black/5 pointer-events-auto lg:h-full lg:flex-col lg:justify-start lg:gap-1.5 lg:p-1.5 lg:pt-3">
+        <div ref={setBottomNavEl} className="fixed bottom-0 left-0 right-0 px-4 sm:px-6 pb-[env(safe-area-inset-bottom)] pt-0 mb-2 max-w-sm sm:max-w-lg md:max-w-2xl mx-auto z-30 lg:z-[48] pointer-events-none animate-in slide-in-from-bottom-4 duration-300 lg:top-0 lg:right-auto lg:w-[var(--sidebar-w,64px)] lg:transition-[width] lg:duration-200 lg:ease-out lg:max-w-none lg:mx-0 lg:mb-0 lg:p-0 lg:animate-none">
+          <nav aria-label="Navegación principal" className={`bg-[#1E293B]/95 backdrop-blur-xl rounded-2xl p-1 flex justify-between items-center shadow-2xl shadow-slate-900/30 border border-white/10 ring-1 ring-black/5 pointer-events-auto lg:h-full lg:flex-col lg:justify-start lg:gap-1 lg:px-2 lg:py-3 lg:rounded-none lg:border-0 lg:border-r lg:border-white/5 lg:ring-0 lg:shadow-xl lg:bg-[#1E293B] ${sidebarExpanded ? 'lg:overflow-hidden' : 'lg:overflow-visible'}`}>
             {TABS.map(tab => (
               <TabButton
                 key={tab.id}
@@ -604,12 +625,23 @@ export default function App() {
                 isActive={activeTab === tab.id}
                 onClick={() => { triggerHaptic(); setActiveTab(tab.id); }}
                 data-tour={`tab-${tab.id}`}
+                expanded={sidebarExpanded}
               />
             ))}
 
-
-
-          </div>
+            {/* Contraer / expandir la barra lateral (solo escritorio) */}
+            <button
+              onClick={() => setSidebarExpanded(v => !v)}
+              aria-label={sidebarExpanded ? 'Contraer menú (Ctrl+B)' : 'Expandir menú (Ctrl+B)'}
+              aria-expanded={sidebarExpanded}
+              className={`group relative hidden lg:flex mt-auto w-full h-10 items-center gap-3 rounded-xl text-slate-500 hover:text-white hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 transition-colors ${sidebarExpanded ? 'justify-start px-3' : 'justify-center'}`}
+            >
+              {sidebarExpanded ? <ChevronsLeft size={18} /> : <ChevronsRight size={18} />}
+              {sidebarExpanded
+                ? <span className="text-xs font-bold whitespace-nowrap">Contraer <kbd className="ml-1 text-[10px] font-semibold text-slate-500">Ctrl+B</kbd></span>
+                : <SidebarTooltip>Expandir <span className="text-slate-400">Ctrl+B</span></SidebarTooltip>}
+            </button>
+          </nav>
         </div>
       )}
 
@@ -672,12 +704,34 @@ export default function App() {
   );
 }
 
-function TabButton({ icon, label, isActive, onClick, 'data-tour': dataTour }) {
+// Nombre que aparece a la derecha del ícono al pasar el mouse (barra contraída).
+function SidebarTooltip({ children }) {
   return (
-    <button data-tour={dataTour} onClick={onClick} title={label} aria-label={label} className={`flex-1 lg:flex-none lg:w-full flex flex-col items-center justify-center gap-0.5 lg:gap-1 py-2 sm:py-2.5 lg:py-3 rounded-xl transition-colors duration-200 ${isActive ? 'bg-[#0EA5E9] text-white shadow-md shadow-sky-500/30' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+    <span role="tooltip" className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold whitespace-nowrap shadow-lg ring-1 ring-white/10 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 group-focus-visible:opacity-100 group-focus-visible:translate-x-0 transition-all duration-150 z-50 hidden lg:block">
+      {children}
+    </span>
+  );
+}
+
+function TabButton({ icon, label, isActive, onClick, 'data-tour': dataTour, expanded = true }) {
+  // Celular/tablet: ícono arriba y el nombre solo en la pestaña activa.
+  // Escritorio: expandida → ícono y nombre en fila; contraída → solo ícono
+  // con el nombre como globo al pasar el mouse.
+  const desktopLayout = expanded ? 'lg:flex-row lg:justify-start lg:gap-3 lg:px-3' : 'lg:justify-center lg:px-0';
+  const labelVisibility = `${isActive ? 'inline' : 'hidden'} ${expanded ? 'lg:inline' : 'lg:hidden'}`;
+  return (
+    <button
+      data-tour={dataTour}
+      onClick={onClick}
+      aria-label={label}
+      aria-current={isActive ? 'page' : undefined}
+      className={`group relative flex-1 lg:flex-none lg:w-full lg:h-11 flex flex-col items-center justify-center gap-0.5 py-2 sm:py-2.5 lg:py-0 rounded-xl transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${desktopLayout} ${isActive ? 'bg-[#0EA5E9] text-white shadow-md shadow-sky-500/30' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+    >
+      {/* Marca lateral de la pestaña activa (escritorio) */}
+      {isActive && <span aria-hidden="true" className="hidden lg:block absolute -left-2 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full bg-sky-300" />}
       {icon}
-      {/* En escritorio todas las pestañas muestran su nombre (hay espacio). */}
-      <span className={`text-[9px] sm:text-[10px] font-extrabold ${isActive ? 'animate-in zoom-in duration-200' : 'hidden lg:block lg:font-bold'}`}>{label}</span>
+      <span className={`text-[9px] sm:text-[10px] lg:text-[13px] font-extrabold whitespace-nowrap ${labelVisibility} ${isActive ? 'animate-in zoom-in duration-200 lg:animate-none' : 'lg:font-semibold'}`}>{label}</span>
+      {!expanded && <SidebarTooltip>{label}</SidebarTooltip>}
     </button>
   );
 }
