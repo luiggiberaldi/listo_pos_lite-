@@ -1,7 +1,7 @@
 # Publicación del Kardex en producción (PR #2)
 
 > **Fecha:** 2026-10-28
-> **Estado:** preparado y ensayado en staging; **nada ejecutado en producción**.
+> **Estado:** pasos 1 y 2 **ejecutados en producción** el 2026-10-28 (14:25-14:31 UTC): respaldo completo (`backups/fgzwmwrugerptfqfrsjd-2026-10-28T14-25-39-094Z`), 010 → 011 → 012 aplicadas con el conector (historial `20261028142821`, `…142924`, `…143027`), huellas finales `31d51b5…` / `30a4036…` / `2154af9…` y `data:verify` con 0 violaciones. **Falta el paso 3 (unir el PR)**.
 > **PR:** [luiggiberaldi/listo_pos_lite-#2](https://github.com/luiggiberaldi/listo_pos_lite-/pull/2) (borrador, rama `feat/kardex-port`).
 > **Plan de fondo:** [plan pre-Kardex](2026-10-13-pre-kardex-stock-integrity.md).
 
