@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { storageService } from '../utils/storageService';
 import { useAuthStore } from './store/useAuthStore';
@@ -7,6 +7,14 @@ import { useAudit } from './useAudit';
 import { useSecurity } from './useSecurity';
 import { showToast } from '../components/Toast';
 import { setActiveAccountId } from '../config/storageScope';
+import { translateAuthError, MIN_PASSWORD_LENGTH } from '../utils/authErrors';
+
+// Al volver de un enlace de correo (contraseña nueva, enlace vencido) la
+// pantalla de entrada se abre con el correo ya escrito.
+export const AUTH_PREFILL_EMAIL_KEY = 'auth_prefill_email';
+export const AUTH_OPEN_RECOVERY_KEY = 'auth_open_recovery';
+const readSession = (key) => { try { return sessionStorage.getItem(key) || ''; } catch { return ''; } };
+const appUrl = () => `${window.location.origin}${window.location.pathname}`;
 
 // El Worker local no suele tener SUPABASE_SERVICE_KEY; no lanzar peticiones
 // destinadas al despliegue desde el servidor de desarrollo.
@@ -20,6 +28,20 @@ const PROFILE_SYNC_ENABLED = import.meta.env.PROD
  */
 export const uploadBackupToCloud = async (email, backupData, { strictSync = false } = {}) => {
     if (!email || !backupData?.data) throw new Error('Backup o cuenta cloud inválidos.');
+
+    // El respaldo nunca lleva la contraseña de la cuenta (versiones viejas la
+    // guardaban dentro de abasto-auth-storage).
+    const authLs = backupData.data.ls?.['abasto-auth-storage'];
+    if (authLs) {
+        const clean = sanitizeForPush('abasto-auth-storage', authLs);
+        backupData = {
+            ...backupData,
+            data: {
+                ...backupData.data,
+                ls: { ...backupData.data.ls, 'abasto-auth-storage': typeof clean === 'string' ? clean : JSON.stringify(clean) },
+            },
+        };
+    }
 
     const { error } = await supabaseCloud
         .from('cloud_backups')
@@ -70,14 +92,13 @@ export function useCloudAuthLogic() {
     const businessName = localStorage.getItem('business_name') || '';
 
     const adminEmail = useAuthStore(s => s.adminEmail);
-    const adminPassword = useAuthStore(s => s.adminPassword);
     const setAdminCredentials = useAuthStore(s => s.setAdminCredentials);
 
     const { deviceId } = useSecurity();
     const { log: auditLog } = useAudit();
 
     // ─── STATE ──────────────────────────────────────────
-    const [inputEmail, setInputEmail] = useState(adminEmail || '');
+    const [inputEmail, setInputEmail] = useState(() => readSession(AUTH_PREFILL_EMAIL_KEY) || adminEmail || '');
     const [inputPassword, setInputPassword] = useState(''); // ← Siempre en blanco por seguridad
     const [inputConfirmPassword, setInputConfirmPassword] = useState('');
     const [inputBusinessName, setInputBusinessName] = useState(() => localStorage.getItem('business_name') || '');
@@ -88,7 +109,12 @@ export function useCloudAuthLogic() {
     const [inputPhone, setInputPhone] = useState('');
     const [emailError, setEmailError] = useState('');
     const [passwordError, setPasswordError] = useState('');
-    const [isRecoveringPassword, setIsRecoveringPassword] = useState(false);
+    const [isRecoveringPassword, setIsRecoveringPassword] = useState(() => readSession(AUTH_OPEN_RECOVERY_KEY) === 'true');
+    // La marca solo sirve para abrir el formulario una vez.
+    useEffect(() => {
+        try { sessionStorage.removeItem(AUTH_OPEN_RECOVERY_KEY); } catch { /* sin acceso */ }
+    }, []);
+    const [pendingConfirmationEmail, setPendingConfirmationEmail] = useState('');
 
     const [deviceLimitError, setDeviceLimitError] = useState(null);
     const [blockedDevices, setBlockedDevices] = useState([]);
@@ -121,6 +147,10 @@ export function useCloudAuthLogic() {
 
     const notifyCloudLoginCompleted = async () => {
         localStorage.removeItem('pda_explicit_login');
+        try {
+            sessionStorage.removeItem(AUTH_PREFILL_EMAIL_KEY);
+            sessionStorage.removeItem(AUTH_OPEN_RECOVERY_KEY);
+        } catch { /* sin acceso */ }
         const { data: { session } } = await supabaseCloud.auth.getSession();
         window.dispatchEvent(new CustomEvent('cloud_login_completed', {
             detail: { session },
@@ -187,19 +217,8 @@ export function useCloudAuthLogic() {
 
     const uploadLocalBackup = uploadBackupToCloud;
 
-    const registerDevice = async (email) => {
-        const alias = localStorage.getItem('pda_device_alias') || `Dispositivo ${navigator.platform || 'Web'}`;
-        const did = deviceId || 'UNKNOWN';
-        const emailLower = email.toLowerCase();
-        
-        // Usar upsert para evitar lanzar errores 409 en la consola de red
-        await supabaseCloud.from('account_devices').upsert({
-            email: emailLower,
-            device_id: did,
-            device_alias: alias,
-            last_seen: new Date().toISOString()
-        }, { onConflict: 'email,device_id' });
-    };
+    // El equipo ya quedó registrado por register_and_check_device (la única
+    // vía permitida por el servidor, que revisa el límite de equipos).
 
     // ─── ACTION HANDLERS ────────────────────────────────
     const handleDataConflictChoice = async (choice) => {
@@ -219,7 +238,7 @@ export function useCloudAuthLogic() {
                 await notifyCloudLoginCompleted();
                 showToast('Datos locales guardados en la nube', 'success');
             }
-            setAdminCredentials(email, inputPassword);
+            setAdminCredentials(email);
             setInputPassword('');
             auditLog('NUBE', 'CONFLICTO_RESUELTO', `Resuelto: ${choice}`);
             setImportStatus(null);
@@ -256,7 +275,9 @@ export function useCloudAuthLogic() {
 
         let hasError = false;
         if (!inputEmail.includes('@')) { setEmailError('Formato no válido'); hasError = true; }
-        if (inputPassword.length < 6) { setPasswordError('Mínimo 6 caracteres'); hasError = true; }
+        // Cuentas viejas pueden tener contraseñas de 6; el mínimo nuevo aplica al registrarse.
+        const minLength = isCloudLogin ? 6 : MIN_PASSWORD_LENGTH;
+        if (inputPassword.length < minLength) { setPasswordError(`Mínimo ${minLength} caracteres`); hasError = true; }
         if (!isCloudLogin) {
             if (!inputBusinessName.trim()) { showToast('El nombre del negocio es obligatorio', 'error'); hasError = true; }
             if (inputPassword !== inputConfirmPassword) { setPasswordError('Las contraseñas no coinciden'); hasError = true; }
@@ -281,25 +302,34 @@ export function useCloudAuthLogic() {
                     const { data: signInData, error: err } = await supabaseCloud.auth.signInWithPassword({
                         email: emailToUse, password: inputPassword,
                     });
-                    if (err) throw new Error('Error al iniciar: ' + err.message);
+                    if (err) {
+                        if (err.code === 'email_not_confirmed' || /not confirmed/i.test(err.message || '')) {
+                            setPendingConfirmationEmail(emailToUse);
+                        }
+                        throw new Error(translateAuthError(err));
+                    }
                     await ensureAuthenticatedSession(signInData?.session);
                     // Fijar el namespace antes de leer backups o datos locales.
                     if (signInData?.user?.id) setActiveAccountId(signInData.user.id);
                 } else {
                     const { data, error: err } = await supabaseCloud.auth.signUp({
                         email: emailToUse, password: inputPassword,
-                        options: { data: { full_name: inputBusinessName.trim() || 'Negocio', phone: inputPhone } },
+                        options: {
+                            data: { full_name: inputBusinessName.trim() || 'Negocio', phone: inputPhone },
+                            emailRedirectTo: appUrl(),
+                        },
                     });
-                    if (err) {
-                        if (err.message.includes('already registered')) throw new Error('Ya registrado. Entrar.');
-                        throw new Error('Registro falló: ' + err.message);
-                    }
-                    if (data?.user?.identities?.length === 0) throw new Error('Ya registrado. Entrar.');
+                    if (err) throw new Error(translateAuthError(err));
+                    if (data?.user?.identities?.length === 0) throw new Error(translateAuthError({ code: 'user_already_exists' }));
                     if (data?.user && !data.session) {
                         // Guardar el nombre del negocio antes del redirect
                         if (inputBusinessName.trim()) localStorage.setItem('business_name', inputBusinessName.trim());
-                        showToast('Revisa tu correo y confírmalo.', 'success');
-                        setImportStatus('awaiting_email_confirmation');
+                        localStorage.removeItem('pda_explicit_login');
+                        setPendingConfirmationEmail(emailToUse);
+                        setInputPassword('');
+                        setInputConfirmPassword('');
+                        setImportStatus(null);
+                        setStatusMessage('');
                         return;
                     }
                     if (data?.session) await ensureAuthenticatedSession(data.session);
@@ -336,22 +366,8 @@ export function useCloudAuthLogic() {
 
                     // Sincronizar phone/business_name desde auth metadata si el registro está incompleto
                     const meta = user?.user_metadata || {};
+                    // La licencia de prueba la crea el servidor (register_and_check_device).
                     if (!lic) {
-                        // No existe el registro (ej: usuario confirmó email pero licencia no se creó)
-                        const trialExpiry = new Date();
-                        trialExpiry.setDate(trialExpiry.getDate() + 7);
-                        const { error: licenseError } = await supabaseCloud.from('cloud_licenses').upsert({
-                            email: emailToUse,
-                            device_id: deviceId || 'UNKNOWN',
-                            license_type: 'trial',
-                            max_devices: 2,
-                            valid_until: trialExpiry.toISOString(),
-                            business_name: meta.full_name || '',
-                            phone: meta.phone || '',
-                            active: true,
-                            updated_at: new Date().toISOString()
-                        }, { onConflict: 'email' });
-                        if (licenseError) console.warn('[Login] No se pudo crear licencia inicial:', licenseError.message);
                         if (meta.full_name) localStorage.setItem('business_name', meta.full_name);
                         if (meta.phone) localStorage.setItem('business_phone', meta.phone);
                     } else if (!lic.phone || !lic.business_name) {
@@ -504,8 +520,7 @@ export function useCloudAuthLogic() {
 
             if (isCloudLogin && hasCloudData && hasLocalData) {
                 setDataConflictPending({ email: emailToUse, cloudBackup, localBackup });
-                await registerDevice(emailToUse);
-                setAdminCredentials(emailToUse, inputPassword);
+                setAdminCredentials(emailToUse);
                 setInputPassword('');
                 setImportStatus(null);
                 setStatusMessage('');
@@ -516,8 +531,7 @@ export function useCloudAuthLogic() {
             if (isCloudLogin && hasCloudData && !hasLocalData) {
                 setStatusMessage('Restaurando nube...');
                 await applyCloudBackup(cloudBackup);
-                await registerDevice(emailToUse);
-                setAdminCredentials(emailToUse, inputPassword);
+                setAdminCredentials(emailToUse);
                 setInputPassword('');
                 showToast('Datos restaurados desde la nube', 'success');
                 setImportStatus('success');
@@ -534,33 +548,9 @@ export function useCloudAuthLogic() {
                 if (!cloudHasSyncData) {
                     await uploadLocalBackup(emailToUse, localBackup);
                 }
-                if (!isCloudLogin) {
-                    try {
-                        // Licencia de fábrica: 7 días, máximo 1 equipo vinculado
-                        const trialExpiry = new Date();
-                        trialExpiry.setDate(trialExpiry.getDate() + 7);
-                        const { error: licErr } = await supabaseCloud.from('cloud_licenses').upsert({
-                            email: emailToUse,
-                            device_id: deviceId || 'UNKNOWN',
-                            license_type: 'trial',
-                            plan_tier: 'basic',
-                            max_devices: 2,
-                            days_remaining: 7,
-                            valid_until: trialExpiry.toISOString(),
-                            business_name: inputBusinessName.trim() || 'Negocio',
-                            phone: inputPhone || '',
-                            active: true,
-                            updated_at: new Date().toISOString()
-                        }, { onConflict: 'email' });
-                        if (licErr) console.warn('[Registro] Error al crear licencia de fábrica:', licErr.message);
-                    } catch (e) {
-                        console.warn('[Registro] Excepción al crear licencia de fábrica:', e);
-                    }
-                }
-                await registerDevice(emailToUse);
             }
 
-            setAdminCredentials(emailToUse, inputPassword);
+            setAdminCredentials(emailToUse);
             setInputPassword('');
             // Guardar datos del negocio en localStorage para la estación
             if (!isCloudLogin) {
@@ -590,7 +580,7 @@ export function useCloudAuthLogic() {
 
         } catch (error) {
             localStorage.removeItem('pda_explicit_login');
-            showToast(error.message, 'error');
+            showToast(translateAuthError(error), 'error');
             setImportStatus('error');
             setStatusMessage('');
         }
@@ -603,21 +593,50 @@ export function useCloudAuthLogic() {
         setImportStatus('loading');
         setStatusMessage('Enviando enlace...');
         try {
-            const appUrl = `${window.location.protocol}//${window.location.host}${window.location.pathname}`;
-            const { error } = await supabaseCloud.auth.resetPasswordForEmail(inputEmail.toLowerCase().trim(), { redirectTo: appUrl });
+            const { error } = await supabaseCloud.auth.resetPasswordForEmail(inputEmail.toLowerCase().trim(), { redirectTo: appUrl() });
             if (error) throw error;
-            showToast('Enlace enviado. Revisa tu correo.', 'success');
+            try { sessionStorage.removeItem(AUTH_OPEN_RECOVERY_KEY); } catch { /* sin acceso */ }
+            showToast('Enlace enviado. Revisa tu correo (y la carpeta de spam).', 'success');
             setIsRecoveringPassword(false);
             setImportStatus(null);
             setStatusMessage('');
         } catch (error) {
-            showToast(error.message, 'error');
+            showToast(translateAuthError(error), 'error');
             setImportStatus('error');
             setStatusMessage('');
         }
     };
 
+    const handleResendConfirmation = async () => {
+        if (!pendingConfirmationEmail) return;
+        setImportStatus('loading');
+        setStatusMessage('Reenviando correo...');
+        try {
+            const { error } = await supabaseCloud.auth.resend({
+                type: 'signup',
+                email: pendingConfirmationEmail,
+                options: { emailRedirectTo: appUrl() },
+            });
+            if (error) throw error;
+            showToast('Te reenviamos el correo de confirmación.', 'success');
+        } catch (error) {
+            showToast(translateAuthError(error), 'error');
+        } finally {
+            setImportStatus(null);
+            setStatusMessage('');
+        }
+    };
+
+    const handleBackFromConfirmation = () => {
+        setInputEmail(pendingConfirmationEmail || inputEmail);
+        setPendingConfirmationEmail('');
+        setIsCloudLogin(true);
+    };
+
     return {
+        pendingConfirmationEmail,
+        handleResendConfirmation,
+        handleBackFromConfirmation,
         inputEmail, setInputEmail,
         inputPassword, setInputPassword,
         inputConfirmPassword, setInputConfirmPassword,

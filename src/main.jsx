@@ -3,6 +3,8 @@ import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import ResetPasswordView from './views/ResetPasswordView.jsx'
 import EmailConfirmedView from './views/EmailConfirmedView.jsx'
+import AuthLinkErrorView from './views/AuthLinkErrorView.jsx'
+import { readAuthLinkError } from './utils/authErrors.js'
 import { ToastProvider } from './components/Toast.jsx'
 import { supabaseCloud } from './config/supabaseCloud.js'
 import './index.css'
@@ -51,7 +53,9 @@ function detectEmailConfirmed() {
 }
 
 function AppRouter() {
-  const [isRecovery, setIsRecovery] = useState(detectRecovery);
+  // Enlace de correo vencido o ya usado: Supabase deja el error en la URL.
+  const [linkError, setLinkError] = useState(() => readAuthLinkError());
+  const [isRecovery, setIsRecovery] = useState(() => !readAuthLinkError() && detectRecovery());
   const [isEmailConfirmed, setIsEmailConfirmed] = useState(detectEmailConfirmed);
 
   useEffect(() => {
@@ -60,6 +64,20 @@ function AppRouter() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  if (linkError) {
+    return (
+      <AuthLinkErrorView
+        error={linkError}
+        onDone={() => {
+          window.history.replaceState({}, document.title, window.location.pathname);
+          setLinkError(null);
+          setIsRecovery(false);
+          setIsEmailConfirmed(false);
+        }}
+      />
+    );
+  }
 
   if (isEmailConfirmed) {
     return (
