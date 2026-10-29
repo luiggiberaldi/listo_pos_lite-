@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, EyeOff, Eye, CheckCircle, ShieldCheck, AlertTriangle, Loader2, Mail, LogIn } from 'lucide-react';
+import { Lock, EyeOff, Eye, CheckCircle, ShieldCheck, AlertTriangle, Loader2 } from 'lucide-react';
 import { supabaseCloud } from '../config/supabaseCloud';
-import { useAuthStore } from '../hooks/store/useAuthStore';
+import { translateAuthError, MIN_PASSWORD_LENGTH } from '../utils/authErrors';
+import { AUTH_PREFILL_EMAIL_KEY, AUTH_OPEN_RECOVERY_KEY } from '../hooks/useCloudAuthLogic';
+import { showToast } from '../components/Toast';
+
+// Si en este tiempo no aparece la sesión del enlace, el enlace no sirve.
+const LINK_TIMEOUT_MS = 10000;
 
 // ─── Pantalla: Elegir nueva contraseña ────────────────────────────────────────
-function ChangePasswordScreen({ onPasswordChanged }) {
+function ChangePasswordScreen({ onPasswordChanged, onRequestNewLink }) {
     const [password, setPassword] = useState('');
     const [confirm, setConfirm] = useState('');
     const [showPass, setShowPass] = useState(false);
@@ -12,22 +17,29 @@ function ChangePasswordScreen({ onPasswordChanged }) {
     const [status, setStatus] = useState('idle');
     const [errorMsg, setErrorMsg] = useState('');
     const [sessionReady, setSessionReady] = useState(false);
+    const [linkFailed, setLinkFailed] = useState(false);
 
     useEffect(() => {
+        let ready = false;
+        const markReady = () => { ready = true; setSessionReady(true); setLinkFailed(false); };
+        // El enlace puede procesarse antes de montar esta pantalla: además del
+        // evento, se consulta la sesión directamente.
         const { data: { subscription } } = supabaseCloud.auth.onAuthStateChange(
-            async (event, session) => {
-                if ((event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') && session) {
-                    setSessionReady(true);
+            (event, session) => {
+                if (session && ['PASSWORD_RECOVERY', 'SIGNED_IN', 'INITIAL_SESSION', 'TOKEN_REFRESHED'].includes(event)) {
+                    markReady();
                 }
             }
         );
-        return () => subscription.unsubscribe();
+        supabaseCloud.auth.getSession().then(({ data }) => { if (data?.session) markReady(); });
+        const timer = setTimeout(() => { if (!ready) setLinkFailed(true); }, LINK_TIMEOUT_MS);
+        return () => { subscription.unsubscribe(); clearTimeout(timer); };
     }, []);
 
     const strength = (() => {
         if (!password) return 0;
         let s = 0;
-        if (password.length >= 6) s++;
+        if (password.length >= MIN_PASSWORD_LENGTH) s++;
         if (password.length >= 10) s++;
         if (/[A-Z]/.test(password)) s++;
         if (/[0-9]/.test(password)) s++;
@@ -41,19 +53,22 @@ function ChangePasswordScreen({ onPasswordChanged }) {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setErrorMsg('');
-        if (password.length < 6) { setErrorMsg('Mínimo 6 caracteres.'); return; }
+        if (password.length < MIN_PASSWORD_LENGTH) { setErrorMsg(`Mínimo ${MIN_PASSWORD_LENGTH} caracteres.`); return; }
         if (password !== confirm) { setErrorMsg('Las contraseñas no coinciden.'); return; }
 
         setStatus('loading');
         try {
-            const { error } = await supabaseCloud.auth.updateUser({ password });
+            const { data, error } = await supabaseCloud.auth.updateUser({ password });
             if (error) throw error;
 
-            // Cerrar la sesión de recuperación para que el usuario haga login manual
+            // Cerrar la sesión del enlace y volver a la entrada normal (que
+            // registra el equipo y restaura los datos) con el correo ya escrito.
+            const email = data?.user?.email || '';
             await supabaseCloud.auth.signOut();
+            try { if (email) sessionStorage.setItem(AUTH_PREFILL_EMAIL_KEY, email); } catch { /* sin acceso */ }
             onPasswordChanged();
         } catch (err) {
-            setErrorMsg(err.message || 'Error al actualizar la contraseña.');
+            setErrorMsg(translateAuthError(err, 'No se pudo guardar la contraseña.'));
             setStatus('idle');
         }
     };
@@ -66,10 +81,22 @@ function ChangePasswordScreen({ onPasswordChanged }) {
             <h1 className="text-2xl font-black text-slate-800 text-center mb-1">Nueva contraseña</h1>
             <p className="text-slate-500 text-sm text-center mb-8">Elige una contraseña segura para tu cuenta.</p>
 
-            {!sessionReady && (
-                <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-2">
-                    <Loader2 size={14} className="text-amber-400 animate-spin shrink-0" />
-                    <p className="text-xs text-amber-300">Verificando enlace de recuperación...</p>
+            {!sessionReady && !linkFailed && (
+                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2" role="status">
+                    <Loader2 size={14} className="text-amber-500 animate-spin shrink-0" />
+                    <p className="text-xs text-amber-700">Verificando enlace de recuperación...</p>
+                </div>
+            )}
+            {linkFailed && !sessionReady && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl" role="alert">
+                    <p className="text-xs text-red-700 font-bold">Este enlace no es válido o ya venció.</p>
+                    <button
+                        type="button"
+                        onClick={onRequestNewLink}
+                        className="mt-2 text-xs font-black text-sky-600 hover:underline"
+                    >
+                        Pedir un enlace nuevo
+                    </button>
                 </div>
             )}
 
@@ -82,7 +109,7 @@ function ChangePasswordScreen({ onPasswordChanged }) {
                             type={showPass ? 'text' : 'password'}
                             value={password}
                             onChange={e => setPassword(e.target.value)}
-                            placeholder="Mínimo 6 caracteres"
+                            placeholder={`Mínimo ${MIN_PASSWORD_LENGTH} caracteres`}
                             className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-11 pr-11 py-3.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/50 focus:border-sky-500 transition-all"
                             autoFocus
                             disabled={!sessionReady || status === 'loading'}
@@ -160,112 +187,17 @@ function ChangePasswordScreen({ onPasswordChanged }) {
     );
 }
 
-// ─── Pantalla: Login tras reseteo ─────────────────────────────────────────────
-function LoginAfterResetScreen({ onDone }) {
-    const setAdminCredentials = useAuthStore(s => s.setAdminCredentials);
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [showPass, setShowPass] = useState(false);
-    const [status, setStatus] = useState('idle');
-    const [errorMsg, setErrorMsg] = useState('');
-
-    const handleLogin = async (e) => {
-        e.preventDefault();
-        setErrorMsg('');
-        if (!email.includes('@')) { setErrorMsg('Ingresa un correo válido.'); return; }
-        if (password.length < 6) { setErrorMsg('La contraseña debe tener al menos 6 caracteres.'); return; }
-
-        setStatus('loading');
-        try {
-            const { error } = await supabaseCloud.auth.signInWithPassword({
-                email: email.trim().toLowerCase(),
-                password,
-            });
-            if (error) throw error;
-
-            // Guardar credenciales en el store para activar la sincronización P2P
-            setAdminCredentials(email.trim().toLowerCase(), password);
-            onDone();
-        } catch (err) {
-            setErrorMsg(err.message || 'Correo o contraseña incorrectos.');
-            setStatus('idle');
-        }
-    };
-
-    return (
-        <>
-            {/* Icon */}
-            <div className="w-16 h-16 bg-emerald-50 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-emerald-500/10">
-                <CheckCircle size={32} className="text-emerald-500" />
-            </div>
-            <h1 className="text-2xl font-black text-slate-800 text-center mb-1">Contraseña actualizada</h1>
-            <p className="text-slate-500 text-sm text-center mb-8 leading-relaxed">
-                Ingresa tu correo y tu nueva contraseña para iniciar sesión.
-            </p>
-
-            <form onSubmit={handleLogin} className="space-y-4">
-                {/* Email */}
-                <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">Correo electrónico</label>
-                    <div className="relative">
-                        <input
-                            type="email"
-                            value={email}
-                            onChange={e => setEmail(e.target.value)}
-                            placeholder="tu@correo.com"
-                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-11 pr-4 py-3.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/50 focus:border-sky-500 transition-all"
-                            autoFocus
-                            disabled={status === 'loading'}
-                        />
-                        <Mail size={16} className="absolute left-4 top-4 text-slate-500" />
-                    </div>
-                </div>
-
-                {/* Password */}
-                <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">Nueva contraseña</label>
-                    <div className="relative">
-                        <input
-                            type={showPass ? 'text' : 'password'}
-                            value={password}
-                            onChange={e => setPassword(e.target.value)}
-                            placeholder="Tu nueva contraseña"
-                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-11 pr-11 py-3.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/50 focus:border-sky-500 transition-all"
-                            disabled={status === 'loading'}
-                        />
-                        <Lock size={16} className="absolute left-4 top-4 text-slate-500" />
-                        <button type="button" onClick={() => setShowPass(p => !p)} className="absolute right-4 top-3.5 text-slate-500 hover:text-slate-300 transition-colors">
-                            {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
-                        </button>
-                    </div>
-                </div>
-
-                {errorMsg && (
-                    <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-2 animate-in fade-in">
-                        <AlertTriangle size={14} className="text-red-400 mt-0.5 shrink-0" />
-                        <p className="text-xs text-red-300">{errorMsg}</p>
-                    </div>
-                )}
-
-                <button
-                    type="submit"
-                    disabled={status === 'loading'}
-                    className="w-full py-3.5 bg-sky-500 hover:bg-sky-600 disabled:bg-slate-100 disabled:text-slate-400 text-white font-bold rounded-2xl transition-all active:scale-95 shadow-lg shadow-sky-500/20 flex items-center justify-center gap-2 mt-2"
-                >
-                    {status === 'loading' ? (
-                        <><Loader2 size={16} className="animate-spin" /> Iniciando sesión...</>
-                    ) : (
-                        <><LogIn size={16} /> Entrar y Sincronizar</>
-                    )}
-                </button>
-            </form>
-        </>
-    );
-}
-
 // ─── Componente Raíz ──────────────────────────────────────────────────────────
 export default function ResetPasswordView({ onDone }) {
-    const [step, setStep] = useState('change'); // 'change' | 'login'
+    const handleChanged = () => {
+        showToast('Contraseña actualizada. Entra con tu nueva contraseña.', 'success');
+        onDone();
+    };
+    const handleRequestNewLink = async () => {
+        await supabaseCloud.auth.signOut().catch(() => {});
+        try { sessionStorage.setItem(AUTH_OPEN_RECOVERY_KEY, 'true'); } catch { /* sin acceso */ }
+        onDone();
+    };
 
     return (
         <div className="fixed inset-0 z-[300] bg-white flex items-center justify-center p-6 font-sans">
@@ -276,11 +208,7 @@ export default function ResetPasswordView({ onDone }) {
             </div>
 
             <div className="relative w-full max-w-sm animate-in slide-in-from-bottom-6 duration-300">
-                {step === 'change' ? (
-                    <ChangePasswordScreen onPasswordChanged={() => setStep('login')} />
-                ) : (
-                    <LoginAfterResetScreen onDone={onDone} />
-                )}
+                <ChangePasswordScreen onPasswordChanged={handleChanged} onRequestNewLink={handleRequestNewLink} />
             </div>
         </div>
     );

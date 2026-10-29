@@ -107,3 +107,6 @@ staging/
 /backups/
 # Foto de no-destrucción por defecto (con producción trae nombres y ventas reales)
 docs/backups/no-destruction/latest.json
+
+# Plantillas de correo de Supabase (sí se versionan)
+!docs/email-templates/*.html

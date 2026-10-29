@@ -531,17 +531,16 @@ async function _applyFromCloudNow(docId, collection, payload, cloudUpdatedAt) {
         if (collection === 'local') {
             let finalPayload = payload;
 
-            // abasto-auth-storage: the cloud copy has adminPassword stripped for security.
-            // Preserve the local credentials so isCloudConfigured stays true.
+            // abasto-auth-storage: la contraseña de la cuenta nunca se guarda
+            // (ni local ni en la nube). Conservar el correo local para que
+            // isCloudConfigured siga en true.
             if (docId === 'abasto-auth-storage') {
                 try {
                     const incoming = typeof payload === 'string' ? JSON.parse(payload) : JSON.parse(JSON.stringify(payload));
+                    if (incoming?.state) delete incoming.state.adminPassword;
                     const existingRaw = localStorage.getItem('abasto-auth-storage');
                     if (existingRaw) {
                         const existing = JSON.parse(existingRaw);
-                        if (existing?.state?.adminPassword && !incoming?.state?.adminPassword) {
-                            incoming.state.adminPassword = existing.state.adminPassword;
-                        }
                         if (existing?.state?.adminEmail && !incoming?.state?.adminEmail) {
                             incoming.state.adminEmail = existing.state.adminEmail;
                         }

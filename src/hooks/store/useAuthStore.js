@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { stripStoredPassword } from '../../utils/authStorageCleanup';
 import { logEvent } from '../../services/auditService';
 import { ACCOUNT_LOCAL_SWITCHED_EVENT } from '../../config/accountLocalSwap';
 
@@ -26,7 +27,11 @@ const readDeviceSession = () => {
 };
 
 // Valores guardados por defecto (lo que tiene un equipo que nunca usó la cuenta).
-const DEFAULT_PERSISTED = { usuarios: DEFAULT_USERS, requireLogin: false, adminEmail: '', adminPassword: '' };
+const DEFAULT_PERSISTED = { usuarios: DEFAULT_USERS, requireLogin: false, adminEmail: '' };
+
+// Versiones anteriores guardaban la contraseña de la cuenta en texto plano;
+// se borra de este equipo al cargar (ver utils/authStorageCleanup.js).
+stripStoredPassword();
 
 export const useAuthStore = create(
     persist(
@@ -35,7 +40,6 @@ export const useAuthStore = create(
             usuarios: DEFAULT_USERS,
             requireLogin: false, // Login opcional, por defecto desactivado
             adminEmail: '',
-            adminPassword: '',
 
 
             // ACCIONES
@@ -179,14 +183,14 @@ export const useAuthStore = create(
                 logEvent('CONFIG', 'LOGIN_REQUERIDO_MODIFICADO', `Login requerido establecido a ${val ? 'SI' : 'NO'}`);
             },
 
-            setAdminCredentials: (email, password) => {
-                set({ adminEmail: email, adminPassword: password });
+            setAdminCredentials: (email) => {
+                set({ adminEmail: email });
                 logEvent('CONFIG', 'CREDENCIALES_REMOTAS_ESTABLECIDAS', `Se ha registrado el acceso remoto para la cuenta administradora.`);
             }
         }),
         {
             name: 'abasto-auth-storage', // Nombre para localStorage
-            version: 2,
+            version: 3,
             migrate: (persistedState, fromVersion) => {
                 // v0 → v1: admin PIN cambia de 4 a 6 dígitos (1234 → 123456)
                 if (fromVersion < 1 && persistedState?.usuarios) {
@@ -202,21 +206,23 @@ export const useAuthStore = create(
                         u.pinHashed === undefined ? { ...u, pinHashed: false } : u
                     );
                 }
+                // v2 → v3: la contraseña de la cuenta ya no se guarda
+                if (persistedState && 'adminPassword' in persistedState) {
+                    delete persistedState.adminPassword;
+                }
                 return persistedState;
             },
             // B8: al recargar tras cambiar de cuenta, lo que falta vuelve a los
             // valores por defecto (no se quedan los usuarios de la otra cuenta)
             // y el cajero activo es el de la sesión de ESTA cuenta.
-            merge: (persisted, current) => ({
-                ...current,
-                ...(persisted || DEFAULT_PERSISTED),
-                usuarioActivo: readDeviceSession(),
-            }),
+            merge: (persisted, current) => {
+                const { adminPassword: _discarded, ...rest } = persisted || DEFAULT_PERSISTED;
+                return { ...current, ...rest, usuarioActivo: readDeviceSession() };
+            },
             partialize: (state) => ({
                 usuarios: state.usuarios,
                 requireLogin: state.requireLogin,
                 adminEmail: state.adminEmail,
-                adminPassword: state.adminPassword
             }),
             storage: {
                 getItem: (name) => {

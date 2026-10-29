@@ -47,7 +47,10 @@ export default function CloudAuthModal({
         handleDataConflictChoice,
         handleUnlinkSpecificDevice,
         handleSaveCloudAccount,
-        handleResetPasswordRequest
+        handleResetPasswordRequest,
+        pendingConfirmationEmail,
+        handleResendConfirmation,
+        handleBackFromConfirmation,
     } = authLogic;
 
     const [showPassword, setShowPassword] = useState(false);
@@ -191,7 +194,7 @@ export default function CloudAuthModal({
                     </div>
 
                     {/* Tabs Login / Registro */}
-                    {!isRecoveringPassword && (
+                    {!isRecoveringPassword && !pendingConfirmationEmail && (
                         <div className="flex p-1 bg-slate-100 rounded-xl mb-5">
                             <button
                                 onClick={() => { setIsCloudLogin(true); setEmailError(''); setPasswordError(''); }}
@@ -209,7 +212,32 @@ export default function CloudAuthModal({
                     )}
 
                     <div className="space-y-3">
-                        {isRecoveringPassword ? (
+                        {pendingConfirmationEmail ? (
+                            /* Revisa tu correo: tras registrarse o al entrar sin confirmar */
+                            <div className="text-center space-y-4" role="status">
+                                <div className="w-14 h-14 mx-auto rounded-2xl bg-sky-50 flex items-center justify-center">
+                                    <Mail size={26} className="text-sky-500" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-black text-slate-800">Revisa tu correo</h3>
+                                    <p className="text-sm text-slate-500 mt-1 leading-relaxed">
+                                        Te enviamos un enlace de confirmación a<br />
+                                        <strong className="text-slate-700 break-all">{pendingConfirmationEmail}</strong>
+                                    </p>
+                                    <p className="text-xs text-slate-400 mt-2">Ábrelo para activar tu cuenta y luego entra aquí. Si no lo ves, revisa la carpeta de spam.</p>
+                                </div>
+                                <button
+                                    onClick={handleResendConfirmation} disabled={importStatus === 'loading'}
+                                    className="w-full py-3 text-white text-sm font-black rounded-xl transition-all shadow-lg active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-70"
+                                    style={{ background: `linear-gradient(135deg, ${C.primary}, #5EEAD4)` }}
+                                >
+                                    {importStatus === 'loading' ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Reenviar correo'}
+                                </button>
+                                <button onClick={handleBackFromConfirmation} className="w-full py-2 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">
+                                    Ya lo confirmé, entrar
+                                </button>
+                            </div>
+                        ) : isRecoveringPassword ? (
                             <>
                                 <div className="relative">
                                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none"><Mail size={16} className="text-slate-400" /></div>
@@ -277,7 +305,7 @@ export default function CloudAuthModal({
                                         <input
                                             type={showPassword ? 'text' : 'password'} value={inputPassword} onChange={e => setInputPassword(e.target.value)}
                                             className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 outline-none transition-all"
-                                            placeholder="Contraseña"
+                                            placeholder={isCloudLogin ? 'Contraseña' : 'Contraseña (mínimo 8 caracteres)'}
                                         />
                                         <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-sky-500 transition-colors">
                                             {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}

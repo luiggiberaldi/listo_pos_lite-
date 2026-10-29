@@ -8,6 +8,7 @@
 | `ideas/` | Propuestas viejas o a futuro que **no** están en ejecución. |
 | `backups/` | Respaldos SQL de funciones antes de migraciones y fotos de "no-destrucción" de staging. |
 | `legacy/` | SQL antiguo que ya fue reemplazado por `migrations/`. Solo de referencia. |
+| `email-templates/` | Plantillas de correo para pegar en Supabase (Authentication → Emails). |
 
 ## Planes (`plans/`)
 
