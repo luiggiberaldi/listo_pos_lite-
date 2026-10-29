@@ -9,6 +9,7 @@ import { hashPayload } from '../sync/syncHash';
 import { ENTITY_KEYS, mergeEntities } from '../sync/entityMeta';
 import { LOCAL_SYNC_KEYS } from '../config/accountLocalSwap';
 import { classifyChangedMeta, cursorQueryFrom, maxIso } from '../sync/syncCursor';
+import { SALES_KEY, SALES_SYNC_WINDOW_DAYS, changedSalesChunks, dayOfChunkId, isSalesChunkId, salesOfDay } from '../sync/salesChunks';
 import { CLEAN_HASH_STORAGE_KEY, DIRTY_KEYS_STORAGE_KEY, clearDirty, isRealChange, localIsNewer, markDirty, readCleanHashes, readDirty, setCleanHash } from '../sync/dirtyKeys';
 
 // Exportado para que SettingsView pueda enviar el broadcast antes de hacer signOut
@@ -83,6 +84,10 @@ const SYNC_KEYS = [
     'cashea_min_amount',
 ];
 
+// Documentos de sync_documents que este motor baja: las llaves de SYNC_KEYS
+// y los trozos de ventas por día ("bodega_sales_v1@AAAA-MM-DD").
+const isSyncedDocId = (docId) => SYNC_KEYS.includes(docId) || isSalesChunkId(docId);
+
 // Llaves que van a colección 'local' (localStorage); el resto va a 'store' (IndexedDB)
 // Lista compartida con la separación por cuenta (B8).
 const LOCAL_KEYS = LOCAL_SYNC_KEYS;
@@ -130,10 +135,10 @@ const MERGEABLE_KEYS = ENTITY_KEYS;
 const PULL_IGNORE_KEYS = ['abasto_audit_log_v1'];
 
 // ─── Sanitización previa al push ───────────────────────────────────────────
-// Ventana de sync para ventas. El historial completo se conserva en el
-// dispositivo, en el backup de login/logout (cloud_backups) y fila por fila
-// en la tabla sales; solo la réplica en sync_documents se recorta.
-const SALES_SYNC_WINDOW_DAYS = 30;
+// Ventana de sync para ventas (SALES_SYNC_WINDOW_DAYS, en salesChunks). El
+// historial completo se conserva en el dispositivo, en el backup de
+// login/logout (cloud_backups) y fila por fila en la tabla sales; solo la
+// réplica en sync_documents se recorta.
 
 function _trimSalesForSync(arr) {
     if (!Array.isArray(arr)) return arr;
@@ -277,11 +282,18 @@ const HEAVY_KEYS = [
 ];
 const DEBOUNCE_MS = 3000;
 const DEBOUNCE_MS_HEAVY = 30000;
-// Ventas, productos y clientes: la otra caja debe verlos pronto (cierre, stock,
-// deudas). 10 s aún agrupa ráfagas de hora pico; los documentos miden <600 KB.
+// Esperas propias de algunas llaves pesadas:
+// - Ventas: 10 s. Ya viajan partidas por día, así que cada subida reescribe
+//   solo el trozo de hoy y la otra caja ve la venta pronto (cierre).
+// - Inventario y clientes: 60 s. Son documentos enteros (~200 KB) y cada
+//   subida los reescribe completos; esperar más agrupa más cambios en una
+//   sola escritura y cuida el presupuesto de disco de Supabase.
 // Lo inmediato real llega con filas por entidad (Fase C).
-const FAST_HEAVY_KEYS = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1'];
-const DEBOUNCE_MS_FAST_HEAVY = 10000;
+const DEBOUNCE_BY_KEY = {
+    bodega_sales_v1: 10000,
+    bodega_products_v1: 60000,
+    bodega_customers_v1: 60000,
+};
 
 /**
  * Empuja una llave al sincronizador de Supabase.
@@ -331,6 +343,11 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
             } catch { /* ignorar */ }
         };
         try {
+            if (key === SALES_KEY) {
+                await _pushSalesChunks(value, confirmClean);
+                return;
+            }
+
             const sanitizedValue = sanitizeForPush(key, value);
 
             // Deduplicación: generar hash rápido del payload para no resubir datos idénticos.
@@ -422,8 +439,8 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
     } else {
         _pendingPushValues[key] = value;
         if (_pushDebounceTimers[key]) clearTimeout(_pushDebounceTimers[key]);
-        const delay = FAST_HEAVY_KEYS.includes(key) ? DEBOUNCE_MS_FAST_HEAVY
-            : HEAVY_KEYS.includes(key) ? DEBOUNCE_MS_HEAVY : DEBOUNCE_MS;
+        const delay = DEBOUNCE_BY_KEY[key]
+            ?? (HEAVY_KEYS.includes(key) ? DEBOUNCE_MS_HEAVY : DEBOUNCE_MS);
         _pushDebounceTimers[key] = setTimeout(() => {
             delete _pushDebounceTimers[key];
             delete _pendingPushValues[key];
@@ -431,6 +448,57 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
         }, delay);
     }
 };
+
+/**
+ * Ventas: sube solo los días que cambiaron, cada uno como su propio documento
+ * ("bodega_sales_v1@AAAA-MM-DD"). Antes cada venta reescribía el documento
+ * entero de 30 días (~600 KB) y eso agotaba el Disk IO Budget de Supabase.
+ * El documento único viejo ya no se escribe; se sigue leyendo por si un
+ * equipo con una versión anterior todavía lo sube.
+ */
+async function _pushSalesChunks(value, confirmClean) {
+    const sales = typeof value === 'string' ? JSON.parse(value) : value;
+    const fullHash = hashPayload(sanitizeForPush(SALES_KEY, sales));
+    const changed = changedSalesChunks(sales, _lastPushHash, hashPayload);
+    if (changed.length === 0) { // La nube ya tiene todos los días
+        delete _failedPushValues[SALES_KEY];
+        _rememberCloudHash(SALES_KEY, fullHash);
+        confirmClean();
+        return;
+    }
+
+    const { data: { session } } = await supabaseCloud.auth.getSession();
+    if (!session?.user?.id) return;
+
+    const { data: upserted, error } = await supabaseCloud
+        .from('sync_documents')
+        .upsert(changed.map(c => ({
+            user_id: session.user.id,
+            collection: 'store',
+            doc_id: c.docId,
+            data: { payload: c.payload },
+        })), { onConflict: 'user_id,collection,doc_id' })
+        .select('doc_id, updated_at');
+    if (error) throw error;
+
+    for (const c of changed) _lastPushHash[c.docId] = c.hash;
+    let serverUpdatedAt = null;
+    for (const row of upserted || []) {
+        _ownUpdatedAt[row.doc_id] = row.updated_at;
+        serverUpdatedAt = maxIso(serverUpdatedAt, row.updated_at);
+    }
+    delete _failedPushValues[SALES_KEY];
+    _rememberCloudHash(SALES_KEY, fullHash);
+    confirmClean(serverUpdatedAt);
+
+    if (realtimeChannel) {
+        realtimeChannel.send({
+            type: 'broadcast',
+            event: 'sync_ping',
+            payload: { doc_id: SALES_KEY },
+        }).catch(() => { /* el polling lo cubre */ });
+    }
+}
 
 /**
  * Dispara inmediatamente todos los pushes pendientes de debounce.
@@ -466,6 +534,56 @@ function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
     });
     _applyQueue = run.catch(() => {});
     return run;
+}
+
+/**
+ * Aplica de una vez varios trozos de ventas (un documento por día) recibidos
+ * de la nube: se mezclan registro por registro con las ventas locales, igual
+ * que antes el documento único. Va en la misma cola y con el mismo candado.
+ */
+function _applySalesChunks(docs) {
+    if (!docs?.length) return Promise.resolve();
+    const run = _applyQueue.then(() => storageService.runExclusive(SALES_KEY, () => _applySalesChunksNow(docs)));
+    _applyQueue = run.catch(() => {});
+    return run;
+}
+
+async function _applySalesChunksNow(docs) {
+    const incoming = [];
+    for (const doc of docs) {
+        const payload = doc.data?.payload;
+        if (!Array.isArray(payload)) continue;
+        let hash = null;
+        try { hash = hashPayload(payload); } catch { /* sin hash → aplicar */ }
+        if (hash && _lastPushHash[doc.doc_id] === hash) continue; // ya lo tenemos
+        incoming.push({ docId: doc.doc_id, day: dayOfChunkId(doc.doc_id), payload, hash });
+    }
+    if (incoming.length === 0) return;
+
+    let pendingLocalTs;
+    try { pendingLocalTs = _readDirtyMap()[SALES_KEY]; } catch { /* sin marca */ }
+
+    _applyingKeys.add(SALES_KEY);
+    try {
+        localforage.config({ name: APP_STORAGE_DB_NAME, storeName: APP_STORAGE_STORE_NAME });
+        const scopedKey = getScopedStorageKey(SALES_KEY);
+        const local = await localforage.getItem(scopedKey);
+        const cloud = incoming.flatMap(c => c.payload);
+        const merged = Array.isArray(local) ? mergeEntities(local, cloud) : cloud;
+        console.log(`[CloudSync] Merge ventas (${incoming.length} día/s): local=${Array.isArray(local) ? local.length : 0}, nube=${cloud.length}, resultado=${merged.length}`);
+        await localforage.setItem(scopedKey, merged);
+        window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: SALES_KEY, source: 'cloud' } }));
+
+        for (const c of incoming) if (c.hash) _lastPushHash[c.docId] = c.hash;
+
+        // Re-subir si algún día quedó distinto a lo que trajo la nube (había
+        // ventas locales que la nube no tenía) o si hay cambios pendientes.
+        let differs = Boolean(pendingLocalTs);
+        try { differs = differs || incoming.some(c => !c.hash || hashPayload(salesOfDay(merged, c.day)) !== c.hash); } catch { /* sin hash → no re-subir */ }
+        if (differs) setTimeout(() => { pushCloudSync(SALES_KEY, merged).catch(() => {}); }, 500);
+    } finally {
+        _applyingKeys.delete(SALES_KEY);
+    }
 }
 
 async function _applyFromCloudNow(docId, collection, payload, cloudUpdatedAt) {
@@ -725,12 +843,13 @@ export function useCloudSync() {
                 let metaQuery = supabaseCloud
                     .from('sync_documents')
                     .select('doc_id, collection, updated_at')
-                    .eq('user_id', uid)
-                    .in('doc_id', SYNC_KEYS);
+                    .eq('user_id', uid);
                 const queryFrom = cursorQueryFrom(syncCursor, CURSOR_MARGIN_MS);
                 if (queryFrom) metaQuery = metaQuery.gte('updated_at', queryFrom);
-                const { data: changedMeta, error: metaError } = await metaQuery;
+                const { data: allMeta, error: metaError } = await metaQuery;
                 if (metaError) throw metaError;
+                // Llaves sincronizadas más los trozos de ventas por día.
+                const changedMeta = (allMeta || []).filter(m => isSyncedDocId(m.doc_id));
 
                 // Lo que subimos nosotros o ya aplicamos no se vuelve a bajar.
                 const classified = classifyChangedMeta(changedMeta, {
@@ -748,11 +867,21 @@ export function useCloudSync() {
                         .eq('user_id', uid)
                         .in('doc_id', foreignIds);
                     if (dataError) throw dataError;
+                    const salesChunks = (changed || []).filter(doc => isSalesChunkId(doc.doc_id));
                     for (const doc of changed || []) {
+                        if (isSalesChunkId(doc.doc_id)) continue;
                         console.log(`[CloudSync] Polling: ${doc.doc_id} actualizado`);
                         await _applyFromCloud(doc.doc_id, doc.collection, doc.data.payload, doc.updated_at);
                         _seenUpdatedAt[doc.doc_id] = doc.updated_at;
                         newCursor = maxIso(newCursor, doc.updated_at);
+                    }
+                    if (salesChunks.length > 0) {
+                        console.log(`[CloudSync] Polling: ${salesChunks.length} día/s de ventas actualizados`);
+                        await _applySalesChunks(salesChunks);
+                        for (const doc of salesChunks) {
+                            _seenUpdatedAt[doc.doc_id] = doc.updated_at;
+                            newCursor = maxIso(newCursor, doc.updated_at);
+                        }
                     }
                 }
 
@@ -831,7 +960,14 @@ export function useCloudSync() {
 
                     syncCursor = null;
                     if (docs?.length > 0) {
+                        const salesChunks = docs.filter(doc => isSalesChunkId(doc.doc_id));
+                        await _applySalesChunks(salesChunks);
+                        for (const doc of salesChunks) {
+                            _seenUpdatedAt[doc.doc_id] = doc.updated_at;
+                            syncCursor = maxIso(syncCursor, doc.updated_at);
+                        }
                         for (const doc of docs) {
+                            if (isSalesChunkId(doc.doc_id)) continue;
                             await _applyFromCloud(doc.doc_id, doc.collection, doc.data.payload, doc.updated_at);
                             // Seed del hash-cache con lo que la nube ya tiene: el catch-up
                             // push de abajo salta las llaves idénticas en vez de re-subir
@@ -859,6 +995,7 @@ export function useCloudSync() {
                 // El hash deduplication evita resubir lo que ya está igual en la nube.
                 // Set de doc_ids que la nube ya tiene (del pull inicial)
                 const cloudDocIds = new Set(docs?.map(d => d.doc_id) || []);
+                if (docs?.some(d => isSalesChunkId(d.doc_id))) cloudDocIds.add(SALES_KEY);
                 // Llaves con cambios locales sin confirmar, ya resueltas contra la nube
                 // en el pull (las que perdieron contra una versión más nueva se limpiaron).
                 const dirtyAtCatchUp = _readDirtyMap();

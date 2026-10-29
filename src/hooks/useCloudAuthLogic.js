@@ -3,6 +3,7 @@ import { supabaseCloud } from '../config/supabaseCloud';
 import { storageService } from '../utils/storageService';
 import { useAuthStore } from './store/useAuthStore';
 import { sanitizeForPush } from './useCloudSync';
+import { SALES_KEY, salesChunkId, splitSalesByDay } from '../sync/salesChunks';
 import { useAudit } from './useAudit';
 import { useSecurity } from './useSecurity';
 import { showToast } from '../components/Toast';
@@ -57,6 +58,19 @@ export const uploadBackupToCloud = async (email, backupData, { strictSync = fals
 
     const syncPayloads = [];
     for (const [key, value] of Object.entries(backupData.data.idb || {})) {
+        // Las ventas viajan partidas por día (ver src/sync/salesChunks.js).
+        if (key === SALES_KEY) {
+            for (const [day, payload] of splitSalesByDay(sanitizeForPush(key, value))) {
+                syncPayloads.push({
+                    user_id: session.user.id,
+                    collection: 'store',
+                    doc_id: salesChunkId(day),
+                    data: { payload },
+                    updated_at: new Date().toISOString()
+                });
+            }
+            continue;
+        }
         syncPayloads.push({
             user_id: session.user.id,
             collection: 'store',

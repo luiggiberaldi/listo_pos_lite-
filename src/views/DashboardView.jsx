@@ -39,6 +39,7 @@ import { commitNormalClosure, finalizeHistoricalBatchInOpenSession } from '../ut
 
 import Skeleton from '../components/Skeleton';
 import CasheaIcon from '../components/CasheaIcon';
+import { SALES_CHUNK_PREFIX } from '../sync/salesChunks';
 
 const SALES_KEY = 'bodega_sales_v1';
 export default function DashboardView({ rates, triggerHaptic, onNavigate, theme, toggleTheme, isActive, isDemo, demoTimeLeft, installPrompt, onInstall, showIOSButton, onShowIOSInstall }) {
@@ -1348,6 +1349,10 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                                                 await supabaseCloud.from('sync_documents').delete()
                                                     .eq('user_id', session.user.id)
                                                     .eq('doc_id', SALES_KEY);
+                                                // Las ventas también viajan partidas por día
+                                                await supabaseCloud.from('sync_documents').delete()
+                                                    .eq('user_id', session.user.id)
+                                                    .like('doc_id', SALES_CHUNK_PREFIX + '%');
                                             }
                                         } catch (e) { /* sin nube, ignorar */ }
                                         setIsDeleteModalOpen(false);
