@@ -42,6 +42,10 @@ function describeProblem(kind, item) {
     };
 }
 
+// Al abrir, la app baja los datos de la cuenta al mismo tiempo que hace este
+// ping; con internet lento 5 s marcaban "Offline" aunque hubiera conexión.
+const HEALTH_TIMEOUT_MS = 15000;
+
 export default function SyncStatus() {
     const [isOnline, setIsOnline] = useState(navigator.onLine);
     const [pendingCount, setPendingCount] = useState(0);
@@ -62,7 +66,7 @@ export default function SyncStatus() {
         }
         try {
             const pingPromise = supabase.from('sync_documents').select('doc_id').limit(1);
-            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000));
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), HEALTH_TIMEOUT_MS));
             const result = await Promise.race([pingPromise, timeoutPromise]);
             if (result.error) throw result.error;
             setIsOnline(true);

@@ -35,6 +35,21 @@ import { useConfirm } from './hooks/useConfirm.jsx';
 import { setActiveAccountId } from './config/storageScope';
 import { refreshRegisterCode } from './services/registerCodeService';
 
+// Sesión de Supabase guardada en este equipo (clave sb-<proyecto>-auth-token).
+// Solo se usa para abrir la app cuando el servidor no responde al arrancar.
+function readStoredSession() {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !/^sb-.+-auth-token$/.test(key)) continue;
+      const parsed = JSON.parse(localStorage.getItem(key) || 'null');
+      const session = parsed?.currentSession || parsed;
+      if (session?.user?.id && session?.user?.email) return session;
+    }
+  } catch { /* sin acceso a localStorage */ }
+  return null;
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('inicio');
   const [installPrompt, setInstallPrompt] = useState(() => window.deferredInstallPrompt);
@@ -77,6 +92,15 @@ export default function App() {
     const DEVICE_CHECK_CACHE_KEY = 'pda_device_check_ts';
     const DEVICE_CHECK_TTL_MS = 60 * 60 * 1000; // 60 minutos — optimizado para egress
 
+    // Con Supabase lento (Disk IO agotado) estas consultas tardaban minutos y
+    // la app se quedaba en la pantalla de carga. Pasado el límite se sigue
+    // como "sin conexión": la verificación se repite en el próximo arranque.
+    const STARTUP_CHECK_TIMEOUT_MS = 8000;
+    const withTimeout = (promise) => Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), STARTUP_CHECK_TIMEOUT_MS)),
+    ]);
+
     const isDeviceCheckCached = () => {
       const ts = localStorage.getItem(DEVICE_CHECK_CACHE_KEY);
       return ts && Date.now() - parseInt(ts, 10) < DEVICE_CHECK_TTL_MS;
@@ -118,12 +142,12 @@ export default function App() {
         // Si el login NO es explícito (es un auto-login normal),
         // checamos si este dispositivo ya fue expulsado.
         if (!isExplicitLogin) {
-            const { data: existingDevice, error: selectErr } = await supabaseCloud
+            const { data: existingDevice, error: selectErr } = await withTimeout(supabaseCloud
                .from('account_devices')
                .select('id')
                .eq('device_id', deviceId)
                .eq('email', email)
-               .maybeSingle();
+               .maybeSingle());
 
             // Tumbamos la sesión SOLO si la conexión funcionó (sin errores) y NO se encontró el dispositivo
             if (!selectErr && existingDevice === null) {
@@ -139,11 +163,11 @@ export default function App() {
         // que podía cerrar la sesión antes de mostrar los dispositivos.
         if (isExplicitLogin) return;
 
-        const { data: result, error } = await supabaseCloud.rpc('register_and_check_device', {
+        const { data: result, error } = await withTimeout(supabaseCloud.rpc('register_and_check_device', {
           p_email: email,
           p_device_id: deviceId,
           p_device_alias: finalAlias,
-        });
+        }));
 
         if (!error) {
           if (result === 'license_inactive' || result === 'limit_reached') {
@@ -196,7 +220,24 @@ export default function App() {
     };
     window.addEventListener('cloud_login_completed', onCloudLoginCompleted);
 
+    // getSession espera a renovar el token; con el servidor caído eso tardaba
+    // muchos minutos. Si no responde a tiempo se abre con la sesión guardada en
+    // este equipo (la app trabaja con sus datos locales) y la sincronización
+    // arranca cuando el token se renueva.
+    let sessionApplied = false;
+    const fallbackTimer = setTimeout(() => {
+      if (sessionApplied || !mounted) return;
+      const stored = readStoredSession();
+      if (stored?.user?.email) {
+        sessionApplied = true;
+        console.warn('[App] Supabase no responde: se abre con la sesión guardada.');
+        applySession(stored);
+      }
+    }, STARTUP_CHECK_TIMEOUT_MS);
     supabaseCloud.auth.getSession().then(({ data: { session } }) => {
+      clearTimeout(fallbackTimer);
+      if (sessionApplied && session) return; // ya se abrió con la sesión guardada
+      sessionApplied = true;
       applySession(session);
     });
 
@@ -212,6 +253,7 @@ export default function App() {
 
     return () => {
       mounted = false;
+      clearTimeout(fallbackTimer);
       window.removeEventListener('cloud_login_completed', onCloudLoginCompleted);
       subscription.unsubscribe();
     };
