@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import localforage from 'localforage';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { storageService } from '../utils/storageService';
-import { pushCatalogSync } from '../services/catalogSyncService';
+import { CATALOG_HASHES_KEY, pushChangedCatalog } from '../services/catalogSyncService';
 import { useAuthStore } from './store/useAuthStore';
 import { APP_STORAGE_DB_NAME, APP_STORAGE_STORE_NAME, getActiveAccountId, getScopedStorageKey, setActiveAccountId } from '../config/storageScope';
-import { hashPayload } from '../sync/syncHash';
-import { ENTITY_KEYS, mergeEntities } from '../sync/entityMeta';
+import { computePushHash, hashPayload } from '../sync/syncHash';
+import { ENTITY_KEYS, canonicalSetString, mergeEntities } from '../sync/entityMeta';
 import { LOCAL_SYNC_KEYS } from '../config/accountLocalSwap';
 import { classifyChangedMeta, cursorQueryFrom, maxIso } from '../sync/syncCursor';
 import { SALES_KEY, SALES_SYNC_WINDOW_DAYS, changedSalesChunks, dayOfChunkId, isSalesChunkId, salesOfDay } from '../sync/salesChunks';
@@ -129,6 +129,16 @@ const REALTIME_KEYS = [
 // versión viva. Incluye el INVENTARIO: antes se reemplazaba entero y un cambio de
 // otra caja en OTRO producto se perdía.
 const MERGEABLE_KEYS = ENTITY_KEYS;
+
+// Huella de un documento. Las listas que se mezclan registro por registro se
+// comparan sin importar el orden (cada caja guarda su propio orden); el resto,
+// y las ventas (que viajan por día y ya van ordenadas), en orden.
+function docHash(key, value) {
+    if (key !== SALES_KEY && MERGEABLE_KEYS.includes(key) && Array.isArray(value)) {
+        return computePushHash(canonicalSetString(value));
+    }
+    return hashPayload(value);
+}
 
 // Llaves legadas que dispositivos con versiones viejas aún pueden subir a
 // sync_documents; se ignoran al recibir para no pisar el estado local.
@@ -313,7 +323,7 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
     const localTsScoped = dirtyScoped ? getScopedStorageKey('_sync_local_ts_' + key) : null;
     if (dirtyScoped) {
         try {
-            const hash = hashPayload(sanitizeForPush(key, value));
+            const hash = docHash(key, sanitizeForPush(key, value));
             const cleanHash = readCleanHashes(_dirtyStorage, getScopedStorageKey(CLEAN_HASH_STORAGE_KEY))[key];
             if (isRealChange({ hash, cleanHash, ready: initialSyncReady })) {
                 // Antes del pull, una llave ya pendiente conserva su hora: un
@@ -351,7 +361,7 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
             const sanitizedValue = sanitizeForPush(key, value);
 
             // Deduplicación: generar hash rápido del payload para no resubir datos idénticos.
-            const hash = hashPayload(sanitizedValue);
+            const hash = docHash(key, sanitizedValue);
             if (_lastPushHash[key] === hash) { _rememberCloudHash(key, hash); confirmClean(); return; } // La nube ya lo tiene
             // NOTA: hash se actualiza DESPUÉS del push exitoso para garantizar reintentos si falla
 
@@ -394,7 +404,8 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
                 const catalogList = Array.isArray(sanitizedValue)
                     ? sanitizedValue
                     : (typeof sanitizedValue === 'string' ? JSON.parse(sanitizedValue) : []);
-                pushCatalogSync(catalogList).catch(() => {});
+                // Solo los productos que cambiaron (huella por cuenta).
+                pushChangedCatalog(catalogList, { storageKey: getScopedStorageKey(CATALOG_HASHES_KEY) }).catch(() => {});
             }
 
             // Broadcast ligero para llaves de Realtime (tasas/config < 1KB)
@@ -594,7 +605,7 @@ async function _applyFromCloudNow(docId, collection, payload, cloudUpdatedAt) {
     // Deduplicación de pull: si la nube tiene exactamente lo que ya sabemos que tiene
     // (p. ej. el eco de nuestro propio push), no hay nada que aplicar.
     let incomingHash = null;
-    try { incomingHash = payload === undefined ? null : hashPayload(payload); } catch { /* sin hash → aplicar */ }
+    try { incomingHash = payload === undefined ? null : docHash(docId, payload); } catch { /* sin hash → aplicar */ }
     if (incomingHash && _lastPushHash[docId] === incomingHash) return;
 
     // Listas con registros (incluido el inventario) se mezclan registro por registro.
@@ -624,7 +635,7 @@ async function _applyFromCloudNow(docId, collection, payload, cloudUpdatedAt) {
                 // Mismo contenido que la nube: la fecha local era de un re-guardado
                 // idéntico, no de un cambio. Nada que subir; se re-fecha con la hora
                 // del servidor para que no vuelva a "ganar" en cada arranque.
-                if (localData !== null && incomingHash && hashPayload(sanitizeForPush(docId, localData)) === incomingHash) {
+                if (localData !== null && incomingHash && docHash(docId, sanitizeForPush(docId, localData)) === incomingHash) {
                     _lastPushHash[docId] = incomingHash;
                     _rememberCloudHash(docId, incomingHash);
                     _nativeSetItem(getScopedStorageKey('_sync_local_ts_' + docId), cloudUpdatedAt);
@@ -698,8 +709,13 @@ async function _applyFromCloudNow(docId, collection, payload, cloudUpdatedAt) {
                         // más elementos, así una edición local ganadora nunca se subía).
                         // Se compara lo que realmente se subiría (sin fotos, ventas
                         // recortadas a la ventana), para no re-subir en cada polling.
+                        // Sin importar el orden: si solo cambia el orden de los
+                        // registros, la nube ya tiene lo mismo (antes eso causaba una
+                        // ida y vuelta sin fin entre cajas).
                         let differs = Boolean(pendingLocalTs);
-                        try { differs = differs || hashPayload(sanitizeForPush(docId, finalData)) !== incomingHash; } catch { /* sin hash → no re-subir */ }
+                        try {
+                            differs = differs || docHash(docId, sanitizeForPush(docId, finalData)) !== incomingHash;
+                        } catch { /* sin hash → no re-subir */ }
                         if (differs) {
                             setTimeout(() => {
                                 delete _lastPushHash[docId];
@@ -954,9 +970,24 @@ export function useCloudSync() {
                         .from('sync_documents')
                         .select('collection, doc_id, data, updated_at')
                         .eq('user_id', userId)
-                        .in('collection', ['store', 'local']);
+                        .in('collection', ['store', 'local'])
+                        // El documento único viejo de ventas (~2 MB) no se baja si ya
+                        // hay ventas por día: llegan ahí. Si un equipo con una versión
+                        // vieja lo vuelve a subir, el polling lo trae igual.
+                        .neq('doc_id', SALES_KEY);
                     if (error) throw error;
-                    docs = data;
+                    docs = data || [];
+                    if (!docs.some(doc => isSalesChunkId(doc.doc_id))) {
+                        // Cuenta que aún no tiene ventas por día: el documento viejo
+                        // es la única copia en la nube.
+                        const { data: legacy, error: legacyError } = await supabaseCloud
+                            .from('sync_documents')
+                            .select('collection, doc_id, data, updated_at')
+                            .eq('user_id', userId)
+                            .eq('doc_id', SALES_KEY);
+                        if (legacyError) throw legacyError;
+                        docs = docs.concat(legacy || []);
+                    }
 
                     syncCursor = null;
                     if (docs?.length > 0) {
@@ -974,7 +1005,7 @@ export function useCloudSync() {
                             // los ~26 documentos completos en cada arranque. El hash es
                             // canónico, así que el reordenamiento de llaves de jsonb no lo rompe.
                             try {
-                                _lastPushHash[doc.doc_id] = hashPayload(doc.data.payload);
+                                _lastPushHash[doc.doc_id] = docHash(doc.doc_id, doc.data.payload);
                             } catch { /* sin seed → push normal, como antes */ }
                             _seenUpdatedAt[doc.doc_id] = doc.updated_at;
                             syncCursor = maxIso(syncCursor, doc.updated_at);

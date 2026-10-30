@@ -40,6 +40,22 @@ export function entityId(item) {
     return id === null || id === undefined ? null : String(id);
 }
 
+/**
+ * JSON canónico de una lista SIN importar el orden de sus registros. Cada caja
+ * guarda sus listas en su propio orden (mergeEntities conserva el local), así
+ * que comparar en orden hacía que dos cajas con los mismos datos se re-subieran
+ * la lista una a la otra sin fin (miles de subidas al día).
+ */
+export function canonicalSetString(list) {
+    if (!Array.isArray(list)) return canonicalStringify(list);
+    const parts = list.map(item => {
+        const id = entityId(item);
+        return [id === null ? '￿' : id, canonicalStringify(item)];
+    });
+    parts.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0)));
+    return '[' + parts.map(p => p[1]).join(',') + ']';
+}
+
 export const isTombstone = (item) => Boolean(item?.deletedAt);
 
 /** Registros vivos (lo que ven las pantallas). */
